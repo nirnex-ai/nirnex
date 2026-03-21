@@ -29,7 +29,7 @@ switch (command) {
     indexCommand(rest);
     break;
   case 'plan':
-    planCommand(rest);
+    planCommand(rest).catch(console.error);
     break;
   case 'query':
     queryCommand(rest).catch(console.error);
