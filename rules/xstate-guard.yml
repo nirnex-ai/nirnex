@@ -1,0 +1,5 @@
+id: xstate-guard
+language: TypeScript
+rule:
+  pattern: "cond: $GUARD"
+message: Found state transition guard

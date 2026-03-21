@@ -1,0 +1,28 @@
+{
+  "name": "ai-delivery-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "node packages/cli/dist/index.js",
+    "typecheck": "tsc --build",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@ast-grep/cli": "^0.42.0",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.1.0",
+    "globals": "^17.4.0",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.57.1",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

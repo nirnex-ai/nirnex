@@ -1,0 +1,7 @@
+id: xstate-createMachine
+language: TypeScript
+rule:
+  any:
+    - pattern: createMachine($CONFIG, $OPTIONS)
+    - pattern: createMachine($CONFIG)
+message: Found XState createMachine call

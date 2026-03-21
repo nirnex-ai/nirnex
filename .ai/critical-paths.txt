@@ -1,0 +1,7 @@
+# Critical Paths
+# List files/directories that are high-value contexts for all analyses.
+# One path per line. Supports globs. Lines starting with # are comments.
+
+# Example:
+# src/core/
+# packages/*/src/index.ts

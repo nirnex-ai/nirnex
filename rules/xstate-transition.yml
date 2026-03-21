@@ -1,0 +1,5 @@
+id: xstate-transition
+language: TypeScript
+rule:
+  pattern: "target: $TARGET"
+message: Found state transition target

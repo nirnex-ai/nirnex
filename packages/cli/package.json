@@ -1,0 +1,26 @@
+{
+  "name": "@ai-delivery-os/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "dev": "./bin/dev.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@ai-delivery-os/core": "*",
+    "@ai-delivery-os/parser": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "typescript": "^5.4.0"
+  }
+}
