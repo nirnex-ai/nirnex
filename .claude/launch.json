@@ -4,8 +4,8 @@
     {
       "name": "nirnex-site",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "serve", "--prefix", "site", "--", "--port", "3004"],
-      "port": 3004
+      "runtimeArgs": ["run", "serve", "--prefix", "site", "--", "--port", "3005"],
+      "port": 3005
     }
   ]
 }

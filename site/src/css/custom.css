@@ -166,7 +166,20 @@ body {
   color: #FFFFFF !important;
 }
 
-.navbar__logo { display: none; }
+.navbar__logo {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  width: auto;
+  margin-right: 0.5rem;
+}
+
+/* Logo is always on a black navbar — force it visible in both themes */
+.navbar__logo img {
+  display: block !important;
+  height: 32px;
+  width: auto;
+}
 
 .navbar__link {
   font-family: var(--font-display);
@@ -190,13 +203,13 @@ body {
 }
 
 .navbar__items--right .navbar__link:last-of-type {
-  background: var(--ados-vermilion);
+  background: var(--ados-vermilion) !important;
   color: #FFFFFF !important;
   border-left: none;
 }
 
 .navbar__items--right .navbar__link:last-of-type:hover {
-  background: #FFFFFF;
+  background: #FFFFFF !important;
   color: #000000 !important;
 }
 
@@ -239,8 +252,8 @@ body {
   width: 20px !important;
   height: 20px !important;
   fill: currentColor !important;
-  display: block !important;
   flex-shrink: 0 !important;
+  /* Do NOT override display — Docusaurus controls which icon is visible */
 }
 
 /* ── SIDEBAR ─────────────────────────────────────────────── */

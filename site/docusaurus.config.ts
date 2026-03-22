@@ -37,7 +37,12 @@ const config = {
       },
 
       navbar: {
-        title: 'Nirnex',
+        title: '',
+        logo: {
+          alt: 'Nirnex',
+          src: 'img/nirnex-logo-navbar.svg',
+          height: 32,
+        },
         hideOnScroll: false,
         style: 'dark',
         items: [
