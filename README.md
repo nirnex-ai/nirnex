@@ -4,7 +4,7 @@
 
 Decision Intelligence for Software Delivery
 
-[![Nirnex Overview](https://img.youtube.com/vi/f_U-nj8hNis/default.jpg)](https://youtu.be/f_U-nj8hNis)
+[![Nirnex Overview](https://i3.ytimg.com/vi/f_U-nj8hNis/maxresdefault.jpg)](https://youtu.be/f_U-nj8hNis)
 
 Nirnex is a decision intelligence system for software delivery.
 It analyzes your codebase, understands constraints, and determines what should be built, how it should be built, and how confident the system is in that decision.
