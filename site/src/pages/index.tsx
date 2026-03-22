@@ -88,7 +88,7 @@ function HomepageHero(): React.JSX.Element {
           <h1 style={{
             fontSize: 'clamp(2.6rem,5.5vw,5.5rem)', fontWeight: 900, lineHeight: 0.95,
             textTransform: 'uppercase', letterSpacing: '-0.03em',
-            marginBottom: '2rem',
+            marginBottom: '2rem', color: '#FFFFFF',
           }}>
             Evidence-Backed<br />
             <span style={{ color: '#D63318' }}>AI Delivery.</span>
