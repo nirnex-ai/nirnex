@@ -136,8 +136,8 @@ function HomepageHero(): React.JSX.Element {
             paddingLeft: i > 0 ? '2rem' : 0,
           }}>
             <div style={{ fontSize: 'clamp(1.8rem,3vw,3rem)', fontWeight: 900, color: '#D63318', lineHeight: 1 }}>{s.num}</div>
-            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#555', marginTop: '0.5rem' }}>{s.label}</div>
-            <div style={{ fontSize: '11px', fontWeight: 300, color: '#444', marginTop: '4px' }}>{s.sub}</div>
+            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#BBBBBB', marginTop: '0.5rem' }}>{s.label}</div>
+            <div style={{ fontSize: '11px', fontWeight: 300, color: '#888888', marginTop: '4px' }}>{s.sub}</div>
           </div>
         ))}
       </div>
@@ -181,8 +181,8 @@ function LayersSection(): React.JSX.Element {
           >
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#D63318', marginBottom: '2.5rem' }}>Layer {l.num} ·</div>
             <div style={{ fontSize: 'clamp(1.3rem,2.5vw,2rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em', lineHeight: 1, marginBottom: '0.75rem' }}>{l.name}</div>
-            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#999', marginBottom: '1.25rem' }}>{l.sub}</div>
-            <p style={{ fontSize: '12px', fontWeight: 300, lineHeight: 1.75, color: '#555', margin: 0 }}>{l.desc}</p>
+            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#6B7280', marginBottom: '1.25rem' }}>{l.sub}</div>
+            <p style={{ fontSize: '13px', fontWeight: 400, lineHeight: 1.75, color: '#374151', margin: 0 }}>{l.desc}</p>
           </Link>
         ))}
       </div>
@@ -206,7 +206,7 @@ function PrinciplesSection(): React.JSX.Element {
           }}>
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem' }}>{p.n} ·</div>
             <div style={{ fontSize: 'clamp(1rem,1.8vw,1.3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.01em', lineHeight: 1.1, marginBottom: '0.75rem' }}>{p.title}</div>
-            <p style={{ fontSize: '12px', fontWeight: 300, color: '#666', lineHeight: 1.75, margin: 0 }}>{p.body}</p>
+            <p style={{ fontSize: '13px', fontWeight: 400, color: '#374151', lineHeight: 1.75, margin: 0 }}>{p.body}</p>
           </div>
         ))}
       </div>

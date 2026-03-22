@@ -1,5 +1,6 @@
 const { themes } = require('prism-react-renderer');
-const lightCodeTheme = themes.dracula;
+const lightCodeTheme = themes.github;
+const darkCodeTheme  = themes.dracula;
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -27,8 +28,8 @@ const config = {
     ({
       colorMode: {
         defaultMode: 'light',
-        disableSwitch: true,         // brutalist light mode only
-        respectPrefersColorScheme: false,
+        disableSwitch: false,
+        respectPrefersColorScheme: true,
       },
 
       mermaid: {
@@ -107,7 +108,7 @@ const config = {
 
       prism: {
         theme: lightCodeTheme,
-        darkTheme: lightCodeTheme,
+        darkTheme: darkCodeTheme,
         additionalLanguages: ['bash', 'json', 'typescript', 'python', 'sql'],
       },
 
