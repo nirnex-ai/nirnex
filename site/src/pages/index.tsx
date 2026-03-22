@@ -5,12 +5,6 @@ import Layout from '@theme/Layout';
 import styles from './index.module.css';
 
 /* ── TYPES ─────────────────────────────────────────────── */
-interface Stat {
-  num: string;
-  label: string;
-  sub: string;
-}
-
 interface Layer {
   num: string;
   name: string;
@@ -26,13 +20,6 @@ interface Principle {
 }
 
 /* ── DATA ──────────────────────────────────────────────── */
-const STATS: Stat[] = [
-  { num: '0', label: 'LLM calls', sub: 'Lane A — 80% of commits' },
-  { num: '5', label: 'ECO dimensions', sub: 'Coverage · Freshness · Mapping · Conflict · Graph' },
-  { num: '~200ms', label: 'Index latency', sub: 'Atomic post-commit hook' },
-  { num: '100%', label: 'Decisions traced', sub: 'Unified schema, full replay' },
-];
-
 const LAYERS: Layer[] = [
   {
     num: '01',
@@ -69,7 +56,7 @@ function HomepageHero(): React.JSX.Element {
   return (
     <section style={{
       background: '#0D0D0D', color: '#FFFFFF',
-      padding: '10vw 4vw 6vw', position: 'relative', overflow: 'hidden',
+      padding: '7vw 4vw 6vw', position: 'relative', overflow: 'hidden',
       borderBottom: '1px solid rgba(255,255,255,0.06)',
     }}>
       {/* Watermark */}
@@ -80,66 +67,100 @@ function HomepageHero(): React.JSX.Element {
         textTransform: 'uppercase', fontFamily: 'Space Grotesk, sans-serif',
       }}>OS</div>
 
-      {/* Eyebrow */}
+      {/* Two-column grid */}
       <div style={{
-        display: 'inline-block', fontSize: '10px', fontWeight: 700,
-        letterSpacing: '0.22em', textTransform: 'uppercase',
-        color: '#D63318', border: '1px solid #D63318',
-        padding: '4px 12px', marginBottom: '2.5rem',
-      }}>v9.0 — Implementation-Ready · March 2026</div>
-
-      {/* Headline */}
-      <h1 style={{
-        fontSize: 'clamp(3rem,7vw,7rem)', fontWeight: 900, lineHeight: 0.95,
-        textTransform: 'uppercase', letterSpacing: '-0.03em',
-        marginBottom: '1.5rem', maxWidth: '16ch',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '5vw',
+        alignItems: 'center',
+        position: 'relative',
       }}>
-        Evidence-Backed<br />
-        <span style={{ color: '#D63318' }}>AI Delivery.</span>
-      </h1>
+        {/* ── Left: copy ── */}
+        <div>
+          {/* Eyebrow */}
+          <div style={{
+            fontSize: '10px', fontWeight: 700,
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            color: '#D63318', marginBottom: '1.75rem',
+          }}>Overview</div>
 
-      <p style={{
-        fontSize: '14px', fontWeight: 300, lineHeight: 1.75,
-        color: '#888888', maxWidth: '520px', marginBottom: '3rem',
-      }}>
-        AI Delivery OS is a three-layer operating system for AI-assisted software delivery.
-        It constrains agent decisions to evidence-backed boundaries — and records every decision
-        for debugging and calibration.
-      </p>
-
-      <div style={{ display: 'flex', gap: 0 }}>
-        <Link to="/docs/intro/overview" style={{
-          background: '#D63318', color: '#FFFFFF',
-          padding: '14px 32px', fontSize: '11px', fontWeight: 700,
-          letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
-          display: 'inline-block',
-        }}>Read the Architecture</Link>
-        <Link to="/docs/business/executive-summary" style={{
-          background: 'transparent', color: '#FFFFFF',
-          padding: '14px 32px', fontSize: '11px', fontWeight: 700,
-          letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
-          border: '1px solid rgba(255,255,255,0.18)', borderLeft: 'none',
-          display: 'inline-block',
-        }}>Business Case →</Link>
-      </div>
-
-      {/* Stats row */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-        borderTop: '1px solid rgba(255,255,255,0.08)',
-        marginTop: '6rem',
-      }}>
-        {STATS.map((s: Stat, i: number) => (
-          <div key={i} style={{
-            padding: '2rem 0', paddingRight: '2rem',
-            borderRight: i < 3 ? '1px solid rgba(255,255,255,0.08)' : 'none',
-            paddingLeft: i > 0 ? '2rem' : 0,
+          {/* Headline */}
+          <h1 style={{
+            fontSize: 'clamp(2.6rem,5.5vw,5.5rem)', fontWeight: 900, lineHeight: 0.95,
+            textTransform: 'uppercase', letterSpacing: '-0.03em',
+            marginBottom: '2rem',
           }}>
-            <div style={{ fontSize: 'clamp(1.8rem,3vw,3rem)', fontWeight: 900, color: '#D63318', lineHeight: 1 }}>{s.num}</div>
-            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#BBBBBB', marginTop: '0.5rem' }}>{s.label}</div>
-            <div style={{ fontSize: '11px', fontWeight: 300, color: '#888888', marginTop: '4px' }}>{s.sub}</div>
+            Evidence-Backed<br />
+            <span style={{ color: '#D63318' }}>AI Delivery.</span>
+          </h1>
+
+          {/* Body */}
+          <p style={{
+            fontSize: '14px', fontWeight: 400, lineHeight: 1.8,
+            color: '#AAAAAA', marginBottom: '1rem',
+          }}>
+            Nirnex transforms software execution from intuition-driven to evidence-backed
+            decision making.
+          </p>
+          <p style={{
+            fontSize: '14px', fontWeight: 400, lineHeight: 1.8,
+            color: '#AAAAAA', marginBottom: '1rem',
+          }}>
+            Instead of relying on raw text search or loosely guided AI suggestions, Nirnex
+            operates on a structured understanding of your codebase, including dependencies,
+            symbols, and execution patterns.
+          </p>
+          <p style={{
+            fontSize: '14px', fontWeight: 400, lineHeight: 1.8,
+            color: '#AAAAAA', marginBottom: '2.5rem',
+          }}>
+            At its core, Nirnex builds <strong style={{ color: '#FFFFFF', fontWeight: 600 }}>Execution
+            Context Objects (ECOs)</strong> — precise, bounded representations of a task —
+            enabling safe, multi-agent changes with clear reasoning and measurable confidence.
+          </p>
+
+          {/* CTAs */}
+          <div style={{ display: 'flex', gap: 0 }}>
+            <Link to="/docs/intro/overview" style={{
+              background: '#D63318', color: '#FFFFFF',
+              padding: '14px 32px', fontSize: '11px', fontWeight: 700,
+              letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
+              display: 'inline-block',
+            }}>Read the Architecture</Link>
+            <Link to="/docs/business/executive-summary" style={{
+              background: 'transparent', color: '#FFFFFF',
+              padding: '14px 32px', fontSize: '11px', fontWeight: 700,
+              letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
+              border: '1px solid rgba(255,255,255,0.18)', borderLeft: 'none',
+              display: 'inline-block',
+            }}>Business Case →</Link>
           </div>
-        ))}
+        </div>
+
+        {/* ── Right: YouTube embed ── */}
+        <div style={{ position: 'relative', width: '100%' }}>
+          <div style={{
+            position: 'relative',
+            paddingBottom: '56.25%', /* 16:9 */
+            height: 0,
+            overflow: 'hidden',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}>
+            <iframe
+              src="https://www.youtube.com/embed/f_U-nj8hNis"
+              title="Nirnex — Evidence-Backed AI Delivery"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              style={{
+                position: 'absolute',
+                top: 0, left: 0,
+                width: '100%', height: '100%',
+                border: 'none',
+              }}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );
