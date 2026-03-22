@@ -1,146 +1,141 @@
-import {themes as prismThemes} from 'prism-react-renderer';
-import type {Config} from '@docusaurus/types';
-import type * as Preset from '@docusaurus/preset-classic';
+const { themes } = require('prism-react-renderer');
+const lightCodeTheme = themes.dracula;
 
-const config: Config = {
+/** @type {import('@docusaurus/types').Config} */
+const config = {
   title: 'Nirnex',
   tagline: 'Decision Intelligence for Software Delivery',
-  favicon: 'img/favicon.ico',
-
-  future: {
-    v4: true,
-  },
-
-  // GitHub Pages deployment
   url: 'https://nirnex-ai.github.io',
-  baseUrl: '/nirnex/',
-
+  baseUrl: '/',
+  onBrokenLinks: 'throw',
+  onBrokenMarkdownLinks: 'warn',
+  favicon: 'img/favicon.ico',
   organizationName: 'nirnex-ai',
-  projectName: 'nirnex',
+  projectName: 'nirnex-site',
   trailingSlash: false,
 
-  onBrokenLinks: 'throw',
-
   markdown: {
-    hooks: {
-      onBrokenMarkdownLinks: 'warn',
-    },
+    mermaid: true,
   },
 
-  i18n: {
-    defaultLocale: 'en',
-    locales: ['en'],
-  },
+  themes: ['@docusaurus/theme-mermaid'],
+
+  themeConfig:
+    /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
+    ({
+      colorMode: {
+        defaultMode: 'light',
+        disableSwitch: true,         // brutalist light mode only
+        respectPrefersColorScheme: false,
+      },
+
+      mermaid: {
+        theme: { light: 'dark', dark: 'dark' },
+      },
+
+      navbar: {
+        title: 'Nirnex',
+        hideOnScroll: false,
+        style: 'dark',
+        items: [
+          {
+            type: 'doc',
+            docId: 'intro/overview',
+            position: 'left',
+            label: 'Architecture',
+          },
+          {
+            type: 'doc',
+            docId: 'business/executive-summary',
+            position: 'left',
+            label: 'Business Case',
+          },
+          {
+            type: 'doc',
+            docId: 'architecture/system-overview',
+            position: 'left',
+            label: 'Technical Spec',
+          },
+          {
+            to: '/docs/intro/roadmap',
+            label: 'Roadmap',
+            position: 'left',
+          },
+          {
+            href: 'https://github.com/ai-delivery-os',
+            label: 'Request Access →',
+            position: 'right',
+          },
+        ],
+      },
+
+      footer: {
+        style: 'dark',
+        links: [
+          {
+            title: 'Architecture',
+            items: [
+              { label: 'System Overview', to: '/docs/intro/overview' },
+              { label: 'Knowledge Engine', to: '/docs/knowledge-engine/overview' },
+              { label: 'Task Orchestrator', to: '/docs/task-pipeline/overview' },
+              { label: 'Decision Ledger', to: '/docs/decision-ledger/overview' },
+            ],
+          },
+          {
+            title: 'Reference',
+            items: [
+              { label: 'ECO Schema', to: '/docs/architecture/eco-schema' },
+              { label: 'Confidence Scoring', to: '/docs/knowledge-engine/confidence-scoring' },
+              { label: 'Design Boundaries', to: '/docs/architecture/design-boundaries' },
+              { label: 'Tool Decisions', to: '/docs/architecture/tool-decisions' },
+            ],
+          },
+          {
+            title: 'Business',
+            items: [
+              { label: 'Executive Summary', to: '/docs/business/executive-summary' },
+              { label: '3Cs Analysis', to: '/docs/business/3cs-analysis' },
+              { label: 'Competitive Matrix', to: '/docs/business/competitive-matrix' },
+              { label: 'Pricing Guidance', to: '/docs/business/pricing' },
+            ],
+          },
+        ],
+        copyright: `AI DELIVERY OS · V9.0 · MARCH 2026 · IMPLEMENTATION-READY SPECIFICATION`,
+      },
+
+      prism: {
+        theme: lightCodeTheme,
+        darkTheme: lightCodeTheme,
+        additionalLanguages: ['bash', 'json', 'typescript', 'python', 'sql'],
+      },
+
+      docs: {
+        sidebar: {
+          hideable: false,
+          autoCollapseCategories: false,
+        },
+      },
+    }),
 
   presets: [
     [
       'classic',
-      {
+      /** @type {import('@docusaurus/preset-classic').Options} */
+      ({
         docs: {
-          sidebarPath: './sidebars.ts',
-          editUrl:
-            'https://github.com/nirnex-ai/nirnex/tree/nirnex-site/site/',
+          sidebarPath: require.resolve('./sidebars.js'),
+          editUrl: 'https://github.com/ai-delivery-os/docs/edit/main/',
+          showLastUpdateTime: true,
+          remarkPlugins: [],
+          rehypePlugins: [],
         },
-        blog: {
-          showReadingTime: true,
-          feedOptions: {
-            type: ['rss', 'atom'],
-            xslt: true,
-          },
-          editUrl:
-            'https://github.com/nirnex-ai/nirnex/tree/nirnex-site/site/',
-          onInlineTags: 'warn',
-          onInlineAuthors: 'warn',
-          onUntruncatedBlogPosts: 'warn',
-        },
+        blog: false,    // no blog
         theme: {
-          customCss: './src/css/custom.css',
+          customCss: require.resolve('./src/css/custom.css'),
         },
-      } satisfies Preset.Options,
+      }),
     ],
   ],
-
-  themeConfig: {
-    image: 'img/nirnex-social-card.jpg',
-    colorMode: {
-      respectPrefersColorScheme: true,
-    },
-    navbar: {
-      title: 'Nirnex',
-      logo: {
-        alt: 'Nirnex Logo',
-        src: 'img/logo.svg',
-      },
-      items: [
-        {
-          type: 'docSidebar',
-          sidebarId: 'tutorialSidebar',
-          position: 'left',
-          label: 'Docs',
-        },
-        {to: '/blog', label: 'Blog', position: 'left'},
-        {
-          href: 'https://github.com/nirnex-ai/nirnex',
-          label: 'GitHub',
-          position: 'right',
-        },
-        {
-          href: 'https://www.npmjs.com/package/@nirnex/cli',
-          label: 'npm',
-          position: 'right',
-        },
-      ],
-    },
-    footer: {
-      style: 'dark',
-      links: [
-        {
-          title: 'Documentation',
-          items: [
-            {
-              label: 'Getting Started',
-              to: '/docs/intro',
-            },
-          ],
-        },
-        {
-          title: 'Packages',
-          items: [
-            {
-              label: '@nirnex/cli',
-              href: 'https://www.npmjs.com/package/@nirnex/cli',
-            },
-            {
-              label: '@nirnex/core',
-              href: 'https://www.npmjs.com/package/@nirnex/core',
-            },
-            {
-              label: '@nirnex/parser',
-              href: 'https://www.npmjs.com/package/@nirnex/parser',
-            },
-          ],
-        },
-        {
-          title: 'More',
-          items: [
-            {
-              label: 'Blog',
-              to: '/blog',
-            },
-            {
-              label: 'GitHub',
-              href: 'https://github.com/nirnex-ai/nirnex',
-            },
-          ],
-        },
-      ],
-      copyright: `Copyright \u00a9 ${new Date().getFullYear()} Nirnex. Built with Docusaurus.`,
-    },
-    prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
-    },
-  } satisfies Preset.ThemeConfig,
 };
 
-export default config;
+module.exports = config;
