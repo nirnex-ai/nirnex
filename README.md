@@ -33,7 +33,7 @@ To get Nirnex running, follow these initial onboarding steps carefully:
 1. **Clone the repository:**
    ```sh
    git clone <repository_url>
-   cd ai-delivery-os
+   cd nirnex
    ```
 2. **Install dependencies:**
    ```sh

@@ -1,8 +1,8 @@
 // Command: dev status
-// Reads the local .ai-delivery-os.db (or path from AIDOS_DB env var)
+// Reads the local .aidos.db (or path from AIDOS_DB env var)
 // and prints a one-line index summary.
 
-import { openDb, indexStats } from '@ai-delivery-os/core';
+import { openDb, indexStats } from '@nirnex/core';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 

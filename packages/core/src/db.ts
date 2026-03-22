@@ -7,7 +7,7 @@ import path from 'node:path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Open (or create) the ai-delivery-os SQLite database at the given path.
+ * Open (or create) the Nirnex SQLite database at the given path.
  * On first open, bootstraps all tables from schema.sql.
  */
 export function openDb(dbPath: string): DatabaseType {

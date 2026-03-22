@@ -1,5 +1,5 @@
 export async function planCommand(args: string[]): Promise<void> {
-  const { buildECO } = await import('@ai-delivery-os/core/dist/eco.js');
+  const { buildECO } = await import('@nirnex/core/dist/eco.js');
   
   if (!args || args.length === 0) {
     console.error('Specify a spec path or inline query');

@@ -1,5 +1,5 @@
 {
-  "name": "@ai-delivery-os/cli",
+  "name": "@nirnex/cli",
   "version": "0.1.0",
   "type": "module",
   "bin": {
@@ -16,8 +16,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@ai-delivery-os/core": "*",
-    "@ai-delivery-os/parser": "*"
+    "@nirnex/core": "*",
+    "@nirnex/parser": "*"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",

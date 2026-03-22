@@ -1,5 +1,5 @@
 /**
- * AI Delivery OS — Sprint 5 Test Suite
+ * Nirnex — Sprint 5 Test Suite
  * ECO Construction + 5 Dimensions
  *
  * Tests every deliverable from Sprint 5:
@@ -32,13 +32,13 @@ import { tmpdir } from "os";
 // ─────────────────────────────────────────────────────────────────────────────
 // Adjust these imports to match your actual package exports.
 // ─────────────────────────────────────────────────────────────────────────────
-// import { detectIntent } from "@ai-delivery-os/core/intent";
-// import { mapEntities } from "@ai-delivery-os/core/entity-mapper";
-// import { scoreDimensions } from "@ai-delivery-os/core/dimensions";
-// import { clusterWarnings } from "@ai-delivery-os/core/clustering";
-// import { computeEscalation } from "@ai-delivery-os/core/escalation";
-// import { checkEvidence } from "@ai-delivery-os/core/checkpoints";
-// import { buildECO } from "@ai-delivery-os/core/eco";
+// import { detectIntent } from "@nirnex/core/intent";
+// import { mapEntities } from "@nirnex/core/entity-mapper";
+// import { scoreDimensions } from "@nirnex/core/dimensions";
+// import { clusterWarnings } from "@nirnex/core/clustering";
+// import { computeEscalation } from "@nirnex/core/escalation";
+// import { checkEvidence } from "@nirnex/core/checkpoints";
+// import { buildECO } from "@nirnex/core/eco";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIXTURE HELPERS

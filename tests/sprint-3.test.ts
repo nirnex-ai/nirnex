@@ -1,5 +1,5 @@
 /**
- * AI Delivery OS — Sprint 3 Test Suite
+ * Nirnex — Sprint 3 Test Suite
  * Multi-label Router + Index Queries
  *
  * Tests every deliverable from Sprint 3:
@@ -27,10 +27,10 @@ import { tmpdir } from "os";
 // ─────────────────────────────────────────────────────────────────────────────
 // Adjust these imports to match your actual package exports.
 // ─────────────────────────────────────────────────────────────────────────────
-// import { classifyQuery, Flags } from "@ai-delivery-os/core/router";
-// import { dispatch } from "@ai-delivery-os/core/dispatch";
-// import { queryPipeline } from "@ai-delivery-os/core/query";
-// import { queryEdges } from "@ai-delivery-os/core/db";
+// import { classifyQuery, Flags } from "@nirnex/core/router";
+// import { dispatch } from "@nirnex/core/dispatch";
+// import { queryPipeline } from "@nirnex/core/query";
+// import { queryEdges } from "@nirnex/core/db";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIXTURE HELPERS

@@ -1,5 +1,5 @@
 /**
- * AI Delivery OS — Sprint 6 Test Suite
+ * Nirnex — Sprint 6 Test Suite
  * Decision Trace + Replay Engine
  *
  * Tests every deliverable from Sprint 6:
@@ -29,11 +29,11 @@ import { tmpdir } from "os";
 // ─────────────────────────────────────────────────────────────────────────────
 // Adjust these imports to match your actual package exports.
 // ─────────────────────────────────────────────────────────────────────────────
-// import { writeTrace, readTrace, listTraces } from "@ai-delivery-os/core/trace";
-// import { replayTrace, replayAll } from "@ai-delivery-os/core/replay";
-// import { rotateTraces } from "@ai-delivery-os/core/rotation";
-// import { buildECO } from "@ai-delivery-os/core/eco";
-// import { queryPipeline } from "@ai-delivery-os/core/query";
+// import { writeTrace, readTrace, listTraces } from "@nirnex/core/trace";
+// import { replayTrace, replayAll } from "@nirnex/core/replay";
+// import { rotateTraces } from "@nirnex/core/rotation";
+// import { buildECO } from "@nirnex/core/eco";
+// import { queryPipeline } from "@nirnex/core/query";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIXTURE HELPERS

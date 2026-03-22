@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ai-delivery-os dev CLI
+// nirnex dev CLI
 // Usage: dev <command> [args]
 // Commands: plan | query | status | replay
 
@@ -13,7 +13,7 @@ import { traceCommand }  from './commands/trace.js';
 const [, , command = '', ...rest] = process.argv;
 
 const USAGE = `
-ai-delivery-os dev CLI
+nirnex dev CLI
 
 Usage:
   dev index   [options]   Run the indexer

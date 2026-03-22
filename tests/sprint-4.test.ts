@@ -1,5 +1,5 @@
 /**
- * AI Delivery OS — Sprint 4 Test Suite
+ * Nirnex — Sprint 4 Test Suite
  * Confidence Scoring + Penalty Matrix
  *
  * Tests every deliverable from Sprint 4:
@@ -36,9 +36,9 @@ import { tmpdir } from "os";
 //   getConfidenceLabel,
 //   getSuggestedNext,
 //   computeDegradationTier,
-// } from "@ai-delivery-os/core/confidence";
-// import { queryPipeline } from "@ai-delivery-os/core/query";
-// import { createDb, rebuildIndex, queryMeta } from "@ai-delivery-os/core/db";
+// } from "@nirnex/core/confidence";
+// import { queryPipeline } from "@nirnex/core/query";
+// import { createDb, rebuildIndex, queryMeta } from "@nirnex/core/db";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS (must match your implementation)

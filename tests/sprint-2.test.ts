@@ -1,5 +1,5 @@
 /**
- * AI Delivery OS — Sprint 2 Test Suite
+ * Nirnex — Sprint 2 Test Suite
  * Graph Edges + Hub Detection
  *
  * Tests every deliverable from Sprint 2:
@@ -27,8 +27,8 @@ import { tmpdir } from "os";
 // ─────────────────────────────────────────────────────────────────────────────
 // Adjust these imports to match your actual package exports.
 // ─────────────────────────────────────────────────────────────────────────────
-// import { createDb, queryEdges, queryHubSummaries, queryGraphCTE } from "@ai-delivery-os/core";
-// import { extractEdges } from "@ai-delivery-os/parser";
+// import { createDb, queryEdges, queryHubSummaries, queryGraphCTE } from "@nirnex/core";
+// import { extractEdges } from "@nirnex/parser";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIXTURE HELPERS

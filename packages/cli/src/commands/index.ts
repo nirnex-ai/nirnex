@@ -1,5 +1,5 @@
-import { openDb, insertParsedModule, setMetaCommitHash, computeGraphEdges } from '@ai-delivery-os/core/dist/db.js';
-import { parseFile } from '@ai-delivery-os/parser/dist/index.js';
+import { openDb, insertParsedModule, setMetaCommitHash, computeGraphEdges } from '@nirnex/core/dist/db.js';
+import { parseFile } from '@nirnex/parser/dist/index.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';

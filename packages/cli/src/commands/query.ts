@@ -1,4 +1,4 @@
-import { openDb } from '@ai-delivery-os/core/dist/db.js';
+import { openDb } from '@nirnex/core/dist/db.js';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -117,7 +117,7 @@ export async function queryCommand(args: string[]): Promise<void> {
   await Promise.all(promises);
   const t1 = performance.now();
 
-  const { checkFreshness, computePenalties, computeConfidence, getConfidenceLabel, computeDegradationTier, getSuggestedNext } = await import('@ai-delivery-os/core/dist/confidence.js');
+  const { checkFreshness, computePenalties, computeConfidence, getConfidenceLabel, computeDegradationTier, getSuggestedNext } = await import('@nirnex/core/dist/confidence.js');
   const freshness = checkFreshness(targetDir);
   const working_tree = execSync('git status --porcelain', { cwd: targetDir, encoding: 'utf8' }).trim() ? 'dirty' : 'clean';
   const penalties = computePenalties({

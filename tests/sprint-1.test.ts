@@ -1,5 +1,5 @@
 /**
- * AI Delivery OS — Sprint 1 Test Suite
+ * Nirnex — Sprint 1 Test Suite
  * 
  * Tests every deliverable from Sprint 1:
  *   1. tree-sitter TypeScript parser (exports, imports, declarations)
@@ -29,8 +29,8 @@ import { tmpdir } from "os";
 // The test assumes packages/parser exports parseFile() and
 // packages/core exports db utilities + schema bootstrap.
 // ─────────────────────────────────────────────────────────────────────────────
-// import { parseFile } from "@ai-delivery-os/parser";
-// import { createDb, insertParsedModule, queryModules, queryDependencies, queryMeta } from "@ai-delivery-os/core";
+// import { parseFile } from "@nirnex/parser";
+// import { createDb, insertParsedModule, queryModules, queryDependencies, queryMeta } from "@nirnex/core";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIXTURE HELPERS

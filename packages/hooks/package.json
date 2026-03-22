@@ -1,5 +1,5 @@
 {
-  "name": "@ai-delivery-os/hooks",
+  "name": "@nirnex/hooks",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",

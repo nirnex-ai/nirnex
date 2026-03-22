@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 /**
- * AI Delivery OS — Sprint 7 Test Suite
+ * Nirnex — Sprint 7 Test Suite
  * Pipeline Integration + Lane Classification
  *
  * Tests every deliverable from Sprint 7:
@@ -28,12 +28,12 @@ import { tmpdir } from "os";
 // ─────────────────────────────────────────────────────────────────────────────
 // Adjust these imports to match your actual package exports.
 // ─────────────────────────────────────────────────────────────────────────────
-// import { classifyLane } from "@ai-delivery-os/core/lane-classifier";
-// import { selectStrategy } from "@ai-delivery-os/core/strategy";
-// import { assembleAnalystPrompt } from "@ai-delivery-os/core/prompt-assembly";
-// import { generateTEEs } from "@ai-delivery-os/core/tee-generator";
-// import { buildECO } from "@ai-delivery-os/core/eco";
-// import { runPipeline } from "@ai-delivery-os/core/pipeline";
+// import { classifyLane } from "@nirnex/core/lane-classifier";
+// import { selectStrategy } from "@nirnex/core/strategy";
+// import { assembleAnalystPrompt } from "@nirnex/core/prompt-assembly";
+// import { generateTEEs } from "@nirnex/core/tee-generator";
+// import { buildECO } from "@nirnex/core/eco";
+// import { runPipeline } from "@nirnex/core/pipeline";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIXTURE HELPERS

@@ -2,10 +2,10 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@ai-delivery-os/core": ["../core/src/index.ts"],
-      "@ai-delivery-os/core/dist/*.js": ["../core/src/*.ts"],
-      "@ai-delivery-os/parser": ["../parser/src/index.ts"],
-      "@ai-delivery-os/parser/dist/*.js": ["../parser/src/*.ts"]
+      "@nirnex/core": ["../core/src/index.ts"],
+      "@nirnex/core/dist/*.js": ["../core/src/*.ts"],
+      "@nirnex/parser": ["../parser/src/index.ts"],
+      "@nirnex/parser/dist/*.js": ["../parser/src/*.ts"]
     },
     "target": "ES2022",
     "module": "ESNext",

@@ -1,4 +1,4 @@
--- ai-delivery-os SQLite schema
+-- Nirnex SQLite schema
 -- All 8 tables: modules, dependencies, edges, patterns, gate_results, summaries, hub_summaries, _meta
 
 PRAGMA journal_mode = WAL;
