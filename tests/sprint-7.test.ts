@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any */
 /**
  * AI Delivery OS — Sprint 7 Test Suite
  * Pipeline Integration + Lane Classification
