@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc --build && cp packages/core/src/schema.sql packages/core/dist/",
+    "build": "tsc --build --force && cp packages/core/src/schema.sql packages/core/dist/",
     "dev": "node packages/cli/dist/index.js",
     "typecheck": "tsc --build",
     "lint": "eslint ."

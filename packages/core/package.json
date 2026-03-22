@@ -1,6 +1,7 @@
 {
   "name": "@nirnex/core",
   "version": "0.1.0",
+  "description": "Nirnex core — database, indexing, and knowledge graph engine",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,18 +16,28 @@
     },
     "./dist/*": "./dist/*"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc --build && cp src/schema.sql dist/",
     "clean": "rm -rf dist"
   },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "typescript": "^5.4.0"
-  },
   "engines": {
     "node": ">=24"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nirnex-ai/nirnex.git",
+    "directory": "packages/core"
+  },
+  "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^12.8.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "typescript": "^5.4.0"
   }
 }

@@ -1,6 +1,7 @@
 {
   "name": "@nirnex/hooks",
   "version": "0.1.0",
+  "description": "Nirnex hooks — Git and CI lifecycle hooks",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,10 +11,23 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc --build",
     "clean": "rm -rf dist"
   },
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nirnex-ai/nirnex.git",
+    "directory": "packages/hooks"
+  },
+  "license": "MIT",
   "devDependencies": {
     "typescript": "^5.4.0"
   }

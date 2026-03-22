@@ -1,6 +1,7 @@
 {
   "name": "@nirnex/parser",
   "version": "0.1.0",
+  "description": "Nirnex parser — Tree-sitter based source code analysis",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,18 +16,28 @@
     },
     "./dist/*": "./dist/*"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc --build",
     "clean": "rm -rf dist"
   },
-  "devDependencies": {
-    "typescript": "^5.4.0"
-  },
   "engines": {
     "node": ">=24"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nirnex-ai/nirnex.git",
+    "directory": "packages/parser"
+  },
+  "license": "MIT",
   "dependencies": {
     "tree-sitter": "^0.21.1",
     "tree-sitter-typescript": "^0.23.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
   }
 }

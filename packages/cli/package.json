@@ -1,9 +1,10 @@
 {
   "name": "@nirnex/cli",
   "version": "0.1.0",
+  "description": "Nirnex CLI — Decision Intelligence for software delivery",
   "type": "module",
   "bin": {
-    "dev": "./bin/dev.js"
+    "nirnex": "./bin/dev.js"
   },
   "exports": {
     ".": {
@@ -11,10 +12,24 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc --build",
     "clean": "rm -rf dist"
   },
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nirnex-ai/nirnex.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT",
   "dependencies": {
     "@nirnex/core": "*",
     "@nirnex/parser": "*"
