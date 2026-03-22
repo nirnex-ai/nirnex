@@ -1,5 +1,7 @@
 # Nirnex
 
+[![CI](https://github.com/praveenvijayan/nirnex/actions/workflows/ci.yml/badge.svg)](https://github.com/praveenvijayan/nirnex/actions/workflows/ci.yml)
+
 Decision Intelligence for Software Delivery
 
 Nirnex is a decision intelligence system for software delivery.
