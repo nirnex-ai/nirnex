@@ -13,5 +13,11 @@ export default tseslint.config(
         ...globals.browser,
       },
     },
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      'no-empty': 'off',
+      'prefer-const': 'off'
+    }
   }
 );

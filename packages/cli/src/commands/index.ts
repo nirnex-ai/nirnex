@@ -41,7 +41,7 @@ function detectModule(fullPath: string, rootDir: string): string {
 
 export function indexCommand(args: string[]): void {
   const isRebuild = args.includes('--rebuild');
-  let targetDir = process.cwd();
+  const targetDir = process.cwd();
 
   const dbPath = path.join(targetDir, '.aidos.db');
   console.log('[dev index] Starting ' + (isRebuild ? 'full rebuild' : 'incremental update') + ' on ' + targetDir);
@@ -59,7 +59,7 @@ export function indexCommand(args: string[]): void {
       filesToProcess = diffStr.split('\n').filter(Boolean)
         .map(f => path.join(targetDir, f))
         .filter(f => (f.endsWith('.ts') || f.endsWith('.tsx')) && fs.existsSync(f));
-    } catch (err) {
+    } catch (_err) {
       console.warn('Could not get changed files from git, falling back to all.');
       walkDir(targetDir, (p) => filesToProcess.push(p));
     }
@@ -101,7 +101,7 @@ export function indexCommand(args: string[]): void {
   try {
     const commitHash = execSync('git rev-parse HEAD', { encoding: 'utf8', cwd: targetDir }).trim();
     setMetaCommitHash(db, commitHash);
-  } catch (err) {
+  } catch (_err) {
     // Ignore if not a git repo
   }
 
