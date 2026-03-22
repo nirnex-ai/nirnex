@@ -1,6 +1,7 @@
 # Nirnex
 
-[![CI](https://github.com/praveenvijayan/nirnex/actions/workflows/ci.yml/badge.svg)](https://github.com/praveenvijayan/nirnex/actions/workflows/ci.yml)
+[![CI](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml)
+[![Release](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml)
 
 Decision Intelligence for Software Delivery
 
