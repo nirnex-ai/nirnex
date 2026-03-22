@@ -1,23 +1,227 @@
-/**
- * CSS files with the .module.css suffix will be treated as CSS modules
- * and scoped locally.
- */
+/* ============================================================
+   NIRNEX — PAGE RESPONSIVE LAYOUT
+   Grid containers + item borders live here.
+   Color / font / spacing stay inline in index.tsx.
+   ============================================================ */
 
-.heroBanner {
-  padding: 4rem 0;
-  text-align: center;
+/* ── HERO ──────────────────────────────────────────────── */
+.heroGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5vw;
+  align-items: center;
   position: relative;
-  overflow: hidden;
 }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
+/* ── PAIN: 5 failure scenarios ─────────────────────────── */
+.painGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.painItem {
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 2.5vw 2vw;
+}
+
+.painItem:last-child {
+  border-right: none;
+}
+
+/* ── INSIGHT ───────────────────────────────────────────── */
+.insightGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6vw;
+  align-items: center;
+}
+
+/* ── SOLUTION header ───────────────────────────────────── */
+.solutionHeaderGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4vw;
+  align-items: start;
+}
+
+/* ── SOLUTION: before / after panels ──────────────────── */
+.beforeAfterGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.beforePanel {
+  border-right: 1px solid rgba(0, 0, 0, 0.10);
+}
+
+/* Comparison rows inside each panel */
+.compareRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 10px 0;
+}
+
+.compareRowFirst {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* ── LAYERS: 3-col ─────────────────────────────────────── */
+.layersGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.layerItem {
+  border-right: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 3.5vw 3vw;
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.layerItem:last-child {
+  border-right: none;
+}
+
+/* ── PRINCIPLES: 2-col ─────────────────────────────────── */
+.principlesGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.principleItem {
+  padding: 3vw;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  border-right: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.principleItem:nth-child(even) {
+  border-right: none;
+}
+
+/* ── CTA ───────────────────────────────────────────────── */
+.ctaGrid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4vw;
+  align-items: center;
+}
+
+.ctaButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   TABLET  ≤ 1024px
+   ============================================================ */
+@media (max-width: 1024px) {
+  .painGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* 3-col pain: items 3 & 5 lose right border naturally,
+     but items at end of each row still need it removed */
+  .painItem:nth-child(3n) {
+    border-right: none;
+  }
+
+  .painItem:last-child {
+    border-right: none;
   }
 }
 
-.buttons {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* ============================================================
+   MOBILE  ≤ 768px
+   ============================================================ */
+@media (max-width: 768px) {
+  /* ── Hero ── */
+  .heroGrid {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  /* ── Pain ── */
+  .painGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .painItem {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 7vw 5vw;
+  }
+
+  .painItem:last-child {
+    border-bottom: none;
+  }
+
+  /* ── Insight ── */
+  .insightGrid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  /* ── Solution header ── */
+  .solutionHeaderGrid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  /* ── Before/after ── */
+  .beforeAfterGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .beforePanel {
+    border-right: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.10);
+  }
+
+  /* Comparison rows: stack label above value */
+  .compareRow {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  /* ── Layers ── */
+  .layersGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .layerItem {
+    border-right: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.10);
+    padding: 7vw 5vw;
+  }
+
+  .layerItem:last-child {
+    border-bottom: none;
+  }
+
+  /* ── Principles ── */
+  .principlesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .principleItem {
+    border-right: none;
+    padding: 7vw 5vw;
+  }
+
+  /* ── CTA ── */
+  .ctaGrid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  .ctaButtons {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
 }
