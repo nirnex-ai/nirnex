@@ -6,16 +6,18 @@ const config = {
   title: 'Nirnex',
   tagline: 'Decision Intelligence for Software Delivery',
   url: 'https://nirnex-ai.github.io',
-  baseUrl: '/',
+  baseUrl: '/nirnex/',
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
   favicon: 'img/favicon.ico',
   organizationName: 'nirnex-ai',
-  projectName: 'nirnex-site',
+  projectName: 'nirnex',
   trailingSlash: false,
 
   markdown: {
     mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
   },
 
   themes: ['@docusaurus/theme-mermaid'],
@@ -52,7 +54,7 @@ const config = {
           },
           {
             type: 'doc',
-            docId: 'architecture/system-overview',
+            docId: 'architecture/eco-schema',
             position: 'left',
             label: 'Technical Spec',
           },
@@ -62,8 +64,8 @@ const config = {
             position: 'left',
           },
           {
-            href: 'https://github.com/ai-delivery-os',
-            label: 'Request Access →',
+            href: 'https://github.com/nirnex-ai/nirnex',
+            label: 'GitHub',
             position: 'right',
           },
         ],
@@ -123,8 +125,8 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          sidebarPath: require.resolve('./sidebars.js'),
-          editUrl: 'https://github.com/ai-delivery-os/docs/edit/main/',
+          sidebarPath: require.resolve('./sidebars.ts'),
+          editUrl: 'https://github.com/nirnex-ai/nirnex/edit/nirnex-site/site/',
           showLastUpdateTime: true,
           remarkPlugins: [],
           rehypePlugins: [],
