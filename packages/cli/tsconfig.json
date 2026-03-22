@@ -16,7 +16,8 @@
     "composite": true
   },
   "references": [
-    { "path": "../core" }
+    { "path": "../core" },
+    { "path": "../parser" }
   ],
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
