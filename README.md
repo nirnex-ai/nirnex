@@ -4,8 +4,6 @@
 
 Decision Intelligence for Software Delivery
 
-[![Nirnex Overview](https://i3.ytimg.com/vi/f_U-nj8hNis/maxresdefault.jpg)](https://youtu.be/f_U-nj8hNis)
-
 Nirnex is a decision intelligence system for software delivery.
 It analyzes your codebase, understands constraints, and determines what should be built, how it should be built, and how confident the system is in that decision.
 
@@ -19,6 +17,8 @@ At its core, Nirnex builds Execution Context Objects (ECOs) — precise, bounded
 
 Nirnex is not a code generator. It is a decision system that governs how software changes are planned and executed.
 
+### Video
+[![Nirnex Overview](https://i3.ytimg.com/vi/f_U-nj8hNis/maxresdefault.jpg)](https://youtu.be/f_U-nj8hNis)
 
 ## Prerequisites
 Before you start, ensure you have the following installed on your system:
