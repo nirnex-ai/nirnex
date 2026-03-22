@@ -12,6 +12,7 @@ permissions:
   pages: write
   id-token: write
 
+# Only one deploy at a time; cancel in-progress builds on new push
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -35,6 +36,18 @@ jobs:
       - name: Install site dependencies
         working-directory: site
         run: npm ci
+
+      - name: Typecheck
+        working-directory: site
+        run: npm run typecheck
+
+      - name: Cache Docusaurus build
+        uses: actions/cache@v4
+        with:
+          path: site/.docusaurus
+          key: docusaurus-${{ runner.os }}-${{ hashFiles('site/docs/**', 'site/src/**', 'site/docusaurus.config.ts', 'site/sidebars.ts') }}
+          restore-keys: |
+            docusaurus-${{ runner.os }}-
 
       - name: Build Docusaurus site
         working-directory: site

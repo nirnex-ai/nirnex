@@ -6,6 +6,8 @@ sidebar_position: 5
 description: What to build first, 20-query benchmark, calibration timeline, and pending items. v9.0 specification.
 ---
 
+import React from 'react';
+
 <span class="u-eyebrow">Introduction · v9.0</span>
 
 # Implementation Roadmap
