@@ -71,7 +71,7 @@ const config = {
           },
           {
             href: 'https://github.com/nirnex-ai/nirnex',
-            label: 'GitHub ↗',
+            label: 'GitHub',
             position: 'right',
             className: 'navbar__link--github',
           },
