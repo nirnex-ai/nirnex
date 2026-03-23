@@ -10,8 +10,8 @@ interface Principle { n: string; title: string; body: string; }
 
 /* ── DATA ──────────────────────────────────────────────── */
 const TRUST_ITEMS = [
-  { icon: '—', label: 'No blind execution',           sub: 'Every agent action is scoped before it runs.' },
-  { icon: '—', label: 'Every decision is auditable',  sub: 'A trace_id connects every step end-to-end.' },
+  { icon: '—', label: 'No blind execution', sub: 'Every agent action is scoped before it runs.' },
+  { icon: '—', label: 'Every decision is auditable', sub: 'A trace_id connects every step end-to-end.' },
   { icon: '—', label: 'AI acts inside defined boundaries', sub: 'Out-of-scope writes are rejected at runtime.' },
 ];
 
@@ -143,19 +143,19 @@ const USE_CASES = [
 ];
 
 const DEMO_BEFORE = [
-  { label: 'Task',       value: 'Update payment validation flow' },
-  { label: 'Scope',      value: 'Unknown — agent decides at runtime' },
+  { label: 'Task', value: 'Update payment validation flow' },
+  { label: 'Scope', value: 'Unknown — agent decides at runtime' },
   { label: 'Files touched', value: '12 files across 4 modules' },
-  { label: 'Trace',      value: 'None' },
-  { label: 'Outcome',    value: 'Regression in 3 unrelated modules' },
+  { label: 'Trace', value: 'None' },
+  { label: 'Outcome', value: 'Regression in 3 unrelated modules' },
 ];
 
 const DEMO_AFTER = [
-  { label: 'Task',       value: 'Update payment validation flow' },
-  { label: 'Scope',      value: 'payment/validator.ts · payment/schema.ts · tests/payment.spec.ts' },
+  { label: 'Task', value: 'Update payment validation flow' },
+  { label: 'Scope', value: 'payment/validator.ts · payment/schema.ts · tests/payment.spec.ts' },
   { label: 'Files touched', value: '2 of 3 declared — 1 unchanged' },
-  { label: 'Trace',      value: 'trace_id: pay-val-0491 · full decision log' },
-  { label: 'Outcome',    value: 'Change applied. Zero unintended writes.' },
+  { label: 'Trace', value: 'trace_id: pay-val-0491 · full decision log' },
+  { label: 'Outcome', value: 'Change applied. Zero unintended writes.' },
 ];
 
 /* ── COMPONENTS ────────────────────────────────────────── */
@@ -225,12 +225,14 @@ function HomepageHero(): React.JSX.Element {
           </p>
 
           <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
-            <Link to="/docs/intro/overview" style={{
+            <Link to="https://youtu.be/f_U-nj8hNis" style={{
               background: '#D63318', color: '#FFFFFF',
               padding: '14px 32px', fontSize: '11px', fontWeight: 700,
               letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
               display: 'inline-block',
-            }}>See How It Works</Link>
+            }} target='_blank'> <i style={{ marginRight: '8px', width: '24px', height: '24px', display: 'inline-block', verticalAlign: 'middle' }}><svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0.0 0.0 110.0 135.0">
+              <path d="m22.281 17.664c-10.754 0-19.504 8.7578-19.504 19.516v25.641c0 10.758 8.75 19.52 19.504 19.52h55.434c10.754 0 19.504-8.7617 19.504-19.52v-25.641c0-10.758-8.7539-19.516-19.504-19.516zm18.188 18.422c0.55859-0.019532 1.1133 0.12109 1.5977 0.40234l18.875 10.93c0.92188 0.53516 1.4922 1.5195 1.4922 2.5898 0 1.0664-0.57031 2.0547-1.4922 2.5898l-18.875 10.926c-0.92188 0.53516-2.0586 0.53516-2.9844 0.003906-0.92188-0.53516-1.4883-1.5234-1.4883-2.5898v-21.859c-0.003906-1.6133 1.2695-2.9336 2.875-2.9883z" fill='#2b0805 ' />
+            </svg> </i>See How It Works</Link>
             <Link to="/docs/intro/overview" style={{
               background: 'transparent', color: 'var(--lp-h1)',
               padding: '14px 32px', fontSize: '11px', fontWeight: 700,
@@ -256,11 +258,11 @@ function HomepageHero(): React.JSX.Element {
             }}>Nirnex — Execution Signal</div>
 
             {[
-              { step: 'PROMPT',     detail: 'Update payment validation flow',       status: 'received' },
-              { step: 'CONTEXT',    detail: 'Scoped to 3 files · 47 symbols verified', status: 'built'    },
-              { step: 'CONSTRAINTS', detail: 'max_lines: 200 · blocked: legacy/*',   status: 'applied'  },
-              { step: 'EXECUTION',  detail: '2 files modified · 0 scope violations', status: 'complete' },
-              { step: 'TRACE',      detail: 'trace_id: pay-val-0491 · logged',       status: 'stored'   },
+              { step: 'PROMPT', detail: 'Update payment validation flow', status: 'received' },
+              { step: 'CONTEXT', detail: 'Scoped to 3 files · 47 symbols verified', status: 'built' },
+              { step: 'CONSTRAINTS', detail: 'max_lines: 200 · blocked: legacy/*', status: 'applied' },
+              { step: 'EXECUTION', detail: '2 files modified · 0 scope violations', status: 'complete' },
+              { step: 'TRACE', detail: 'trace_id: pay-val-0491 · logged', status: 'stored' },
             ].map((row, i, arr) => (
               <div key={i}>
                 <div style={{
@@ -401,7 +403,7 @@ function BeliefSection(): React.JSX.Element {
           }}>
             The only reliable lever is{' '}
             <strong style={{ color: '#FFFFFF' }}>controlling the inputs the agent operates on,
-            bounding what it can write, and recording every step of its reasoning</strong> — before
+              bounding what it can write, and recording every step of its reasoning</strong> — before
             it acts, during execution, and after completion.
           </p>
           <p style={{
@@ -459,11 +461,11 @@ function SolutionSection(): React.JSX.Element {
         {/* Right: vertical flow diagram */}
         <div className={styles.flowDiagram}>
           {[
-            { label: 'Prompt',             sub: 'Incoming change request or spec' },
-            { label: 'Execution Context',  sub: 'Parse graph · scored relevance · exact scope' },
-            { label: 'Constraints',        sub: 'Allowed modules · blocked files · max scope' },
+            { label: 'Prompt', sub: 'Incoming change request or spec' },
+            { label: 'Execution Context', sub: 'Parse graph · scored relevance · exact scope' },
+            { label: 'Constraints', sub: 'Allowed modules · blocked files · max scope' },
             { label: 'Controlled Execution', sub: 'Agent acts inside bounds · violations rejected', highlight: true },
-            { label: 'Trace',              sub: 'trace_id · full decision log · replayable' },
+            { label: 'Trace', sub: 'trace_id · full decision log · replayable' },
           ].map((step, i, arr) => (
             <React.Fragment key={i}>
               <div className={styles.flowStep} style={step.highlight ? { borderColor: '#D63318', background: 'rgba(214,51,24,0.04)' } : {}}>

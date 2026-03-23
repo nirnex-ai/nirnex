@@ -138,6 +138,16 @@ const config = {
       },
     }),
 
+  plugins: [
+    [
+      '@docusaurus/plugin-google-gtag',
+      {
+        trackingID: 'G-RD2P2RGQLL',
+        anonymizeIP: false,
+      },
+    ],
+  ],
+
   presets: [
     [
       'classic',
