@@ -164,7 +164,7 @@ const DEMO_AFTER = [
 function SectionLabel({ text }: { text: string }): React.JSX.Element {
   return (
     <div style={{
-      fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em',
+      fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
       textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem',
     }}>{text}</div>
   );
@@ -195,7 +195,7 @@ function HomepageHero(): React.JSX.Element {
         <div>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '8px',
-            fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em',
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.18em',
             textTransform: 'uppercase', color: 'var(--lp-muted)', marginBottom: '1.75rem',
           }}>
             <span style={{ width: '20px', height: '1px', background: '#D63318', display: 'inline-block', flexShrink: 0 }} />
@@ -227,7 +227,7 @@ function HomepageHero(): React.JSX.Element {
           <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
             <Link to="https://youtu.be/f_U-nj8hNis" style={{
               background: '#D63318', color: '#FFFFFF',
-              padding: '14px 32px', fontSize: '11px', fontWeight: 700,
+              padding: '14px 32px', fontSize: '12px', fontWeight: 700,
               letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
               display: 'inline-block',
             }} target='_blank'> <i style={{ marginRight: '8px', width: '24px', height: '24px', display: 'inline-block', verticalAlign: 'middle' }}><svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0.0 0.0 110.0 135.0">
@@ -235,7 +235,7 @@ function HomepageHero(): React.JSX.Element {
             </svg> </i>See How It Works</Link>
             <Link to="/docs/intro/overview" style={{
               background: 'transparent', color: 'var(--lp-h1)',
-              padding: '14px 32px', fontSize: '11px', fontWeight: 700,
+              padding: '14px 32px', fontSize: '12px', fontWeight: 700,
               letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
               border: '1px solid var(--lp-ghost-btn-border)', borderLeft: 'none',
               display: 'inline-block',
@@ -253,7 +253,7 @@ function HomepageHero(): React.JSX.Element {
             <div style={{
               padding: '10px 16px',
               borderBottom: '1px solid var(--lp-border)',
-              fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em',
+              fontSize: '12px', fontWeight: 700, letterSpacing: '0.15em',
               textTransform: 'uppercase', color: '#D63318',
             }}>Nirnex — Execution Signal</div>
 
@@ -272,7 +272,7 @@ function HomepageHero(): React.JSX.Element {
                   background: i === 3 ? 'rgba(214,51,24,0.04)' : 'transparent',
                 }}>
                   <span style={{
-                    fontSize: '9px', fontWeight: 700, letterSpacing: '0.12em',
+                    fontSize: '12px', fontWeight: 700, letterSpacing: '0.12em',
                     textTransform: 'uppercase', color: '#D63318',
                     minWidth: '80px', paddingTop: '2px',
                   }}>{row.step}</span>
@@ -280,7 +280,7 @@ function HomepageHero(): React.JSX.Element {
                     {row.detail}
                   </span>
                   <span style={{
-                    fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em',
+                    fontSize: '12px', fontWeight: 700, letterSpacing: '0.1em',
                     textTransform: 'uppercase', color: 'var(--lp-muted)',
                     whiteSpace: 'nowrap',
                   }}>↳ {row.status}</span>
@@ -347,7 +347,7 @@ function ProblemSection(): React.JSX.Element {
         {PROBLEMS.map((p, i) => (
           <div key={i} className={styles.problemCard}>
             <div style={{
-              fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em',
+              fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
               textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
             }}>{p.n} ·</div>
             <div style={{
@@ -378,7 +378,7 @@ function BeliefSection(): React.JSX.Element {
       <div className={styles.insightGrid}>
         <div>
           <div style={{
-            fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em',
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
             textTransform: 'uppercase', color: 'rgba(214,51,24,0.7)', marginBottom: '1.25rem',
           }}>The Core Belief</div>
           <h2 style={{
@@ -470,7 +470,7 @@ function SolutionSection(): React.JSX.Element {
             <React.Fragment key={i}>
               <div className={styles.flowStep} style={step.highlight ? { borderColor: '#D63318', background: 'rgba(214,51,24,0.04)' } : {}}>
                 <span style={{
-                  fontSize: '9px', fontWeight: 700, letterSpacing: '0.15em',
+                  fontSize: '12px', fontWeight: 700, letterSpacing: '0.15em',
                   textTransform: 'uppercase', color: step.highlight ? '#D63318' : 'var(--lp-muted)',
                   minWidth: '16px',
                 }}>{String(i + 1).padStart(2, '0')}</span>
@@ -510,7 +510,7 @@ function MechanicsSection(): React.JSX.Element {
         {MECHANICS.map((m, i) => (
           <div key={i} className={styles.mechanicStep}>
             <div style={{
-              fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em',
+              fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
               textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
             }}>{m.n} ·</div>
             <div style={{
@@ -536,7 +536,7 @@ function ComparisonSection(): React.JSX.Element {
         {/* Without Nirnex */}
         <div className={styles.beforePanel} style={{ padding: '4vw', background: 'var(--lp-compare-without-bg)' }}>
           <div style={{
-            fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em',
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
             textTransform: 'uppercase', color: 'var(--lp-compare-without-lbl)', marginBottom: '0.5rem',
           }}>Without Nirnex</div>
           <div style={{
@@ -556,7 +556,7 @@ function ComparisonSection(): React.JSX.Element {
         {/* With Nirnex */}
         <div style={{ padding: '4vw', background: 'var(--lp-compare-with-bg)' }}>
           <div style={{
-            fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em',
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
             textTransform: 'uppercase', color: '#D63318', marginBottom: '0.5rem',
           }}>With Nirnex</div>
           <div style={{
@@ -607,7 +607,7 @@ function LayersSection(): React.JSX.Element {
         {LAYERS.map((l: Layer, i: number) => (
           <Link key={i} to={l.href} className={styles.layerItem} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
             <div style={{
-              fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em',
+              fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
               textTransform: 'uppercase', color: '#D63318', marginBottom: '1.5rem',
             }}>Layer {l.num} ·</div>
             <div style={{
@@ -651,7 +651,7 @@ function PrinciplesSection(): React.JSX.Element {
         {PRINCIPLES.map((p: Principle, i: number) => (
           <div key={i} className={styles.principleItem}>
             <div style={{
-              fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em',
+              fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
               textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem',
             }}>{p.n} ·</div>
             <div style={{
@@ -684,7 +684,7 @@ function UseCasesSection(): React.JSX.Element {
         {USE_CASES.map((uc, i) => (
           <div key={i} className={styles.useCaseCard}>
             <div style={{
-              fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em',
+              fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
               textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
             }}>{uc.n} ·</div>
             <div style={{
@@ -729,14 +729,14 @@ function DemoSection(): React.JSX.Element {
         {/* Before */}
         <div className={styles.demoPanel} style={{ background: 'var(--lp-compare-without-bg)' }}>
           <div style={{
-            fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em',
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
             textTransform: 'uppercase', color: 'var(--lp-compare-without-lbl)',
             marginBottom: '1.25rem',
           }}>Without Nirnex</div>
           {DEMO_BEFORE.map((row, i) => (
             <div key={i} className={styles.demoPanelRow}>
               <span style={{
-                fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em',
+                fontSize: '12px', fontWeight: 700, letterSpacing: '0.1em',
                 textTransform: 'uppercase', color: 'var(--lp-compare-without-lbl)',
                 minWidth: '100px', flexShrink: 0,
               }}>{row.label}</span>
@@ -748,13 +748,13 @@ function DemoSection(): React.JSX.Element {
         {/* After */}
         <div className={styles.demoPanel} style={{ background: 'var(--lp-compare-with-bg)', borderColor: 'rgba(214,51,24,0.2)' }}>
           <div style={{
-            fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em',
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
             textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
           }}>With Nirnex</div>
           {DEMO_AFTER.map((row, i) => (
             <div key={i} className={styles.demoPanelRow}>
               <span style={{
-                fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em',
+                fontSize: '12px', fontWeight: 700, letterSpacing: '0.1em',
                 textTransform: 'uppercase', color: 'var(--lp-compare-with-lbl)',
                 minWidth: '100px', flexShrink: 0,
               }}>{row.label}</span>
@@ -778,7 +778,7 @@ function CtaSection(): React.JSX.Element {
     }}>
       <div>
         <div style={{
-          fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em',
+          fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
           textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
         }}>
           For CTOs · Staff Engineers · AI Platform Teams
@@ -801,13 +801,13 @@ function CtaSection(): React.JSX.Element {
       <div className={styles.ctaButtons}>
         <Link to="/docs/intro/overview" style={{
           background: '#D63318', color: '#FFFFFF',
-          padding: '16px 36px', fontSize: '11px', fontWeight: 700,
+          padding: '16px 36px', fontSize: '12px', fontWeight: 700,
           letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
           whiteSpace: 'nowrap', display: 'inline-block', textAlign: 'center',
         }}>Read the Architecture →</Link>
         <Link to="/docs/business/executive-summary" style={{
           background: 'transparent', color: 'rgba(255,255,255,0.55)',
-          padding: '16px 36px', fontSize: '11px', fontWeight: 700,
+          padding: '16px 36px', fontSize: '12px', fontWeight: 700,
           letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
           border: '1px solid rgba(255,255,255,0.12)',
           whiteSpace: 'nowrap', display: 'inline-block', textAlign: 'center',
