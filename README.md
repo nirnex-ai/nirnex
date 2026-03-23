@@ -79,8 +79,6 @@ Or using a spec file:
 nirnex plan .ai/specs/add-retry.md
 ```
 
----
-
 ## What `nirnex setup` Creates
 
 ```
@@ -132,7 +130,7 @@ Initialize Nirnex in a repository.
 nirnex setup
 ```
 
----
+
 
 ### `nirnex status`
 
@@ -142,7 +140,7 @@ Check repository health.
 nirnex status
 ```
 
----
+
 
 ### `nirnex index`
 
@@ -153,7 +151,7 @@ nirnex index
 nirnex index --rebuild
 ```
 
----
+
 
 ### `nirnex query`
 
@@ -163,7 +161,7 @@ Explore codebase structure with confidence signals.
 nirnex query "What depends on paymentMachine?"
 ```
 
----
+
 
 ### `nirnex plan`
 
@@ -174,7 +172,7 @@ nirnex plan "Fix button padding"
 nirnex plan .ai/specs/add-retry.md
 ```
 
----
+
 
 ### `nirnex trace`
 
@@ -186,7 +184,7 @@ nirnex trace --list
 nirnex trace --id tr_xxx
 ```
 
----
+
 
 ### `nirnex override`
 
@@ -196,7 +194,7 @@ Bypass restrictions with audit logging.
 nirnex override --reason "Hotfix" plan .ai/specs/file.md
 ```
 
----
+
 
 ### `nirnex replay`
 
