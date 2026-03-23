@@ -55,6 +55,11 @@
   --lp-ghost-btn-border:     rgba(0, 0, 0, 0.20);
   --lp-embed-border:         rgba(0, 0, 0, 0.12);
   --lp-watermark:            rgba(0, 0, 0, 0.04);
+
+  /* Trust strip — always dark */
+  --lp-trust-bg:             #111111;
+  --lp-trust-text:           #FFFFFF;
+  --lp-trust-muted:          #888888;
 }
 
 /* ── LIGHT MODE TOKENS ────────────────────────────────────── */
@@ -142,6 +147,11 @@ html[data-theme='dark'] {
   --lp-ghost-btn-border:     rgba(255, 255, 255, 0.18);
   --lp-embed-border:         rgba(255, 255, 255, 0.08);
   --lp-watermark:            rgba(255, 255, 255, 0.03);
+
+  /* Trust strip — slightly lifted in dark mode */
+  --lp-trust-bg:             #1A1A1A;
+  --lp-trust-text:           #FFFFFF;
+  --lp-trust-muted:          #666666;
 }
 
 /* ── DARK MODE TOKENS ─────────────────────────────────────── */
@@ -276,15 +286,37 @@ body {
   background: transparent !important;
 }
 
-.navbar__items--right .navbar__link:last-of-type {
+/* Primary CTA — "See the Architecture" */
+.navbar__link--cta {
   background: var(--ados-vermilion) !important;
   color: #FFFFFF !important;
-  border-left: none;
+  border-left: none !important;
+  letter-spacing: 0.15em !important;
 }
 
-.navbar__items--right .navbar__link:last-of-type:hover {
+.navbar__link--cta:hover {
   background: #FFFFFF !important;
   color: #000000 !important;
+}
+
+/* Secondary text CTA — "Business Case" */
+.navbar__link--secondary {
+  color: #666666 !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.navbar__link--secondary:hover {
+  color: var(--ados-vermilion) !important;
+}
+
+/* GitHub link */
+.navbar__link--github {
+  color: #666666 !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.navbar__link--github:hover {
+  color: #FFFFFF !important;
 }
 
 /* ── THEME TOGGLE ────────────────────────────────────────── */

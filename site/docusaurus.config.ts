@@ -1,6 +1,6 @@
 const { themes } = require('prism-react-renderer');
 const lightCodeTheme = themes.github;
-const darkCodeTheme  = themes.dracula;
+const darkCodeTheme = themes.dracula;
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -27,7 +27,7 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       colorMode: {
-        defaultMode: 'light',
+        defaultMode: 'dark',
         disableSwitch: false,
         respectPrefersColorScheme: true,
       },
@@ -54,12 +54,6 @@ const config = {
           },
           {
             type: 'doc',
-            docId: 'business/executive-summary',
-            position: 'left',
-            label: 'Business Case',
-          },
-          {
-            type: 'doc',
             docId: 'architecture/eco-schema',
             position: 'left',
             label: 'Technical Spec',
@@ -70,9 +64,28 @@ const config = {
             position: 'left',
           },
           {
+            type: 'doc',
+            docId: 'intro/overview',
+            position: 'left',
+            label: 'Docs',
+          },
+          {
             href: 'https://github.com/nirnex-ai/nirnex',
-            label: 'GitHub',
+            label: 'GitHub ↗',
             position: 'right',
+            className: 'navbar__link--github',
+          },
+          {
+            to: '/docs/business/executive-summary',
+            label: 'Business Case',
+            position: 'right',
+            className: 'navbar__link--secondary',
+          },
+          {
+            to: '/docs/intro/overview',
+            label: 'See the Architecture',
+            position: 'right',
+            className: 'navbar__link--cta',
           },
         ],
       },
@@ -108,7 +121,7 @@ const config = {
             ],
           },
         ],
-        copyright: `AI DELIVERY OS · V9.0 · MARCH 2026 · IMPLEMENTATION-READY SPECIFICATION`,
+        copyright: `&copy; ${new Date().getFullYear()} Nirnex· AI Company`,
       },
 
       prism: {

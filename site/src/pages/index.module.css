@@ -1,8 +1,7 @@
 /* ============================================================
-   NIRNEX — PAGE RESPONSIVE LAYOUT
-   Grid containers + item borders live here.
-   All border colors use --lp-* tokens so they flip with theme.
-   Color / font / spacing stay inline in index.tsx.
+   NIRNEX — PAGE LAYOUT
+   All layout grids, item borders, and responsive rules.
+   Colors stay in index.tsx via --lp-* CSS tokens.
    ============================================================ */
 
 /* ── HERO ──────────────────────────────────────────────── */
@@ -14,27 +13,40 @@
   position: relative;
 }
 
-/* ── PAIN: 3-col on desktop ────────────────────────────── */
-.painGrid {
+/* ── TRUST STRIP ───────────────────────────────────────── */
+.trustStrip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid var(--lp-border-sub);
 }
 
-.painItem {
-  border-right: 1px solid var(--lp-border-sub);
+.trustItem {
+  padding: 2rem 2.5vw;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.trustItem:last-child {
+  border-right: none;
+}
+
+/* ── PROBLEM: 3-col cards ──────────────────────────────── */
+.problemGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.problemCard {
   padding: 3vw 2.5vw;
+  border-right: 1px solid var(--lp-border-sub);
 }
 
-.painItem:nth-child(3n) {
+.problemCard:last-child {
   border-right: none;
 }
 
-.painItem:last-child {
-  border-right: none;
-}
-
-/* ── INSIGHT ───────────────────────────────────────────── */
+/* ── INSIGHT / BELIEF ──────────────────────────────────── */
 .insightGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -42,15 +54,57 @@
   align-items: center;
 }
 
-/* ── SOLUTION header ───────────────────────────────────── */
-.solutionHeaderGrid {
+/* ── SOLUTION OVERVIEW ─────────────────────────────────── */
+.solutionGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4vw;
+  gap: 6vw;
   align-items: start;
 }
 
-/* ── SOLUTION: before / after panels ──────────────────── */
+/* Flow diagram inside solution */
+.flowDiagram {
+  display: flex;
+  flex-direction: column;
+}
+
+.flowStep {
+  padding: 14px 20px;
+  border: 1px solid var(--lp-border);
+  border-bottom: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.flowStep:last-child {
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.flowConnector {
+  padding: 4px 20px;
+  font-size: 14px;
+  color: #D63318;
+  line-height: 1;
+}
+
+/* ── MECHANICS: 4-step ─────────────────────────────────── */
+.mechanicsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.mechanicStep {
+  padding: 3vw 2.5vw;
+  border-right: 1px solid var(--lp-border-sub);
+  position: relative;
+}
+
+.mechanicStep:last-child {
+  border-right: none;
+}
+
+/* ── COMPARISON: before/after ──────────────────────────── */
 .beforeAfterGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -60,19 +114,27 @@
   border-right: 1px solid var(--lp-border);
 }
 
-.compareRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+.compareList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.compareList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--lp-border-sub);
-  padding: 14px 0;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.compareRowFirst {
-  border-top: 1px solid var(--lp-border-sub);
+.compareList li:last-child {
+  border-bottom: none;
 }
 
-/* ── LAYERS: 3-col ─────────────────────────────────────── */
+/* ── LAYERS: 3-col architecture ────────────────────────── */
 .layersGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -107,6 +169,49 @@
   border-right: none;
 }
 
+/* ── USE CASES: 3-col ──────────────────────────────────── */
+.useCasesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.useCaseCard {
+  padding: 3vw 2.5vw;
+  border-right: 1px solid var(--lp-border-sub);
+}
+
+.useCaseCard:last-child {
+  border-right: none;
+}
+
+/* ── DEMO ──────────────────────────────────────────────── */
+.demoGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4vw;
+  align-items: start;
+}
+
+.demoPanel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2rem;
+}
+
+.demoPanelRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: var(--font-mono);
+}
+
+.demoPanelRow:last-child {
+  border-bottom: none;
+}
+
 /* ── CTA ───────────────────────────────────────────────── */
 .ctaGrid {
   display: grid;
@@ -126,20 +231,16 @@
    TABLET  ≤ 1024px
    ============================================================ */
 @media (max-width: 1024px) {
-  .painGrid {
+  .mechanicsGrid {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .painItem:nth-child(3n) {
-    border-right: 1px solid var(--lp-border-sub);
-  }
-
-  .painItem:nth-child(even) {
+  .mechanicStep:nth-child(even) {
     border-right: none;
   }
 
-  .painItem:last-child {
-    border-right: none;
+  .mechanicStep:nth-child(odd) {
+    border-bottom: 1px solid var(--lp-border-sub);
   }
 }
 
@@ -153,23 +254,33 @@
     gap: 2.5rem;
   }
 
-  /* ── Pain ── */
-  .painGrid {
+  /* ── Trust strip ── */
+  .trustStrip {
     grid-template-columns: 1fr;
   }
 
-  .painItem {
+  .trustItem {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.5rem 24px;
+  }
+
+  .trustItem:last-child {
+    border-bottom: none;
+  }
+
+  /* ── Problem ── */
+  .problemGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .problemCard {
     border-right: none;
     border-bottom: 1px solid var(--lp-border-sub);
     padding: 40px 24px;
   }
 
-  .painItem:nth-child(3n),
-  .painItem:nth-child(even) {
-    border-right: none;
-  }
-
-  .painItem:last-child {
+  .problemCard:last-child {
     border-bottom: none;
   }
 
@@ -179,10 +290,25 @@
     gap: 2rem;
   }
 
-  /* ── Solution header ── */
-  .solutionHeaderGrid {
+  /* ── Solution ── */
+  .solutionGrid {
     grid-template-columns: 1fr;
-    gap: 1.5rem;
+    gap: 2rem;
+  }
+
+  /* ── Mechanics ── */
+  .mechanicsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .mechanicStep {
+    border-right: none;
+    border-bottom: 1px solid var(--lp-border-sub);
+    padding: 40px 24px;
+  }
+
+  .mechanicStep:last-child {
+    border-bottom: none;
   }
 
   /* ── Before/after ── */
@@ -193,12 +319,6 @@
   .beforePanel {
     border-right: none;
     border-bottom: 1px solid var(--lp-border);
-  }
-
-  .compareRow {
-    grid-template-columns: 1fr;
-    gap: 4px;
-    padding: 16px 0;
   }
 
   /* ── Layers ── */
@@ -224,6 +344,27 @@
   .principleItem {
     border-right: none;
     padding: 44px 24px;
+  }
+
+  /* ── Use Cases ── */
+  .useCasesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .useCaseCard {
+    border-right: none;
+    border-bottom: 1px solid var(--lp-border-sub);
+    padding: 40px 24px;
+  }
+
+  .useCaseCard:last-child {
+    border-bottom: none;
+  }
+
+  /* ── Demo ── */
+  .demoGrid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
   }
 
   /* ── CTA ── */
