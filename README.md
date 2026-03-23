@@ -17,7 +17,9 @@ It analyzes your repository, determines what should be built, how it should be b
 
 > Nirnex is not a code generator. It is a decision system that governs how software changes are planned and executed.
 
-[![Watch the video](https://img.shields.io/badge/▶_Watch_Demo-Nirnex_Architecture-blue?style=for-the-badge&logo=youtube&logoColor=white)](https://nirnex-ai.github.io/nirnex/Nirnex__The_Architecture_of_Controlled_Execution.mp4)
+<video src="https://github.com/user-attachments/assets/ab7ffbfe-fa29-44b9-be6e-34fbfd810116" controls width="100%">
+  Your browser does not support the video tag.
+</video>
 
 
 ---
