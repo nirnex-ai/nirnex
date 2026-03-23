@@ -38,12 +38,14 @@ Nirnex introduces structure into this process:
 
 ```sh
 npm install -g nirnex
+```
 
 2. Enable Nirnex in your project
 
+```sh
 cd your-project
 nirnex setup
-
+```
 This command:
 	•	creates a .ai/ workspace
 	•	generates project configuration
@@ -55,24 +57,28 @@ This command:
 
 3. Verify setup
 
+```sh
 nirnex status
-
+```
 
 ⸻
 
 4. Run your first plan
 
+```sh
 nirnex plan "Fix button padding on mobile"
 
+```
 Or using a spec file:
 
+```sh
 nirnex plan .ai/specs/add-retry.md
-
+```
 
 ⸻
 
 What nirnex setup Creates
-
+```sh
 .ai/
   specs/
   prompts/
@@ -83,6 +89,7 @@ What nirnex setup Creates
 
 .ai-index/
 nirnex.config.json
+```
 
 Explanation
 	•	.ai/specs/
@@ -107,88 +114,86 @@ Requirements
 	•	ast-grep CLI (recommended)
 
 For planning:
-
+```sh
 export ANTHROPIC_API_KEY="sk-ant-..."
-
+```
 
 ⸻
 
 Core Commands
-
+```sh
 nirnex setup
-
+```
 Initialize Nirnex in a repository.
 
 nirnex setup
 
-
 ⸻
-
+```sh
 nirnex status
-
+```
 Check repository health.
 
 nirnex status
 
 
 ⸻
-
+```sh
 nirnex index
-
+```
 Build or refresh the structural index.
-
+```sh
 nirnex index --rebuild
 nirnex index
-
+```
 
 ⸻
-
+```sh
 nirnex query
-
+```
 Explore codebase structure with confidence signals.
-
+```sh
 nirnex query "What depends on paymentMachine?"
-
+```
 
 ⸻
-
+```sh
 nirnex plan
-
+```
 Generate a bounded planning decision.
-
+```
 nirnex plan "Fix button padding"
 nirnex plan .ai/specs/add-retry.md
-
+```
 
 ⸻
-
+```sh
 nirnex trace
-
+```
 Inspect decision traces.
-
+```sh
 nirnex trace --last
 nirnex trace --list
 nirnex trace --id tr_xxx
-
+```
 
 ⸻
-
+```sh
 nirnex override
-
+```
 Bypass restrictions with audit logging.
-
+```sh
 nirnex override --reason "Hotfix" plan .ai/specs/file.md
-
-
+```
 ⸻
-
+```sh
 nirnex replay
-
+```
 Re-evaluate past decisions.
-
+```sh
 nirnex replay --trace tr_xxx
 nirnex replay --all --since 7d
-
+```
 
 ⸻
 
@@ -284,18 +289,18 @@ These directly influence confidence and lane selection.
 Troubleshooting
 
 index empty
-
+```sh
 nirnex index --rebuild
-
+```
 
 ⸻
 
 Freshness penalties
 
 Fix by:
-
+```sh
 nirnex index
-
+```
 Or enable git hook during setup.
 
 ⸻
@@ -328,45 +333,4 @@ It makes decisions:
 	•	traceable
 	•	confidence-aware
 
-so teams can move faster without losing control.
-
----
-
-## Final critical push (important)
-
-This version is **strong for adoption**, but let me challenge you:
-
-### Where you might still be biased
-You are still trying to balance:
-- “this is a serious system”
-- “this should be easy to adopt”
-
-Those goals conflict.
-
-You need to decide:
-👉 Is Nirnex a **power tool for senior engineers**  
-or  
-👉 a **default layer for all developers**
-
-Your README currently sits in the middle.
-
----
-
-## Opposing viewpoint
-
-If your target is **platform teams / staff engineers**, you could:
-- keep more technical depth
-- expose internals earlier
-- lean into complexity as a feature
-
-That might actually increase credibility for that audience.
-
----
-
-## Questions you should answer next
-
-1. Why should a team adopt Nirnex instead of just using Cursor / Copilot + conventions?
-2. How does Nirnex prove correctness better than existing tools? (what evidence?)
-3. What is the *first “aha moment”* you want a user to experience?
-
-If you answer those clearly, your README becomes a growth engine — not just documentation.
+So teams can move faster without losing control.
