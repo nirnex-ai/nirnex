@@ -93,14 +93,15 @@ const WITH_ROWS = [
 function HomepageHero(): React.JSX.Element {
   return (
     <section style={{
-      background: '#0D0D0D', color: '#FFFFFF',
+      background: 'var(--lp-hero-bg)',
+      color: 'var(--lp-h1)',
       padding: '7vw 4vw 6vw', position: 'relative', overflow: 'hidden',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      borderBottom: '1px solid var(--lp-border-sub)',
     }}>
-      {/* Watermark — hidden on mobile via font-size scaling */}
+      {/* Watermark */}
       <div aria-hidden="true" style={{
         position: 'absolute', top: '-4vw', right: '-2vw',
-        fontSize: '22vw', fontWeight: 900, color: 'rgba(255,255,255,0.03)',
+        fontSize: '22vw', fontWeight: 900, color: 'var(--lp-watermark)',
         lineHeight: 1, letterSpacing: '-0.04em', pointerEvents: 'none',
         textTransform: 'uppercase', fontFamily: 'Space Grotesk, sans-serif',
       }}>OS</div>
@@ -111,7 +112,7 @@ function HomepageHero(): React.JSX.Element {
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '8px',
             fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em',
-            textTransform: 'uppercase', color: '#888888', marginBottom: '1.75rem',
+            textTransform: 'uppercase', color: 'var(--lp-muted)', marginBottom: '1.75rem',
           }}>
             <span style={{ width: '20px', height: '1px', background: '#D63318', display: 'inline-block', flexShrink: 0 }} />
             For engineering teams shipping with AI agents
@@ -120,19 +121,19 @@ function HomepageHero(): React.JSX.Element {
           <h1 style={{
             fontSize: 'clamp(2.4rem,5vw,5rem)', fontWeight: 900, lineHeight: 0.95,
             textTransform: 'uppercase', letterSpacing: '-0.03em',
-            marginBottom: '1.5rem', color: '#FFFFFF',
+            marginBottom: '1.5rem', color: 'var(--lp-h1)',
           }}>
             You Can't Debug<br />Why Your AI Made<br />
             <span style={{ color: '#D63318' }}>That Decision.</span>
           </h1>
 
-          <p style={{ fontSize: '15px', fontWeight: 400, lineHeight: 1.8, color: '#AAAAAA', marginBottom: '0.75rem' }}>
+          <p style={{ fontSize: '17px', fontWeight: 400, lineHeight: 1.75, color: 'var(--lp-hero-body)', marginBottom: '0.75rem' }}>
             The output looked correct. The customer got the wrong result. Your team spent days
             tracing it. There were no logs. No reasoning chain. No replay.
           </p>
-          <p style={{ fontSize: '15px', fontWeight: 400, lineHeight: 1.8, color: '#AAAAAA', marginBottom: '2.5rem' }}>
+          <p style={{ fontSize: '17px', fontWeight: 400, lineHeight: 1.75, color: 'var(--lp-hero-body)', marginBottom: '2.5rem' }}>
             Nirnex is a runtime that decides{' '}
-            <strong style={{ color: '#FFFFFF', fontWeight: 600 }}>what your AI is allowed to do —
+            <strong style={{ color: 'var(--lp-h1)', fontWeight: 600 }}>what your AI is allowed to do —
             and records exactly why it did it.</strong>
           </p>
 
@@ -144,10 +145,10 @@ function HomepageHero(): React.JSX.Element {
               display: 'inline-block',
             }}>See How It Works</Link>
             <Link to="/docs/business/executive-summary" style={{
-              background: 'transparent', color: '#FFFFFF',
+              background: 'transparent', color: 'var(--lp-h1)',
               padding: '14px 32px', fontSize: '11px', fontWeight: 700,
               letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
-              border: '1px solid rgba(255,255,255,0.18)', borderLeft: 'none',
+              border: '1px solid var(--lp-ghost-btn-border)', borderLeft: 'none',
               display: 'inline-block',
             }}>Business Case →</Link>
           </div>
@@ -157,7 +158,7 @@ function HomepageHero(): React.JSX.Element {
         <div style={{ position: 'relative', width: '100%' }}>
           <div style={{
             position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden',
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid var(--lp-embed-border)',
           }}>
             <iframe
               src="https://www.youtube.com/embed/f_U-nj8hNis"
@@ -177,13 +178,13 @@ function HomepageHero(): React.JSX.Element {
 /* 2 ── PAIN ─────────────────────────────────────────────── */
 function PainSection(): React.JSX.Element {
   return (
-    <section style={{ background: '#111111', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+    <section style={{ background: 'var(--lp-pain-bg)', borderBottom: '1px solid var(--lp-border-sub)' }}>
       <div style={{ padding: '5vw 4vw 3vw' }}>
         <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem' }}>The Problem</div>
-        <h2 style={{ fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1, color: '#FFFFFF', border: 'none', padding: 0, margin: '0 0 0.875rem' }}>
+        <h2 style={{ fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--lp-h2)', border: 'none', padding: 0, margin: '0 0 0.875rem' }}>
           Here's What's Actually Happening
         </h2>
-        <p style={{ fontSize: '14px', fontWeight: 400, color: '#666666', lineHeight: 1.75, maxWidth: '560px', margin: 0 }}>
+        <p style={{ fontSize: '16px', fontWeight: 400, color: 'var(--lp-muted)', lineHeight: 1.7, maxWidth: '560px', margin: 0 }}>
           Not hypothetical failure modes. Real scenarios on teams shipping with AI agents today —
           all sharing the same root cause: agents operate without verified execution context.
         </p>
@@ -193,10 +194,10 @@ function PainSection(): React.JSX.Element {
         {FAILURES.map((f: Failure, i: number) => (
           <div key={i} className={styles.painItem}>
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem' }}>{f.n} ·</div>
-            <div style={{ fontSize: '12px', fontWeight: 600, lineHeight: 1.4, color: '#FFFFFF', marginBottom: '0.875rem', fontStyle: 'italic' }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, lineHeight: 1.45, color: 'var(--lp-pain-scenario)', marginBottom: '0.875rem' }}>
               "{f.scenario}"
             </div>
-            <p style={{ fontSize: '12px', fontWeight: 400, color: '#555555', lineHeight: 1.7, margin: 0 }}>{f.detail}</p>
+            <p style={{ fontSize: '14px', fontWeight: 400, color: 'var(--lp-pain-detail)', lineHeight: 1.7, margin: 0 }}>{f.detail}</p>
           </div>
         ))}
       </div>
@@ -205,28 +206,33 @@ function PainSection(): React.JSX.Element {
 }
 
 /* 3 ── INSIGHT ──────────────────────────────────────────── */
+/* Always dark maroon — this is a brand moment, not a content section */
 function InsightSection(): React.JSX.Element {
   return (
-    <section style={{ background: '#D63318', color: '#FFFFFF', padding: '6vw 4vw', borderBottom: '1px solid rgba(0,0,0,0.15)' }}>
+    <section style={{
+      background: 'linear-gradient(160deg, #1A0503 0%, #2B0805 100%)',
+      color: '#FFFFFF', padding: '6vw 4vw',
+      borderBottom: '1px solid rgba(214,51,24,0.2)',
+    }}>
       <div className={styles.insightGrid}>
         <div>
-          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: '1.25rem' }}>The Core Insight</div>
-          <h2 style={{ fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1.0, color: '#FFFFFF', border: 'none', padding: 0, margin: 0 }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(214,51,24,0.7)', marginBottom: '1.25rem' }}>The Core Insight</div>
+          <h2 style={{ fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1.0, color: '#D63318', border: 'none', padding: 0, margin: 0 }}>
             You Cannot<br />Control What<br />You Cannot Trace.
           </h2>
         </div>
         <div>
-          <p style={{ fontSize: '15px', fontWeight: 400, color: 'rgba(255,255,255,0.85)', lineHeight: 1.8, marginBottom: '1rem' }}>
+          <p style={{ fontSize: '17px', fontWeight: 400, color: 'rgba(255,255,255,0.75)', lineHeight: 1.8, marginBottom: '1rem' }}>
             AI agents are non-deterministic. You cannot unit-test a language model. Prompt
             engineering is not a control surface — it's a hint.
           </p>
-          <p style={{ fontSize: '15px', fontWeight: 400, color: 'rgba(255,255,255,0.85)', lineHeight: 1.8, marginBottom: '1rem' }}>
+          <p style={{ fontSize: '17px', fontWeight: 400, color: 'rgba(255,255,255,0.75)', lineHeight: 1.8, marginBottom: '1.25rem' }}>
             The only reliable lever is{' '}
             <strong style={{ color: '#FFFFFF' }}>controlling the inputs the agent operates on,
             bounding what it can write, and recording every step of its reasoning</strong> — before
             it acts, during execution, and after completion.
           </p>
-          <p style={{ fontSize: '15px', fontWeight: 700, color: '#FFFFFF', lineHeight: 1.5, margin: 0, borderLeft: '3px solid rgba(255,255,255,0.4)', paddingLeft: '1rem' }}>
+          <p style={{ fontSize: '16px', fontWeight: 700, color: '#FFFFFF', lineHeight: 1.5, margin: 0, borderLeft: '3px solid #D63318', paddingLeft: '1rem' }}>
             Without a trace, you don't have an AI problem.<br />You have a liability problem.
           </p>
         </div>
@@ -238,25 +244,25 @@ function InsightSection(): React.JSX.Element {
 /* 4 ── SOLUTION ─────────────────────────────────────────── */
 function SolutionSection(): React.JSX.Element {
   return (
-    <section style={{ borderBottom: '1px solid rgba(0,0,0,0.12)' }}>
+    <section style={{ background: 'var(--lp-solution-bg)', borderBottom: '1px solid var(--lp-border-sub)' }}>
       {/* Header */}
-      <div style={{ padding: '5vw 4vw 4vw', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+      <div style={{ padding: '5vw 4vw 4vw', borderBottom: '1px solid var(--lp-border-sub)' }}>
         <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem' }}>The Solution</div>
         <div className={styles.solutionHeaderGrid}>
-          <h2 style={{ fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1, border: 'none', padding: 0, margin: 0 }}>
+          <h2 style={{ fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--lp-h2)', border: 'none', padding: 0, margin: 0 }}>
             Nirnex: A Runtime<br />for Controlled<br />AI Execution
           </h2>
           <div>
-            <p style={{ fontSize: '14px', fontWeight: 600, color: '#111111', lineHeight: 1.7, marginBottom: '1rem', borderLeft: '3px solid #D63318', paddingLeft: '1rem' }}>
+            <p style={{ fontSize: '16px', fontWeight: 600, color: 'var(--lp-h2)', lineHeight: 1.65, marginBottom: '1rem', borderLeft: '3px solid #D63318', paddingLeft: '1rem' }}>
               Nirnex decides what your AI is allowed to do — and records exactly why it did it.
             </p>
-            <p style={{ fontSize: '14px', lineHeight: 1.8, color: '#374151', marginBottom: '0.75rem' }}>
+            <p style={{ fontSize: '16px', lineHeight: 1.8, color: 'var(--lp-body)', marginBottom: '0.875rem' }}>
               Before an agent sees your codebase, Nirnex builds an{' '}
-              <strong>Execution Context Object (ECO)</strong> — a precision-scored map of the exact
+              <strong style={{ color: 'var(--lp-h2)' }}>Execution Context Object (ECO)</strong> — a precision-scored map of the exact
               symbols, dependencies, and files relevant to the task. Not a search result.
               A verified parse graph.
             </p>
-            <p style={{ fontSize: '14px', lineHeight: 1.8, color: '#374151', margin: 0 }}>
+            <p style={{ fontSize: '16px', lineHeight: 1.8, color: 'var(--lp-body)', margin: 0 }}>
               The agent operates inside declared bounds. Writes outside scope are rejected. Every
               decision is logged with a trace_id you can replay in isolation — root cause in
               minutes, not days.
@@ -268,25 +274,25 @@ function SolutionSection(): React.JSX.Element {
       {/* Before / After */}
       <div className={styles.beforeAfterGrid}>
         {/* Without */}
-        <div className={styles.beforePanel} style={{ padding: '4vw', background: '#F8F8F8' }}>
-          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#999999', marginBottom: '0.5rem' }}>Without Nirnex</div>
-          <div style={{ fontSize: '12px', color: '#BBBBBB', fontStyle: 'italic', marginBottom: '1.5rem' }}>Random outputs. Silent failures. Guesswork.</div>
+        <div className={styles.beforePanel} style={{ padding: '4vw', background: 'var(--lp-compare-without-bg)' }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--lp-compare-without-lbl)', marginBottom: '0.5rem' }}>Without Nirnex</div>
+          <div style={{ fontSize: '13px', color: 'var(--lp-compare-without-sub)', fontStyle: 'italic', marginBottom: '1.75rem' }}>Random outputs. Silent failures. Guesswork.</div>
           {WITHOUT_ROWS.map(([label, val], i) => (
             <div key={i} className={`${styles.compareRow} ${i === 0 ? styles.compareRowFirst : ''}`}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
-              <span style={{ fontSize: '12px', color: '#9CA3AF' }}>{val}</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--lp-compare-without-lbl)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+              <span style={{ fontSize: '14px', color: 'var(--lp-compare-without-val)' }}>{val}</span>
             </div>
           ))}
         </div>
 
         {/* With */}
-        <div style={{ padding: '4vw', background: '#FFFFFF' }}>
+        <div style={{ padding: '4vw', background: 'var(--lp-compare-with-bg)' }}>
           <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#D63318', marginBottom: '0.5rem' }}>With Nirnex</div>
-          <div style={{ fontSize: '12px', color: '#9CA3AF', fontStyle: 'italic', marginBottom: '1.5rem' }}>Controlled outputs. Full trace. Root cause in minutes.</div>
+          <div style={{ fontSize: '13px', color: 'var(--lp-compare-with-sub)', fontStyle: 'italic', marginBottom: '1.75rem' }}>Controlled outputs. Full trace. Root cause in minutes.</div>
           {WITH_ROWS.map(([label, val], i) => (
             <div key={i} className={`${styles.compareRow} ${i === 0 ? styles.compareRowFirst : ''}`}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
-              <span style={{ fontSize: '12px', color: '#374151', fontWeight: 500 }}>{val}</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--lp-compare-with-lbl)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+              <span style={{ fontSize: '14px', color: 'var(--lp-compare-with-val)', fontWeight: 500 }}>{val}</span>
             </div>
           ))}
         </div>
@@ -299,9 +305,9 @@ function SolutionSection(): React.JSX.Element {
 function LayersSection(): React.JSX.Element {
   const handleMouseEnter = (e: MouseEvent<HTMLAnchorElement>): void => {
     const t = e.currentTarget;
-    t.style.background = '#0D0D0D';
+    t.style.background = '#D63318';
     t.style.color = '#fff';
-    t.querySelectorAll('[data-muted]').forEach(el => { (el as HTMLElement).style.color = '#666'; });
+    t.querySelectorAll('[data-muted]').forEach(el => { (el as HTMLElement).style.color = 'rgba(255,255,255,0.6)'; });
   };
 
   const handleMouseLeave = (e: MouseEvent<HTMLAnchorElement>): void => {
@@ -312,10 +318,10 @@ function LayersSection(): React.JSX.Element {
   };
 
   return (
-    <section style={{ borderBottom: '1px solid rgba(0,0,0,0.12)' }}>
-      <div style={{ padding: '4vw 4vw 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+    <section style={{ background: 'var(--lp-layers-bg)', borderBottom: '1px solid var(--lp-border-sub)' }}>
+      <div style={{ padding: '4vw 4vw 0', borderBottom: '1px solid var(--lp-border-sub)' }}>
         <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#D63318', marginBottom: '0.75rem' }}>Under the Hood</div>
-        <h2 style={{ fontSize: 'clamp(1.5rem,2.5vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em', lineHeight: 1, border: 'none', padding: '0 0 2rem', margin: 0 }}>
+        <h2 style={{ fontSize: 'clamp(1.5rem,2.5vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--lp-h2)', border: 'none', padding: '0 0 2rem', margin: 0 }}>
           Three Layers. One Control Surface.
         </h2>
       </div>
@@ -324,10 +330,10 @@ function LayersSection(): React.JSX.Element {
         {LAYERS.map((l: Layer, i: number) => (
           <Link key={i} to={l.href} className={styles.layerItem} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#D63318', marginBottom: '1.5rem' }}>Layer {l.num} ·</div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#6B7280', marginBottom: '0.5rem', fontStyle: 'italic' }} data-muted="">{l.userQ}</div>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#D63318', marginBottom: '1.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{l.answer}</div>
-            <div style={{ fontSize: 'clamp(1.1rem,2vw,1.6rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em', lineHeight: 1, marginBottom: '0.75rem' }}>{l.name}</div>
-            <p style={{ fontSize: '13px', fontWeight: 400, lineHeight: 1.75, color: '#374151', margin: 0 }} data-muted="">{l.desc}</p>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--lp-layer-question)', marginBottom: '0.5rem', fontStyle: 'italic' }} data-muted="">{l.userQ}</div>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#D63318', marginBottom: '1.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }} data-muted="">{l.answer}</div>
+            <div style={{ fontSize: 'clamp(1.1rem,2vw,1.6rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--lp-h2)', marginBottom: '0.875rem' }}>{l.name}</div>
+            <p style={{ fontSize: '14px', fontWeight: 400, lineHeight: 1.75, color: 'var(--lp-layer-body)', margin: 0 }} data-muted="">{l.desc}</p>
           </Link>
         ))}
       </div>
@@ -338,10 +344,10 @@ function LayersSection(): React.JSX.Element {
 /* 6 ── PRINCIPLES ───────────────────────────────────────── */
 function PrinciplesSection(): React.JSX.Element {
   return (
-    <section style={{ padding: '6vw 4vw', borderBottom: '1px solid rgba(0,0,0,0.12)' }}>
+    <section style={{ padding: '6vw 4vw', background: 'var(--lp-principles-bg)', borderBottom: '1px solid var(--lp-border-sub)' }}>
       <div style={{ marginBottom: '3rem' }}>
         <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem' }}>Non-Negotiables</div>
-        <h2 style={{ fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1, border: 'none', padding: 0, margin: 0 }}>
+        <h2 style={{ fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--lp-h2)', border: 'none', padding: 0, margin: 0 }}>
           What We Won't Compromise On
         </h2>
       </div>
@@ -349,8 +355,8 @@ function PrinciplesSection(): React.JSX.Element {
         {PRINCIPLES.map((p: Principle, i: number) => (
           <div key={i} className={styles.principleItem}>
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem' }}>{p.n} ·</div>
-            <div style={{ fontSize: 'clamp(1rem,1.8vw,1.3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.01em', lineHeight: 1.1, marginBottom: '0.75rem' }}>{p.title}</div>
-            <p style={{ fontSize: '13px', fontWeight: 400, color: '#374151', lineHeight: 1.75, margin: 0 }}>{p.body}</p>
+            <div style={{ fontSize: 'clamp(1rem,1.8vw,1.3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--lp-h2)', marginBottom: '0.875rem' }}>{p.title}</div>
+            <p style={{ fontSize: '15px', fontWeight: 400, color: 'var(--lp-principle-body)', lineHeight: 1.75, margin: 0 }}>{p.body}</p>
           </div>
         ))}
       </div>
@@ -358,7 +364,7 @@ function PrinciplesSection(): React.JSX.Element {
   );
 }
 
-/* 7 ── CTA ──────────────────────────────────────────────── */
+/* 7 ── CTA ── Always dark — the closing brand statement */
 function CtaSection(): React.JSX.Element {
   return (
     <section className={styles.ctaGrid} style={{
@@ -373,7 +379,7 @@ function CtaSection(): React.JSX.Element {
         <h2 style={{ fontSize: 'clamp(2rem,5vw,4.5rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.03em', lineHeight: 1, color: '#fff', border: 'none', padding: 0, margin: '0 0 1rem' }}>
           Ready to control what<br />your agents touch?
         </h2>
-        <p style={{ fontSize: '13px', fontWeight: 300, color: 'rgba(255,255,255,0.5)', maxWidth: '480px', margin: 0, lineHeight: 1.75 }}>
+        <p style={{ fontSize: '15px', fontWeight: 300, color: 'rgba(255,255,255,0.55)', maxWidth: '480px', margin: 0, lineHeight: 1.75 }}>
           Built for regulated enterprises and engineering organizations where a wrong AI
           decision costs more than the sprint. Read the full v9 architecture specification.
         </p>

@@ -20,6 +20,43 @@
   --font-mono:    'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
 
+/* ── LANDING PAGE TOKENS (light) ─────────────────────────── */
+:root {
+  /* Section backgrounds */
+  --lp-hero-bg:              #F2F2F2;
+  --lp-pain-bg:              #EAEAEA;
+  --lp-solution-bg:          #FFFFFF;
+  --lp-compare-without-bg:   #F4F4F4;
+  --lp-compare-with-bg:      #FFFFFF;
+  --lp-layers-bg:            #F7F7F7;
+  --lp-principles-bg:        #F2F2F2;
+
+  /* Text */
+  --lp-h1:                   #111111;
+  --lp-h2:                   #111111;
+  --lp-hero-body:            #444444;
+  --lp-body:                 #555555;
+  --lp-muted:                #777777;
+  --lp-pain-scenario:        #111111;
+  --lp-pain-detail:          #555555;
+  --lp-compare-without-sub:  #AAAAAA;
+  --lp-compare-without-lbl:  #AAAAAA;
+  --lp-compare-without-val:  #888888;
+  --lp-compare-with-sub:     #777777;
+  --lp-compare-with-lbl:     #374151;
+  --lp-compare-with-val:     #111111;
+  --lp-layer-question:       #888888;
+  --lp-layer-body:           #555555;
+  --lp-principle-body:       #555555;
+
+  /* Borders */
+  --lp-border:               rgba(0, 0, 0, 0.08);
+  --lp-border-sub:           rgba(0, 0, 0, 0.06);
+  --lp-ghost-btn-border:     rgba(0, 0, 0, 0.20);
+  --lp-embed-border:         rgba(0, 0, 0, 0.12);
+  --lp-watermark:            rgba(0, 0, 0, 0.04);
+}
+
 /* ── LIGHT MODE TOKENS ────────────────────────────────────── */
 :root {
   --ados-bg:              #F4F4F4;
@@ -68,6 +105,43 @@
   --ifm-navbar-background-color:  #000000;
   --ifm-navbar-link-color:        #AAAAAA;
   --ifm-navbar-link-active-color: var(--ados-vermilion);
+}
+
+/* ── LANDING PAGE TOKENS (dark) ──────────────────────────── */
+html[data-theme='dark'] {
+  /* Section backgrounds */
+  --lp-hero-bg:              #0D0D0D;
+  --lp-pain-bg:              #111111;
+  --lp-solution-bg:          #0D0D0D;
+  --lp-compare-without-bg:   #161616;
+  --lp-compare-with-bg:      #0F0F0F;
+  --lp-layers-bg:            #111111;
+  --lp-principles-bg:        #0D0D0D;
+
+  /* Text */
+  --lp-h1:                   #FFFFFF;
+  --lp-h2:                   #FFFFFF;
+  --lp-hero-body:            #C0C0C0;
+  --lp-body:                 #B0B0B0;
+  --lp-muted:                #888888;
+  --lp-pain-scenario:        #FFFFFF;
+  --lp-pain-detail:          #999999;
+  --lp-compare-without-sub:  #555555;
+  --lp-compare-without-lbl:  #555555;
+  --lp-compare-without-val:  #666666;
+  --lp-compare-with-sub:     #888888;
+  --lp-compare-with-lbl:     #AAAAAA;
+  --lp-compare-with-val:     #E0E0E0;
+  --lp-layer-question:       #888888;
+  --lp-layer-body:           #999999;
+  --lp-principle-body:       #AAAAAA;
+
+  /* Borders */
+  --lp-border:               rgba(255, 255, 255, 0.08);
+  --lp-border-sub:           rgba(255, 255, 255, 0.06);
+  --lp-ghost-btn-border:     rgba(255, 255, 255, 0.18);
+  --lp-embed-border:         rgba(255, 255, 255, 0.08);
+  --lp-watermark:            rgba(255, 255, 255, 0.03);
 }
 
 /* ── DARK MODE TOKENS ─────────────────────────────────────── */

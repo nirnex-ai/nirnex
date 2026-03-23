@@ -1,6 +1,7 @@
 /* ============================================================
    NIRNEX — PAGE RESPONSIVE LAYOUT
    Grid containers + item borders live here.
+   All border colors use --lp-* tokens so they flip with theme.
    Color / font / spacing stay inline in index.tsx.
    ============================================================ */
 
@@ -13,16 +14,20 @@
   position: relative;
 }
 
-/* ── PAIN: 5 failure scenarios ─────────────────────────── */
+/* ── PAIN: 3-col on desktop ────────────────────────────── */
 .painGrid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--lp-border-sub);
 }
 
 .painItem {
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  padding: 2.5vw 2vw;
+  border-right: 1px solid var(--lp-border-sub);
+  padding: 3vw 2.5vw;
+}
+
+.painItem:nth-child(3n) {
+  border-right: none;
 }
 
 .painItem:last-child {
@@ -52,20 +57,19 @@
 }
 
 .beforePanel {
-  border-right: 1px solid rgba(0, 0, 0, 0.10);
+  border-right: 1px solid var(--lp-border);
 }
 
-/* Comparison rows inside each panel */
 .compareRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  padding: 10px 0;
+  border-bottom: 1px solid var(--lp-border-sub);
+  padding: 14px 0;
 }
 
 .compareRowFirst {
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-top: 1px solid var(--lp-border-sub);
 }
 
 /* ── LAYERS: 3-col ─────────────────────────────────────── */
@@ -75,11 +79,12 @@
 }
 
 .layerItem {
-  border-right: 1px solid rgba(0, 0, 0, 0.12);
+  border-right: 1px solid var(--lp-border);
   padding: 3.5vw 3vw;
   display: block;
   text-decoration: none;
   color: inherit;
+  transition: background 0.15s, color 0.15s;
 }
 
 .layerItem:last-child {
@@ -94,8 +99,8 @@
 
 .principleItem {
   padding: 3vw;
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
-  border-right: 1px solid rgba(0, 0, 0, 0.12);
+  border-top: 1px solid var(--lp-border);
+  border-right: 1px solid var(--lp-border);
 }
 
 .principleItem:nth-child(even) {
@@ -122,12 +127,14 @@
    ============================================================ */
 @media (max-width: 1024px) {
   .painGrid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  /* 3-col pain: items 3 & 5 lose right border naturally,
-     but items at end of each row still need it removed */
   .painItem:nth-child(3n) {
+    border-right: 1px solid var(--lp-border-sub);
+  }
+
+  .painItem:nth-child(even) {
     border-right: none;
   }
 
@@ -153,8 +160,13 @@
 
   .painItem {
     border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    padding: 7vw 5vw;
+    border-bottom: 1px solid var(--lp-border-sub);
+    padding: 40px 24px;
+  }
+
+  .painItem:nth-child(3n),
+  .painItem:nth-child(even) {
+    border-right: none;
   }
 
   .painItem:last-child {
@@ -180,13 +192,13 @@
 
   .beforePanel {
     border-right: none;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.10);
+    border-bottom: 1px solid var(--lp-border);
   }
 
-  /* Comparison rows: stack label above value */
   .compareRow {
     grid-template-columns: 1fr;
-    gap: 2px;
+    gap: 4px;
+    padding: 16px 0;
   }
 
   /* ── Layers ── */
@@ -196,8 +208,8 @@
 
   .layerItem {
     border-right: none;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.10);
-    padding: 7vw 5vw;
+    border-bottom: 1px solid var(--lp-border);
+    padding: 48px 24px;
   }
 
   .layerItem:last-child {
@@ -211,7 +223,7 @@
 
   .principleItem {
     border-right: none;
-    padding: 7vw 5vw;
+    padding: 44px 24px;
   }
 
   /* ── CTA ── */
