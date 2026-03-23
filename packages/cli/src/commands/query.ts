@@ -35,7 +35,7 @@ export async function queryCommand(args: string[]): Promise<void> {
   }
 
   if (!rawQuery) {
-    console.error('Usage: dev query "<question>" or dev query --impact <file>');
+    console.error('Usage: nirnex query "<question>" or nirnex query --impact <file>');
     return;
   }
 
@@ -130,7 +130,7 @@ export async function queryCommand(args: string[]): Promise<void> {
   const tier = computeDegradationTier(penalties);
   const suggested = getSuggestedNext(conf.score, rawQuery);
 
-  console.log('\\n[dev query] Results for "' + rawQuery + '"');
+  console.log('\\n[nirnex query] Results for "' + rawQuery + '"');
   console.log('Flags Fired: ' + flags);
   console.log('Sources Used: ' + sourcesUsed.join(', '));
   console.log('Duration: ' + (t1 - t0).toFixed(2) + 'ms');

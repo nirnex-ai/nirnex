@@ -44,7 +44,7 @@ export function indexCommand(args: string[]): void {
   const targetDir = process.cwd();
 
   const dbPath = path.join(targetDir, '.aidos.db');
-  console.log('[dev index] Starting ' + (isRebuild ? 'full rebuild' : 'incremental update') + ' on ' + targetDir);
+  console.log('[nirnex index] Starting ' + (isRebuild ? 'full rebuild' : 'incremental update') + ' on ' + targetDir);
   const t0 = performance.now();
 
   const db = openDb(dbPath);
@@ -106,5 +106,5 @@ export function indexCommand(args: string[]): void {
   }
 
   const t1 = performance.now();
-  console.log('[dev index] Finished processing ' + filesToProcess.length + ' file(s) in ' + (t1 - t0).toFixed(2) + 'ms');
+  console.log('[nirnex index] Finished processing ' + filesToProcess.length + ' file(s) in ' + (t1 - t0).toFixed(2) + 'ms');
 }

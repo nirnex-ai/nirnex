@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// nirnex dev CLI
-// Usage: dev <command> [args]
-// Commands: plan | query | status | replay
+// Nirnex CLI — Decision Intelligence for software delivery
+// Usage: nirnex <command> [args]
 
 import { planCommand }   from './commands/plan.js';
 import { queryCommand }  from './commands/query.js';
@@ -9,22 +8,29 @@ import { statusCommand } from './commands/status.js';
 import { replayCommand } from './commands/replay.js';
 import { indexCommand }  from './commands/index.js';
 import { traceCommand }  from './commands/trace.js';
+import { setupCommand }  from './commands/setup.js';
 
 const [, , command = '', ...rest] = process.argv;
 
 const USAGE = `
-nirnex dev CLI
+Nirnex — Decision Intelligence for software delivery
 
 Usage:
-  dev index   [options]   Run the indexer
-  dev plan    [options]   Generate / update a delivery plan
-  dev query   [options]   Query the knowledge index
-  dev status  [options]   Show index status
-  dev replay  [options]   Replay a past analysis run
-  dev trace   [options]   Capture or view traces
+  nirnex setup   [options]   Initialize Nirnex in this repository
+  nirnex index   [options]   Index the codebase into the knowledge graph
+  nirnex plan    [options]   Generate a delivery plan from a spec or query
+  nirnex query   [options]   Query the knowledge graph
+  nirnex status  [options]   Show index and project health
+  nirnex trace   [options]   View execution traces
+  nirnex replay  [options]   Replay a past analysis run
+
+Run \`nirnex setup\` to get started.
 `.trimStart();
 
 switch (command) {
+  case 'setup':
+    setupCommand(rest).catch(console.error);
+    break;
   case 'index':
     indexCommand(rest);
     break;
