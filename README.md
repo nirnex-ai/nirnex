@@ -1,8 +1,8 @@
 <div align="center">
-<img src="https://nirnex-ai.github.io/nirnex/img/nirnex-logo-navbar.svg" width="200" height="200"/>
+<img src="https://nirnex-ai.github.io/nirnex/img/nirnex-logo-navbar.svg?v=2" width="200" height="200"/>
 
 # Nirnex
-### Decision Intelligence for Software Delivery
+#### Decision Intelligence for Software Delivery
 
 [![CI](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml)
 [![Release](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml)
