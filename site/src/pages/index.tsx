@@ -1,4 +1,4 @@
-import React, { MouseEvent } from 'react';
+import React, { MouseEvent, useState, useEffect, useRef } from 'react';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
@@ -160,6 +160,114 @@ const DEMO_AFTER = [
 
 /* ── COMPONENTS ────────────────────────────────────────── */
 
+/* ── VIDEO MODAL ── */
+const VIDEO_URL = 'https://github.com/user-attachments/assets/ab7ffbfe-fa29-44b9-be6e-34fbfd810116';
+
+function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Pause & reset on close
+  useEffect(() => {
+    if (!open && videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+  }, [open]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  // Lock body scroll
+  useEffect(() => {
+    document.body.style.overflow = open ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.92)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '24px',
+        animation: 'nirnex-fade-in 0.15s ease',
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Product demo video"
+    >
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        aria-label="Close video"
+        style={{
+          position: 'absolute', top: '20px', right: '24px',
+          background: 'transparent', border: '1px solid rgba(255,255,255,0.2)',
+          color: '#ffffff', cursor: 'pointer',
+          width: '40px', height: '40px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '20px', lineHeight: 1, fontFamily: 'var(--font-display)',
+          transition: 'border-color 0.15s, background 0.15s',
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)'; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+      >
+        ✕
+      </button>
+
+      {/* Label */}
+      <div style={{
+        position: 'absolute', top: '22px', left: '24px',
+        fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
+        textTransform: 'uppercase', color: '#D63318',
+        fontFamily: 'var(--font-display)',
+      }}>
+        Nirnex explainer
+      </div>
+
+      {/* Video container — stop propagation so clicking video doesn't close modal */}
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: '1100px',
+          boxShadow: '0 32px 80px rgba(0,0,0,0.8)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          background: '#000',
+          animation: 'nirnex-scale-in 0.18s ease',
+        }}
+      >
+        <video
+          ref={videoRef}
+          src={VIDEO_URL}
+          controls
+          autoPlay
+          playsInline
+          style={{ width: '100%', display: 'block', maxHeight: '80vh' }}
+        />
+      </div>
+
+      <style>{`
+        @keyframes nirnex-fade-in {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes nirnex-scale-in {
+          from { transform: scale(0.96); opacity: 0; }
+          to   { transform: scale(1);    opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 /* ── LABEL ── */
 function SectionLabel({ text }: { text: string }): React.JSX.Element {
   return (
@@ -172,6 +280,7 @@ function SectionLabel({ text }: { text: string }): React.JSX.Element {
 
 /* 1 ── HERO ─────────────────────────────────────────────── */
 function HomepageHero(): React.JSX.Element {
+  const [videoOpen, setVideoOpen] = useState(false);
   return (
     <section style={{
       background: 'var(--lp-hero-bg)',
@@ -225,14 +334,23 @@ function HomepageHero(): React.JSX.Element {
           </p>
 
           <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
-            <Link to="https://youtu.be/f_U-nj8hNis" style={{
-              background: '#D63318', color: '#FFFFFF',
-              padding: '14px 32px', fontSize: '12px', fontWeight: 700,
-              letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
-              display: 'inline-block',
-            }} target='_blank'> <i style={{ marginRight: '8px', width: '24px', height: '24px', display: 'inline-block', verticalAlign: 'middle' }}><svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0.0 0.0 110.0 135.0">
-              <path d="m22.281 17.664c-10.754 0-19.504 8.7578-19.504 19.516v25.641c0 10.758 8.75 19.52 19.504 19.52h55.434c10.754 0 19.504-8.7617 19.504-19.52v-25.641c0-10.758-8.7539-19.516-19.504-19.516zm18.188 18.422c0.55859-0.019532 1.1133 0.12109 1.5977 0.40234l18.875 10.93c0.92188 0.53516 1.4922 1.5195 1.4922 2.5898 0 1.0664-0.57031 2.0547-1.4922 2.5898l-18.875 10.926c-0.92188 0.53516-2.0586 0.53516-2.9844 0.003906-0.92188-0.53516-1.4883-1.5234-1.4883-2.5898v-21.859c-0.003906-1.6133 1.2695-2.9336 2.875-2.9883z" fill='#2b0805 ' />
-            </svg> </i>See How It Works</Link>
+            <button
+              onClick={() => setVideoOpen(true)}
+              style={{
+                background: '#D63318', color: '#FFFFFF',
+                padding: '14px 32px', fontSize: '12px', fontWeight: 700,
+                letterSpacing: '0.2em', textTransform: 'uppercase',
+                border: 'none', cursor: 'pointer', display: 'inline-flex',
+                alignItems: 'center', gap: '10px', fontFamily: 'var(--font-display)',
+              }}
+            >
+              <i style={{ width: '22px', height: '22px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </i>
+              See How It Works
+            </button>
             <Link to="/docs/intro/overview" style={{
               background: 'transparent', color: 'var(--lp-h1)',
               padding: '14px 32px', fontSize: '12px', fontWeight: 700,
@@ -297,6 +415,8 @@ function HomepageHero(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      <VideoModal open={videoOpen} onClose={() => setVideoOpen(false)} />
     </section>
   );
 }
