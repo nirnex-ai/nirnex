@@ -1,7 +1,7 @@
 <div align="center">
 <img src="https://nirnex-ai.github.io/nirnex/img/nirnex-logo-navbar.svg?v=2" width="200" height="200"/>
 
-# Nirnex
+# Nirnex (Alpha)
 #### Decision Intelligence for Software Delivery
 
 > Note: This project is in an experimental stage.
