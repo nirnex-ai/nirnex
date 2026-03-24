@@ -4,6 +4,8 @@
 # Nirnex
 #### Decision Intelligence for Software Delivery
 
+> Note: This project is in an experimental stage.
+
 [![CI](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml)
 [![Release](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml)
 
