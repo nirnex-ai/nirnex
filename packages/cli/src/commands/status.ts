@@ -3,7 +3,7 @@
 
 import { openDb, indexStats } from '@nirnex/core';
 import path from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 
 function tick(msg: string) {
@@ -96,6 +96,71 @@ export function statusCommand(_args: string[]): void {
   existsSync(hookPath)
     ? tick('Git post-commit hook installed')
     : warn('Git post-commit hook not installed (index may drift)');
+
+  // Check Claude hooks
+  console.log('');
+  console.log('\x1b[1mClaude Hooks\x1b[0m');
+
+  const claudeSettingsPath = path.join(cwd, '.claude', 'settings.json');
+  if (!existsSync(claudeSettingsPath)) {
+    warn('.claude/settings.json not found — run nirnex setup to install hooks');
+  } else {
+    try {
+      const settings = JSON.parse(readFileSync(claudeSettingsPath, 'utf8'));
+      settings.hooks
+        ? tick('.claude/settings.json hook bindings present')
+        : warn('.claude/settings.json has no hooks section — re-run nirnex setup');
+    } catch {
+      warn('.claude/settings.json is malformed');
+    }
+  }
+
+  const claudeHooks = [
+    'nirnex-bootstrap.sh',
+    'nirnex-entry.sh',
+    'nirnex-guard.sh',
+    'nirnex-trace.sh',
+    'nirnex-validate.sh',
+  ];
+  const hooksDir = path.join(cwd, '.claude', 'hooks');
+  let hooksMissing = 0;
+  for (const h of claudeHooks) {
+    if (!existsSync(path.join(hooksDir, h))) hooksMissing++;
+  }
+  hooksMissing === 0
+    ? tick('All 5 Claude hook scripts present')
+    : warn(`${hooksMissing} Claude hook script(s) missing in .claude/hooks/ — re-run nirnex setup`);
+
+  // Check runtime state
+  const runtimeDir = path.join(cwd, '.ai-index', 'runtime');
+  const sessionsDir = path.join(runtimeDir, 'sessions');
+  const envelopesDir = path.join(runtimeDir, 'envelopes');
+
+  if (existsSync(sessionsDir)) {
+    try {
+      const sessions = readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
+      tick(`Runtime sessions: ${sessions.length} recorded`);
+    } catch {
+      warn('Could not read runtime sessions dir');
+    }
+  } else {
+    tick('Runtime sessions: none yet (hooks not yet triggered)');
+  }
+
+  if (existsSync(envelopesDir)) {
+    try {
+      const envelopes = readdirSync(envelopesDir).filter(f => f.endsWith('.json'));
+      const activeCount = envelopes.filter(f => {
+        try {
+          const e = JSON.parse(readFileSync(path.join(envelopesDir, f), 'utf8'));
+          return e.status === 'active';
+        } catch { return false; }
+      }).length;
+      tick(`Task envelopes: ${envelopes.length} total, ${activeCount} active`);
+    } catch {
+      warn('Could not read envelopes dir');
+    }
+  }
 
   console.log('');
 }

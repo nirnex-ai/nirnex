@@ -24,5 +24,69 @@ export function writeTrace(targetDir: string, data: any) {
   return data.trace_id;
 }
 
-export function readTrace(targetDir: string, id: string) { return {}; }
-export function listTraces(targetDir: string) { return []; }
+export function readTrace(targetDir: string, id: string): Record<string, unknown> | null {
+  // Scan all date subdirs for the trace file
+  const tracesRoot = path.join(targetDir, '.ai-index', 'traces');
+  if (!fs.existsSync(tracesRoot)) return null;
+
+  for (const dateDir of fs.readdirSync(tracesRoot)) {
+    const p = path.join(tracesRoot, dateDir, `${id}.json`);
+    if (fs.existsSync(p)) {
+      try {
+        return JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+export interface TraceListEntry {
+  trace_id: string;
+  timestamp: string;
+  date: string;
+  intent?: string;
+  confidence_score?: number;
+  lane?: string;
+}
+
+export function listTraces(targetDir: string, limit = 20): TraceListEntry[] {
+  const tracesRoot = path.join(targetDir, '.ai-index', 'traces');
+  if (!fs.existsSync(tracesRoot)) return [];
+
+  const results: TraceListEntry[] = [];
+
+  // Walk date dirs newest-first
+  const dateDirs = fs.readdirSync(tracesRoot).sort().reverse();
+  for (const dateDir of dateDirs) {
+    const dir = path.join(tracesRoot, dateDir);
+    let files: string[];
+    try {
+      files = fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort().reverse();
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      if (results.length >= limit) break;
+      try {
+        const raw = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')) as Record<string, any>;
+        results.push({
+          trace_id: raw.trace_id ?? file.replace('.json', ''),
+          timestamp: raw.timestamp ?? dateDir,
+          date: dateDir,
+          intent: raw.intent?.primary ?? raw.eco?.intent?.primary,
+          confidence_score: raw.confidence?.score ?? raw.eco?.confidence_score,
+          lane: raw.eco?.recommended_lane,
+        });
+      } catch {
+        // Skip malformed files
+      }
+    }
+
+    if (results.length >= limit) break;
+  }
+
+  return results;
+}

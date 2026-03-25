@@ -85,6 +85,59 @@ const POST_COMMIT_HOOK = `#!/bin/sh
 nirnex index
 `;
 
+// ─── Claude hook launcher templates ──────────────────────────────────────
+
+const HOOK_BOOTSTRAP = `#!/bin/sh
+exec nirnex runtime bootstrap
+`;
+
+const HOOK_ENTRY = `#!/bin/sh
+exec nirnex runtime entry
+`;
+
+const HOOK_GUARD = `#!/bin/sh
+exec nirnex runtime guard
+`;
+
+const HOOK_TRACE = `#!/bin/sh
+exec nirnex runtime trace
+`;
+
+const HOOK_VALIDATE = `#!/bin/sh
+exec nirnex runtime validate
+`;
+
+const CLAUDE_SETTINGS_HOOKS = {
+  hooks: {
+    SessionStart: [
+      {
+        hooks: [{ type: 'command', command: '.claude/hooks/nirnex-bootstrap.sh', timeout: 30 }],
+      },
+    ],
+    UserPromptSubmit: [
+      {
+        hooks: [{ type: 'command', command: '.claude/hooks/nirnex-entry.sh', timeout: 30 }],
+      },
+    ],
+    PreToolUse: [
+      {
+        matcher: 'Bash|Edit|Write|MultiEdit',
+        hooks: [{ type: 'command', command: '.claude/hooks/nirnex-guard.sh', timeout: 10 }],
+      },
+    ],
+    PostToolUse: [
+      {
+        hooks: [{ type: 'command', command: '.claude/hooks/nirnex-trace.sh', timeout: 10 }],
+      },
+    ],
+    Stop: [
+      {
+        hooks: [{ type: 'command', command: '.claude/hooks/nirnex-validate.sh', timeout: 10 }],
+      },
+    ],
+  },
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 function tick(msg: string) {
@@ -271,6 +324,10 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
     llm: {
       provider: 'anthropic',
     },
+    hooks: {
+      enabled: true,
+      policyMode: 'standard',
+    },
   };
 
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
@@ -289,6 +346,51 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
       }
     } else {
       warn('Not a git repo — skipping post-commit hook');
+    }
+  }
+
+  // Install Claude hooks
+  {
+    const claudeDir = path.join(cwd, '.claude');
+    const hooksDir = path.join(claudeDir, 'hooks');
+    const settingsPath = path.join(claudeDir, 'settings.json');
+
+    mkdirSafe(claudeDir);
+    mkdirSafe(hooksDir);
+
+    const hookFiles: [string, string][] = [
+      ['nirnex-bootstrap.sh', HOOK_BOOTSTRAP],
+      ['nirnex-entry.sh', HOOK_ENTRY],
+      ['nirnex-guard.sh', HOOK_GUARD],
+      ['nirnex-trace.sh', HOOK_TRACE],
+      ['nirnex-validate.sh', HOOK_VALIDATE],
+    ];
+
+    for (const [name, content] of hookFiles) {
+      const p = path.join(hooksDir, name);
+      if (!fs.existsSync(p)) {
+        fs.writeFileSync(p, content, { mode: 0o755 });
+        tick(`Created .claude/hooks/${name}`);
+      } else {
+        info(`.claude/hooks/${name} (already exists, skipped)`);
+      }
+    }
+
+    // Merge hook config into .claude/settings.json
+    let existing: Record<string, any> = {};
+    if (fs.existsSync(settingsPath)) {
+      try {
+        existing = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      } catch {}
+    }
+
+    // Only write if hooks section is not already present
+    if (!existing.hooks) {
+      const merged = { ...existing, ...CLAUDE_SETTINGS_HOOKS };
+      fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2) + '\n', 'utf8');
+      tick('Wrote Claude hook bindings to .claude/settings.json');
+    } else {
+      info('.claude/settings.json hooks already configured, skipped');
     }
   }
 
@@ -311,6 +413,13 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
   console.log('  \x1b[1mnirnex status\x1b[0m              — verify project is ready');
   console.log('  \x1b[1mnirnex plan "your task"\x1b[0m     — generate your first plan');
   console.log('  \x1b[1mnirnex plan .ai/specs/foo.md\x1b[0m — plan from a spec file');
+  console.log('');
+  console.log('Claude hooks installed:');
+  console.log('  SessionStart    → .claude/hooks/nirnex-bootstrap.sh');
+  console.log('  UserPromptSubmit → .claude/hooks/nirnex-entry.sh');
+  console.log('  PreToolUse      → .claude/hooks/nirnex-guard.sh');
+  console.log('  PostToolUse     → .claude/hooks/nirnex-trace.sh');
+  console.log('  Stop            → .claude/hooks/nirnex-validate.sh');
   console.log('');
 }
 

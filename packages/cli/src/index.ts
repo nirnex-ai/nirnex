@@ -2,13 +2,14 @@
 // Nirnex CLI — Decision Intelligence for software delivery
 // Usage: nirnex <command> [args]
 
-import { planCommand }   from './commands/plan.js';
-import { queryCommand }  from './commands/query.js';
-import { statusCommand } from './commands/status.js';
-import { replayCommand } from './commands/replay.js';
-import { indexCommand }  from './commands/index.js';
-import { traceCommand }  from './commands/trace.js';
-import { setupCommand }  from './commands/setup.js';
+import { planCommand }    from './commands/plan.js';
+import { queryCommand }   from './commands/query.js';
+import { statusCommand }  from './commands/status.js';
+import { replayCommand }  from './commands/replay.js';
+import { indexCommand }   from './commands/index.js';
+import { traceCommand }   from './commands/trace.js';
+import { setupCommand }   from './commands/setup.js';
+import { runtimeCommand } from './commands/runtime.js';
 
 const [, , command = '', ...rest] = process.argv;
 
@@ -16,13 +17,14 @@ const USAGE = `
 Nirnex — Decision Intelligence for software delivery
 
 Usage:
-  nirnex setup   [options]   Initialize Nirnex in this repository
-  nirnex index   [options]   Index the codebase into the knowledge graph
-  nirnex plan    [options]   Generate a delivery plan from a spec or query
-  nirnex query   [options]   Query the knowledge graph
-  nirnex status  [options]   Show index and project health
-  nirnex trace   [options]   View execution traces
-  nirnex replay  [options]   Replay a past analysis run
+  nirnex setup    [options]   Initialize Nirnex in this repository
+  nirnex index    [options]   Index the codebase into the knowledge graph
+  nirnex plan     [options]   Generate a delivery plan from a spec or query
+  nirnex query    [options]   Query the knowledge graph
+  nirnex status   [options]   Show index and project health
+  nirnex trace    [options]   View execution traces
+  nirnex replay   [options]   Replay a past analysis run
+  nirnex runtime  <sub>       Claude hook pipeline commands (machine-facing)
 
 Run \`nirnex setup\` to get started.
 `.trimStart();
@@ -48,6 +50,9 @@ switch (command) {
     break;
   case 'trace':
     traceCommand(rest);
+    break;
+  case 'runtime':
+    runtimeCommand(rest).catch(console.error);
     break;
   default:
     console.log(USAGE);
