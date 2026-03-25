@@ -50,7 +50,7 @@ Nirnex introduces structure into this process:
 ### 1. Install CLI
 
 ```sh
-npm install -g nirnex
+npm install -g @nirnex/core
 ```
 
 ### 2. Enable Nirnex in your project
