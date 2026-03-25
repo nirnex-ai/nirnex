@@ -197,29 +197,6 @@ function isMonorepo(cwd: string): boolean {
   return false;
 }
 
-function getFileCount(cwd: string): number {
-  let count = 0;
-  function walk(dir: string) {
-    try {
-      const entries = fs.readdirSync(dir);
-      for (const e of entries) {
-        if (e === 'node_modules' || e === 'dist' || e === '.git') continue;
-        const full = path.join(dir, e);
-        try {
-          const stat = fs.statSync(full);
-          if (stat.isDirectory()) {
-            walk(full);
-          } else if (full.endsWith('.ts') || full.endsWith('.tsx')) {
-            count++;
-          }
-        } catch {}
-      }
-    } catch {}
-  }
-  walk(cwd);
-  return count;
-}
-
 // ─── Interactive prompt helper ────────────────────────────────────────────
 
 function prompt(rl: readline.Interface, question: string): Promise<string> {
@@ -399,9 +376,21 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
     process.stdout.write(`  \x1b[90m·\x1b[0m Indexing project...\n`);
     try {
       const { indexCommand } = await import('./index.js');
-      indexCommand(['--rebuild']);
-      const fileCount = getFileCount(cwd);
-      tick(`Indexed ${fileCount} TypeScript file(s)`);
+      const result = indexCommand(['--rebuild']);
+      if (result.failed === 0) {
+        tick(`Indexed ${result.succeeded} TypeScript file(s)`);
+      } else {
+        warn(
+          `Indexed ${result.succeeded}/${result.succeeded + result.failed} TypeScript file(s) ` +
+          `— ${result.failed} file(s) failed to parse (degraded coverage)`
+        );
+        for (const f of result.failedFiles) {
+          process.stderr.write(`      \x1b[31m✖\x1b[0m ${path.relative(cwd, f)}\n`);
+        }
+        process.stderr.write(
+          `\n  \x1b[33m⚠\x1b[0m  Run \x1b[1mnirnex index --rebuild\x1b[0m after fixing parse errors\n`
+        );
+      }
     } catch (e) {
       warn(`Indexing failed: ${e instanceof Error ? e.message : String(e)}`);
     }

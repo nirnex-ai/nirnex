@@ -39,7 +39,14 @@ function detectModule(fullPath: string, rootDir: string): string {
   return parts[0];
 }
 
-export function indexCommand(args: string[]): void {
+export interface IndexResult {
+  succeeded: number;
+  failed: number;
+  failedFiles: string[];
+  durationMs: number;
+}
+
+export function indexCommand(args: string[]): IndexResult {
   const isRebuild = args.includes('--rebuild');
   const targetDir = process.cwd();
 
@@ -67,9 +74,17 @@ export function indexCommand(args: string[]): void {
 
   db.exec('BEGIN TRANSACTION');
 
+  let succeeded = 0;
+  let failed = 0;
+  const failedFiles: string[] = [];
+
   for (const file of filesToProcess) {
     const parsed = parseFile(file);
-    if (!parsed) continue;
+    if (!parsed) {
+      failed++;
+      failedFiles.push(file);
+      continue;
+    }
 
     const myModule = detectModule(file, targetDir);
 
@@ -78,7 +93,7 @@ export function indexCommand(args: string[]): void {
       let is_cross_module = false;
       if (resolved.is_local) {
         const theirModule = detectModule(resolved.resolved, targetDir);
-        is_cross_module = myModule !== theirModule; // Simple cross-module heuristic
+        is_cross_module = myModule !== theirModule;
       }
       return {
         ...imp,
@@ -92,6 +107,7 @@ export function indexCommand(args: string[]): void {
       ...parsed,
       imports: enrichedImports
     });
+    succeeded++;
   }
 
   computeGraphEdges(db);
@@ -106,5 +122,21 @@ export function indexCommand(args: string[]): void {
   }
 
   const t1 = performance.now();
-  console.log('[nirnex index] Finished processing ' + filesToProcess.length + ' file(s) in ' + (t1 - t0).toFixed(2) + 'ms');
+  const durationMs = t1 - t0;
+
+  if (failed === 0) {
+    console.log(
+      `[nirnex index] Finished: ${succeeded}/${filesToProcess.length} file(s) indexed in ${durationMs.toFixed(2)}ms`
+    );
+  } else {
+    console.warn(
+      `[nirnex index] Finished with degraded coverage: ${succeeded}/${filesToProcess.length} indexed, ` +
+      `${failed} failed in ${durationMs.toFixed(2)}ms`
+    );
+    for (const f of failedFiles) {
+      console.warn(`[nirnex index]   ✖ ${path.relative(targetDir, f)}`);
+    }
+  }
+
+  return { succeeded, failed, failedFiles, durationMs };
 }

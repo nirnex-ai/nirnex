@@ -112,7 +112,15 @@ export function parseFile(filePath: string): ParsedModule | null {
       declarations
     };
   } catch (error) {
-    console.error(`Error parsing file ${filePath}`, error);
+    const ext = path.extname(filePath);
+    let sizeBytes = 0;
+    try { sizeBytes = fs.statSync(filePath).size; } catch {}
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[nirnex parser] Failed to parse ${filePath}\n` +
+      `  extension: ${ext}  size: ${sizeBytes} bytes\n` +
+      `  reason: ${msg}`
+    );
     return null;
   }
 }
