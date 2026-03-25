@@ -1,6 +1,6 @@
 {
   "name": "@nirnex/core",
-  "version": "4.1.3",
+  "version": "4.2.0",
   "description": "Nirnex core — database, indexing, and knowledge graph engine",
   "type": "module",
   "main": "./dist/index.js",
