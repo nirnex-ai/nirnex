@@ -8,6 +8,7 @@
 
 [![CI](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml)
 [![Release](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml)
+[![npm version](https://img.shields.io/npm/v/@nirnex/cli.svg)](https://www.npmjs.com/package/@nirnex/cli)
 
 </div>
 
@@ -123,6 +124,18 @@ For planning, set your API key:
 
 ```sh
 export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+---
+
+## Current Version
+
+**v4.0.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
+
+Check your installed version at any time:
+
+```sh
+nirnex version
 ```
 
 ---
@@ -278,6 +291,16 @@ Re-evaluate past decisions.
 ```sh
 nirnex replay --trace tr_xxx
 nirnex replay --all --since 7d
+```
+
+
+
+### `nirnex version`
+
+Print the installed version.
+
+```sh
+nirnex version
 ```
 
 ---

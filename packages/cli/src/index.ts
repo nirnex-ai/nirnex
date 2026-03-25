@@ -2,6 +2,7 @@
 // Nirnex CLI — Decision Intelligence for software delivery
 // Usage: nirnex <command> [args]
 
+import { createRequire } from 'node:module';
 import { planCommand }    from './commands/plan.js';
 import { queryCommand }   from './commands/query.js';
 import { statusCommand }  from './commands/status.js';
@@ -27,11 +28,20 @@ Usage:
   nirnex trace    [options]   View execution traces
   nirnex replay   [options]   Replay a past analysis run
   nirnex runtime  <sub>       Claude hook pipeline commands (machine-facing)
+  nirnex version              Print the installed version
 
 Run \`nirnex setup\` to get started.
 `.trimStart();
 
 switch (command) {
+  case 'version':
+  case '--version':
+  case '-v': {
+    const require = createRequire(import.meta.url);
+    const pkg = require('../package.json') as { version: string };
+    console.log(pkg.version);
+    break;
+  }
   case 'setup':
     setupCommand(rest).catch(console.error);
     break;
