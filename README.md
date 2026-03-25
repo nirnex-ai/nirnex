@@ -303,6 +303,18 @@ Print the installed version.
 nirnex version
 ```
 
+
+
+### `nirnex update`
+
+Check npm for a newer version and install it if one is available.
+
+```sh
+nirnex update
+```
+
+No arguments needed — it fetches the latest `@nirnex/cli` from the npm registry, compares it against your installed version, and runs the upgrade automatically.
+
 ---
 
 ## Spec Files

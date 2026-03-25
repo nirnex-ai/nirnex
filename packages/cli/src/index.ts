@@ -11,6 +11,7 @@ import { indexCommand }   from './commands/index.js';
 import { traceCommand }   from './commands/trace.js';
 import { setupCommand }   from './commands/setup.js';
 import { removeCommand }  from './commands/remove.js';
+import { updateCommand }  from './commands/update.js';
 import { runtimeCommand } from './commands/runtime.js';
 
 const [, , command = '', ...rest] = process.argv;
@@ -29,6 +30,7 @@ Usage:
   nirnex replay   [options]   Replay a past analysis run
   nirnex runtime  <sub>       Claude hook pipeline commands (machine-facing)
   nirnex version              Print the installed version
+  nirnex update               Update to the latest version
 
 Run \`nirnex setup\` to get started.
 `.trimStart();
@@ -42,6 +44,9 @@ switch (command) {
     console.log(pkg.version);
     break;
   }
+  case 'update':
+    updateCommand(rest).catch(console.error);
+    break;
   case 'setup':
     setupCommand(rest).catch(console.error);
     break;

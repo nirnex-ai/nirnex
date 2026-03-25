@@ -1,11 +1,4 @@
 {
   "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "nirnex-site",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "serve", "--prefix", "site", "--", "--port", "3005"],
-      "port": 3005
-    }
-  ]
+  "configurations": []
 }
