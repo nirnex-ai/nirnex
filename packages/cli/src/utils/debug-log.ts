@@ -24,6 +24,18 @@ function pkgVersion(name: string): string | undefined {
   }
 }
 
+// ─── Compatibility context ────────────────────────────────────────────────────
+//
+// Passed in from the index command which already ran checkParserCompatibility().
+// Lets the classifier upgrade to `parser_dependency_version_mismatch` when
+// we know the installed versions are outside the tested matrix.
+
+export interface CompatibilityContext {
+  treeSitterVersion?: string;
+  treeSitterTypescriptVersion?: string;
+  inSupportedMatrix: boolean;
+}
+
 // ─── Failure classifier ──────────────────────────────────────────────────────
 
 interface Classification {
@@ -31,21 +43,41 @@ interface Classification {
   recommended_actions: string[];
 }
 
-function classify(diag: ParseFileDiagnostics): Classification {
-  // Grammar set failed — ABI / binding problem
+function classify(diag: ParseFileDiagnostics, compat?: CompatibilityContext): Classification {
+  // ── Version mismatch — most likely cause when outside the tested matrix ──────
+  // Only applies to parse-stage failures; set_language failures have their own cause.
+  if (
+    compat &&
+    !compat.inSupportedMatrix &&
+    (diag.stage === 'parse' || diag.stage === 'set_language')
+  ) {
+    return {
+      suspected_cause: 'parser_dependency_version_mismatch',
+      recommended_actions: [
+        `Installed: tree-sitter@${compat.treeSitterVersion ?? 'unknown'} + ` +
+          `tree-sitter-typescript@${compat.treeSitterTypescriptVersion ?? 'unknown'}`,
+        'These versions are outside the tested compatibility matrix for Nirnex',
+        'Supported: tree-sitter@0.21.x + tree-sitter-typescript@0.23.x',
+        'Fix: npm install -g @nirnex/cli to restore exact pinned versions',
+        'Then retry: nirnex index --rebuild',
+      ],
+    };
+  }
+
+  // ── Grammar set failed — ABI / binding problem ────────────────────────────
   if (diag.stage === 'set_language') {
     return {
       suspected_cause: 'grammar_binding_problem',
       recommended_actions: [
         'The tree-sitter language could not be set — likely a native ABI or version mismatch',
-        'Run: npm ls tree-sitter tree-sitter-typescript',
+        `Run: npm ls tree-sitter tree-sitter-typescript`,
         'Reinstall: npm install -g @nirnex/cli',
         'Check Node.js version compatibility with the tree-sitter native module',
       ],
     };
   }
 
-  // TSX file got TypeScript grammar — should never happen, but detectable
+  // ── TSX file got TypeScript grammar — Nirnex bug ──────────────────────────
   if (diag.extension === '.tsx' && diag.selected_language === 'typescript') {
     return {
       suspected_cause: 'wrong_grammar_selected',
@@ -57,7 +89,7 @@ function classify(diag: ParseFileDiagnostics): Classification {
     };
   }
 
-  // Null bytes — binary or incorrectly encoded file
+  // ── Null bytes — binary or incorrectly encoded file ───────────────────────
   if (diag.has_null_bytes) {
     return {
       suspected_cause: 'invalid_file_encoding',
@@ -69,7 +101,7 @@ function classify(diag: ParseFileDiagnostics): Classification {
     };
   }
 
-  // Non-string passed to parse() — Nirnex bug
+  // ── Non-string passed to parse() — Nirnex bug ─────────────────────────────
   if (diag.input_type !== undefined && diag.input_type !== 'string') {
     return {
       suspected_cause: 'invalid_parse_input_type',
@@ -80,7 +112,7 @@ function classify(diag: ParseFileDiagnostics): Classification {
     };
   }
 
-  // File could not be read or decoded
+  // ── File could not be read or decoded ─────────────────────────────────────
   if (diag.stage === 'read_file' || diag.stage === 'decode_file') {
     return {
       suspected_cause: 'file_access_or_encoding_error',
@@ -92,35 +124,40 @@ function classify(diag: ParseFileDiagnostics): Classification {
     };
   }
 
-  // Parse stage failure for .tsx — grammar or syntax issue
+  // ── Parse stage failure, versions confirmed compatible ────────────────────
+  // The environment is healthy (smoke tests passed, versions in matrix),
+  // so the failure is specific to this file's content.
   if (diag.stage === 'parse' && diag.extension === '.tsx') {
+    const inMatrix = compat?.inSupportedMatrix ?? true; // assume ok if no context
     return {
-      suspected_cause: 'unsupported_syntax_or_parser_binding_issue',
+      suspected_cause: inMatrix
+        ? 'file_specific_syntax_not_supported_by_grammar'
+        : 'unsupported_syntax_or_parser_binding_issue',
       recommended_actions: [
-        'The TSX grammar (tree-sitter-typescript) could not parse this file',
-        'Possible causes: very new JSX/TS syntax, very large file, or ABI mismatch in native bindings',
-        'Run: npm ls tree-sitter tree-sitter-typescript — look for version mismatches',
-        'Try reproducing with a minimal .tsx snippet to isolate the syntax involved',
-        'If other .tsx files parse successfully, the issue is specific to this file\'s syntax',
-        'File a bug report with this log entry if the problem persists',
+        'The TSX grammar parsed other .tsx files successfully — the issue is specific to this file',
+        'Possible causes: very new JSX/TS syntax, unusually deep AST nesting, or unicode edge cases',
+        'Try isolating the syntax: comment out sections until the file parses',
+        'Check the content_sha256 to identify the exact file version that failed',
+        'File a bug report with this log entry so the grammar can be improved',
       ],
     };
   }
 
-  // Parse stage failure for .ts
   if (diag.stage === 'parse' && diag.extension === '.ts') {
+    const inMatrix = compat?.inSupportedMatrix ?? true;
     return {
-      suspected_cause: 'unsupported_syntax_or_parser_binding_issue',
+      suspected_cause: inMatrix
+        ? 'file_specific_syntax_not_supported_by_grammar'
+        : 'unsupported_syntax_or_parser_binding_issue',
       recommended_actions: [
-        'The TypeScript grammar (tree-sitter-typescript) could not parse this file',
-        'Run: npm ls tree-sitter tree-sitter-typescript — look for version mismatches',
-        'Try reproducing with a minimal .ts snippet',
+        'The TypeScript grammar parsed other .ts files successfully — the issue is specific to this file',
+        'Try isolating the syntax: comment out sections until the file parses',
         'File a bug report with this log entry if the problem persists',
       ],
     };
   }
 
-  // AST traversal bug — Nirnex bug, not user file
+  // ── AST traversal bug — Nirnex bug, not user file ─────────────────────────
   if (diag.stage === 'postprocess_ast') {
     return {
       suspected_cause: 'nirnex_ast_traversal_bug',
@@ -142,7 +179,7 @@ function classify(diag: ParseFileDiagnostics): Classification {
   };
 }
 
-// ─── Log entry schema ────────────────────────────────────────────────────────
+// ─── Log entry schema ─────────────────────────────────────────────────────────
 
 export interface DebugLogEntry {
   timestamp: string;
@@ -155,8 +192,10 @@ export interface DebugLogEntry {
   nirnex_cli_version?: string;
   nirnex_parser_version?: string;
   tree_sitter_version?: string;
+  tree_sitter_typescript_version?: string;
   grammar_package: string;
   grammar_variant?: string;
+  in_supported_matrix?: boolean;
   // File metadata
   file: string;
   extension: string;
@@ -180,7 +219,7 @@ export interface DebugLogEntry {
   recommended_actions: string[];
 }
 
-// ─── Main export ─────────────────────────────────────────────────────────────
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
  * Appends a structured JSONL record to `.ai-index/nirnex-debug.log`.
@@ -190,7 +229,8 @@ export interface DebugLogEntry {
 export function appendDebugLog(
   cwd: string,
   diag: ParseFileDiagnostics,
-  command: string
+  command: string,
+  compat?: CompatibilityContext
 ): string {
   const logDir = path.join(cwd, '.ai-index');
   const logPath = path.join(logDir, 'nirnex-debug.log');
@@ -209,7 +249,7 @@ export function appendDebugLog(
       // Log may not exist yet — that's fine
     }
 
-    const { suspected_cause, recommended_actions } = classify(diag);
+    const { suspected_cause, recommended_actions } = classify(diag, compat);
 
     const entry: DebugLogEntry = {
       timestamp: new Date().toISOString(),
@@ -220,9 +260,12 @@ export function appendDebugLog(
       platform: `${process.platform}-${process.arch}`,
       nirnex_cli_version: pkgVersion('@nirnex/cli'),
       nirnex_parser_version: pkgVersion('@nirnex/parser'),
-      tree_sitter_version: pkgVersion('tree-sitter'),
+      tree_sitter_version: compat?.treeSitterVersion ?? pkgVersion('tree-sitter'),
+      tree_sitter_typescript_version:
+        compat?.treeSitterTypescriptVersion ?? pkgVersion('tree-sitter-typescript'),
       grammar_package: 'tree-sitter-typescript',
       grammar_variant: diag.grammar_variant,
+      in_supported_matrix: compat?.inSupportedMatrix,
       file: diag.file,
       extension: diag.extension,
       size_bytes: diag.size_bytes,

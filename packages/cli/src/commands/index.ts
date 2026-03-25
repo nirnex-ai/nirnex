@@ -1,6 +1,7 @@
 import { openDb, insertParsedModule, setMetaCommitHash, computeGraphEdges } from '@nirnex/core/dist/db.js';
 import { parseFileWithDiagnostics } from '@nirnex/parser/dist/index.js';
-import { appendDebugLog } from '../utils/debug-log.js';
+import { checkParserCompatibility } from '@nirnex/parser/dist/compatibility.js';
+import { appendDebugLog, type CompatibilityContext } from '../utils/debug-log.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
@@ -53,6 +54,31 @@ export function indexCommand(args: string[], commandLabel?: string): IndexResult
   const targetDir = process.cwd();
   const label = commandLabel ?? (isRebuild ? 'index --rebuild' : 'index');
 
+  // ── Pre-flight: parser compatibility check ─────────────────────────────────
+  const compat = checkParserCompatibility();
+
+  if (!compat.healthy) {
+    const failedTests = compat.smokeTests.filter(t => t.status === 'fail');
+    process.stderr.write('\n\x1b[31m[nirnex index] Parser health check FAILED — aborting index\x1b[0m\n');
+    process.stderr.write(`  tree-sitter:            ${compat.treeSitterVersion ?? 'unknown'}\n`);
+    process.stderr.write(`  tree-sitter-typescript: ${compat.treeSitterTypescriptVersion ?? 'unknown'}\n`);
+    for (const t of failedTests) {
+      process.stderr.write(`  ✖ smoke test "${t.name}" (${t.lang}): ${t.errorMessage}\n`);
+    }
+    process.stderr.write('\n  Fix: npm install -g @nirnex/cli\n\n');
+    return { succeeded: 0, failed: 0, failedFiles: [], durationMs: 0 };
+  }
+
+  if (!compat.inSupportedMatrix) {
+    process.stderr.write(
+      `\x1b[33m[nirnex index] Warning:\x1b[0m Parser dependency versions are outside the tested compatibility matrix.\n` +
+      `  tree-sitter:            ${compat.treeSitterVersion ?? 'unknown'} (supported: 0.21.x)\n` +
+      `  tree-sitter-typescript: ${compat.treeSitterTypescriptVersion ?? 'unknown'} (supported: 0.23.x)\n` +
+      `  Smoke tests passed, but parse failures may still occur on complex files.\n` +
+      `  Run: npm install -g @nirnex/cli to restore tested versions.\n`
+    );
+  }
+
   const dbPath = path.join(targetDir, '.aidos.db');
   console.log('[nirnex index] Starting ' + (isRebuild ? 'full rebuild' : 'incremental update') + ' on ' + targetDir);
   const t0 = performance.now();
@@ -77,6 +103,12 @@ export function indexCommand(args: string[], commandLabel?: string): IndexResult
 
   db.exec('BEGIN TRANSACTION');
 
+  const compatCtx: CompatibilityContext = {
+    treeSitterVersion: compat.treeSitterVersion,
+    treeSitterTypescriptVersion: compat.treeSitterTypescriptVersion,
+    inSupportedMatrix: compat.inSupportedMatrix,
+  };
+
   let succeeded = 0;
   let failed = 0;
   const failedFiles: string[] = [];
@@ -90,7 +122,7 @@ export function indexCommand(args: string[], commandLabel?: string): IndexResult
       failedFiles.push(file);
 
       // Write structured debug record — first failure prints the log path
-      const logPath = appendDebugLog(targetDir, result.diagnostics, label);
+      const logPath = appendDebugLog(targetDir, result.diagnostics, label, compatCtx);
       if (failed === 1) {
         debugLogPath = logPath;
         process.stderr.write(

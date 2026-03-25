@@ -10,6 +10,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./compatibility": {
+      "import": "./dist/compatibility.js",
+      "types": "./dist/compatibility.d.ts"
+    },
     "./dist/*.js": {
       "import": "./dist/*.js",
       "types": "./dist/*.d.ts"
@@ -34,8 +38,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "tree-sitter": "^0.21.1",
-    "tree-sitter-typescript": "^0.23.2"
+    "tree-sitter": "0.21.1",
+    "tree-sitter-typescript": "0.23.2"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
