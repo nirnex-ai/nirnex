@@ -73,7 +73,7 @@ export async function updateCommand(_args: string[]): Promise<void> {
     process.stdout.write(`\n  \x1b[32m✔\x1b[0m Updated to \x1b[1m${latest}\x1b[0m\n\n`);
   } catch {
     process.stderr.write(`  \x1b[31m✖\x1b[0m Update failed. Try manually:\n`);
-    process.stderr.write(`    npm install -g ${PACKAGE_NAME}@latest\n\n`);
+    process.stderr.write(`    npm install -g ${PACKAGE_NAME}\n\n`);
     process.exit(1);
   }
 }
