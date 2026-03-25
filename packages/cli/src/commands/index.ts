@@ -1,5 +1,6 @@
 import { openDb, insertParsedModule, setMetaCommitHash, computeGraphEdges } from '@nirnex/core/dist/db.js';
-import { parseFile } from '@nirnex/parser/dist/index.js';
+import { parseFileWithDiagnostics } from '@nirnex/parser/dist/index.js';
+import { appendDebugLog } from '../utils/debug-log.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
@@ -44,11 +45,13 @@ export interface IndexResult {
   failed: number;
   failedFiles: string[];
   durationMs: number;
+  debugLogPath?: string;
 }
 
-export function indexCommand(args: string[]): IndexResult {
+export function indexCommand(args: string[], commandLabel?: string): IndexResult {
   const isRebuild = args.includes('--rebuild');
   const targetDir = process.cwd();
+  const label = commandLabel ?? (isRebuild ? 'index --rebuild' : 'index');
 
   const dbPath = path.join(targetDir, '.aidos.db');
   console.log('[nirnex index] Starting ' + (isRebuild ? 'full rebuild' : 'incremental update') + ' on ' + targetDir);
@@ -77,15 +80,29 @@ export function indexCommand(args: string[]): IndexResult {
   let succeeded = 0;
   let failed = 0;
   const failedFiles: string[] = [];
+  let debugLogPath: string | undefined;
 
   for (const file of filesToProcess) {
-    const parsed = parseFile(file);
-    if (!parsed) {
+    const result = parseFileWithDiagnostics(file);
+
+    if (!result.ok) {
       failed++;
       failedFiles.push(file);
+
+      // Write structured debug record — first failure prints the log path
+      const logPath = appendDebugLog(targetDir, result.diagnostics, label);
+      if (failed === 1) {
+        debugLogPath = logPath;
+        process.stderr.write(
+          `[nirnex index]   suspected cause: ${result.diagnostics.stage} stage failure` +
+          ` (${result.diagnostics.extension} / ${result.diagnostics.selected_language ?? 'unknown grammar'})\n` +
+          `[nirnex index]   debug details → ${path.relative(targetDir, logPath)}\n`
+        );
+      }
       continue;
     }
 
+    const parsed = result.module;
     const myModule = detectModule(file, targetDir);
 
     const enrichedImports = parsed.imports.map((imp: any) => {
@@ -99,19 +116,15 @@ export function indexCommand(args: string[]): IndexResult {
         ...imp,
         resolved: resolved.resolved,
         is_local: resolved.is_local,
-        is_cross_module
+        is_cross_module,
       };
     });
 
-    insertParsedModule(db, {
-      ...parsed,
-      imports: enrichedImports
-    });
+    insertParsedModule(db, { ...parsed, imports: enrichedImports });
     succeeded++;
   }
 
   computeGraphEdges(db);
-
   db.exec('COMMIT');
 
   try {
@@ -129,14 +142,19 @@ export function indexCommand(args: string[]): IndexResult {
       `[nirnex index] Finished: ${succeeded}/${filesToProcess.length} file(s) indexed in ${durationMs.toFixed(2)}ms`
     );
   } else {
-    console.warn(
+    process.stderr.write(
       `[nirnex index] Finished with degraded coverage: ${succeeded}/${filesToProcess.length} indexed, ` +
-      `${failed} failed in ${durationMs.toFixed(2)}ms`
+      `${failed} failed in ${durationMs.toFixed(2)}ms\n`
     );
     for (const f of failedFiles) {
-      console.warn(`[nirnex index]   ✖ ${path.relative(targetDir, f)}`);
+      process.stderr.write(`[nirnex index]   ✖ ${path.relative(targetDir, f)}\n`);
+    }
+    if (failed > 1 && debugLogPath) {
+      process.stderr.write(
+        `[nirnex index] ${failed} parser failures recorded → ${path.relative(targetDir, debugLogPath)}\n`
+      );
     }
   }
 
-  return { succeeded, failed, failedFiles, durationMs };
+  return { succeeded, failed, failedFiles, durationMs, debugLogPath };
 }

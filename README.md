@@ -235,9 +235,28 @@ nirnex status
 Build or refresh the structural index.
 
 ```sh
-nirnex index
-nirnex index --rebuild
+nirnex index           # incremental — changed files only (via git diff)
+nirnex index --rebuild # full rebuild — re-parses every .ts / .tsx file
 ```
+
+**Output states**
+
+| State | What it means |
+|---|---|
+| `Finished: 184/184 file(s) indexed` | All files parsed successfully |
+| `Finished with degraded coverage: 181/184 indexed, 3 failed` | Some files could not be parsed — index is partial |
+
+When parse failures occur, Nirnex prints each failed file and the stage where it failed:
+
+```
+[nirnex index]   suspected cause: parse stage failure (.tsx / tsx grammar)
+[nirnex index]   debug details → .ai-index/nirnex-debug.log
+[nirnex index]   ✖ apps/frontend/app/ui-showcase/page.tsx
+[nirnex index]   ✖ apps/frontend/components/platform-collaboration-components.tsx
+[nirnex index] 2 parser failures recorded → .ai-index/nirnex-debug.log
+```
+
+The full structured record is written to `.ai-index/nirnex-debug.log` — see [Parser Diagnostics](#parser-diagnostics) below.
 
 
 
@@ -446,6 +465,140 @@ Causes:
 Fix:
 - narrow scope
 - use spec file
+
+---
+
+### Parser Diagnostics
+
+When `nirnex index` cannot parse one or more files it writes a structured debug
+record to `.ai-index/nirnex-debug.log` (JSONL — one entry per failed file).
+
+**What triggers a debug record**
+
+Any parse failure: file read error, unsupported extension, grammar binding
+problem, tree-sitter parse error, or AST traversal bug.
+
+**What is recorded**
+
+Each record is a single JSON line containing:
+
+| Field group | Fields |
+|---|---|
+| **Environment** | `node_version`, `platform`, `nirnex_cli_version`, `nirnex_parser_version`, `tree_sitter_version` |
+| **File metadata** | `file`, `extension`, `size_bytes`, `content_sha256` (first 16 hex chars), `char_length`, `has_bom`, `has_null_bytes`, `newline_style` |
+| **Parser context** | `selected_language` (`typescript` or `tsx`), `grammar_variant`, `language_set`, `input_type` |
+| **Failure details** | `stage`, `error_name`, `error_message`, `stack` |
+| **Guidance** | `suspected_cause`, `recommended_actions[]` |
+
+No source code is written to the log — only metadata and a content hash.
+
+**Parse stages**
+
+Nirnex tracks which stage failed, making "Invalid argument" errors actionable:
+
+| Stage | What it covers |
+|---|---|
+| `read_file` | Reading raw bytes from disk |
+| `decode_file` | Decoding bytes to UTF-8 string, scanning for BOM / null bytes |
+| `select_language` | Choosing `typescript` vs `tsx` grammar from file extension |
+| `set_language` | Calling `parser.setLanguage()` on the tree-sitter instance |
+| `parse` | Running `parser.parse(content)` — where most failures land |
+| `postprocess_ast` | Nirnex's traversal of the parsed syntax tree |
+
+**Suspected causes**
+
+Nirnex classifies each failure heuristically — the cause is labelled
+`suspected_cause`, not `root_cause`, because it is derived evidence not proof:
+
+| suspected_cause | What it means | Who is likely responsible |
+|---|---|---|
+| `grammar_binding_problem` | `setLanguage` threw — ABI / native module mismatch | Environment |
+| `wrong_grammar_selected` | `.tsx` file routed to TypeScript grammar | Nirnex bug |
+| `invalid_file_encoding` | File contains null bytes or is not valid UTF-8 | Source file |
+| `invalid_parse_input_type` | Non-string passed to `parser.parse()` | Nirnex bug |
+| `file_access_or_encoding_error` | File unreadable or wrong encoding | Environment / file |
+| `unsupported_syntax_or_parser_binding_issue` | `parse` threw for `.tsx` or `.ts` | Grammar version or syntax |
+| `nirnex_ast_traversal_bug` | Parse succeeded, traversal threw | Nirnex bug |
+| `unknown` | None of the above matched | Check stack trace |
+
+**Reading the log**
+
+```sh
+# View all failures
+cat .ai-index/nirnex-debug.log
+
+# Pretty-print the most recent failure
+tail -1 .ai-index/nirnex-debug.log | python3 -m json.tool
+
+# List all suspected causes across failures
+cat .ai-index/nirnex-debug.log | python3 -c \
+  "import sys,json; [print(json.loads(l)['suspected_cause']) for l in sys.stdin]"
+
+# Count failures per extension
+cat .ai-index/nirnex-debug.log | python3 -c \
+  "import sys,json; [print(json.loads(l)['extension']) for l in sys.stdin]"
+```
+
+**Example log entry**
+
+```json
+{
+  "timestamp": "2026-03-25T09:12:31.221Z",
+  "level": "error",
+  "event": "parser_failure",
+  "command": "index --rebuild",
+  "node_version": "v22.12.0",
+  "platform": "darwin-arm64",
+  "nirnex_cli_version": "4.1.3",
+  "nirnex_parser_version": "4.1.3",
+  "tree_sitter_version": "0.21.1",
+  "grammar_package": "tree-sitter-typescript",
+  "grammar_variant": "tsx",
+  "file": "/Users/you/project/app/page.tsx",
+  "extension": ".tsx",
+  "size_bytes": 41994,
+  "content_sha256": "abc123def456ab12",
+  "char_length": 41870,
+  "has_bom": false,
+  "has_null_bytes": false,
+  "newline_style": "LF",
+  "selected_language": "tsx",
+  "language_set": true,
+  "input_type": "string",
+  "stage": "parse",
+  "error_name": "Error",
+  "error_message": "Invalid argument",
+  "stack": "Error: Invalid argument\n    at ...",
+  "suspected_cause": "unsupported_syntax_or_parser_binding_issue",
+  "recommended_actions": [
+    "The TSX grammar (tree-sitter-typescript) could not parse this file",
+    "Possible causes: very new JSX/TS syntax, very large file, or ABI mismatch in native bindings",
+    "Run: npm ls tree-sitter tree-sitter-typescript — look for version mismatches",
+    "Try reproducing with a minimal .tsx snippet to isolate the syntax involved",
+    "If other .tsx files parse successfully, the issue is specific to this file's syntax",
+    "File a bug report with this log entry if the problem persists"
+  ]
+}
+```
+
+**Log management**
+
+- Log is **append-only** — each `nirnex index` run appends new records
+- Log **rotates automatically** when it exceeds 10 MB (renamed to `nirnex-debug.log.<timestamp>.old`)
+- Add `.ai-index/nirnex-debug.log` to `.gitignore` to avoid committing debug artifacts
+
+**Diagnosing `tree-sitter` version mismatches**
+
+```sh
+# Check installed versions
+npm ls tree-sitter tree-sitter-typescript
+
+# If there is a mismatch, reinstall
+npm install -g @nirnex/cli
+
+# Retry indexing
+nirnex index --rebuild
+```
 
 ---
 
