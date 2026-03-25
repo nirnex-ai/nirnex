@@ -86,7 +86,7 @@ Or using a spec file:
 nirnex plan .ai/specs/add-retry.md
 ```
 
-## What `nirnex setup` Creates
+## What `nirnex setup` Creates (and `nirnex remove` Cleans Up)
 
 ```
 .ai/
@@ -138,6 +138,74 @@ nirnex setup
 ```
 
 
+
+### `nirnex remove`
+
+Safely detach Nirnex from a repository without touching source code, build config, or user-authored files.
+
+```sh
+nirnex remove
+```
+
+By default, `nirnex remove` runs interactively: it scans for Nirnex artifacts, shows a removal plan, and asks for confirmation before making any changes.
+
+**What gets removed**
+
+| Artifact | Behavior |
+|---|---|
+| `nirnex.config.json` | Deleted if it matches the Nirnex config shape |
+| `.aidos.db` | Deleted (SQLite index database) |
+| `.ai-index/` | Deleted recursively (runtime index data) |
+| `.ai/prompts/analyst.md` | Deleted only if content still matches the setup default |
+| `.ai/prompts/implementer.md` | Deleted only if content still matches the setup default |
+| `.ai/calibration/README.md` | Deleted only if content still matches the setup default |
+| `.ai/critical-paths.txt` | Deleted only if content still matches the setup default |
+| `.ai/specs/` | **Never auto-deleted** — preserved and reported for manual review |
+| `.claude/hooks/nirnex-*.sh` | Deleted if content exactly matches the Nirnex launcher templates |
+| `.claude/settings.json` | Surgically patched — only Nirnex hook bindings removed, all other settings preserved |
+| `.git/hooks/post-commit` | Deleted if it contains only `nirnex index`; patched to remove that line if it contains other commands |
+
+Empty parent directories (`.claude/hooks/`, `.claude/`, `.ai/prompts/`, etc.) are removed after their contents are cleared.
+
+**Flags**
+
+| Flag | Behavior |
+|---|---|
+| `--dry-run` | Show the full removal plan without making any changes |
+| `--yes` / `-y` | Auto-approve all safe actions (skips global confirmation prompt) |
+| `--force` | Apply safe and medium-confidence actions without per-action prompts |
+| `--keep-data` | Preserve `.ai/`, `.ai-index/`, and `.aidos.db` |
+| `--keep-specs` | Preserve `.ai/specs/` (also the default behavior) |
+| `--keep-claude` | Preserve all Claude integration (hook scripts and settings) |
+| `--purge-data` | Delete `.ai/` entirely, including user-authored specs (requires confirmation) |
+| `--json` | Machine-readable JSON output |
+
+**Examples**
+
+```sh
+# Preview what would be removed — no changes made
+nirnex remove --dry-run
+
+# Remove everything without prompts
+nirnex remove --yes
+
+# Remove runtime/config but keep .ai/ workspace
+nirnex remove --keep-data
+
+# Remove everything including user-authored .ai/ content
+nirnex remove --purge-data
+
+# Machine-readable output for scripting
+nirnex remove --dry-run --json
+```
+
+**Ownership model**
+
+`nirnex remove` only deletes what it can prove Nirnex created. For template files, it compares content against the known setup defaults — if you have edited the file, it is preserved and listed under "manual review." For shared files like `.claude/settings.json`, it patches out only the Nirnex-owned entries rather than deleting the whole file.
+
+Any files listed under "preserved" in the output can be cleaned up manually if needed.
+
+---
 
 ### `nirnex status`
 

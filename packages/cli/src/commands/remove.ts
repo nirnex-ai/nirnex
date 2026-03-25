@@ -1,0 +1,766 @@
+// Command: nirnex remove
+// Safely detach Nirnex from a repository without damaging user files,
+// hooks, settings, or source code that Nirnex did not create.
+
+import fs from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
+
+// ─── Known default templates (from setup.ts) ───────────────────────────────
+
+const NIRNEX_HOOK_COMMANDS = new Set([
+  '.claude/hooks/nirnex-bootstrap.sh',
+  '.claude/hooks/nirnex-entry.sh',
+  '.claude/hooks/nirnex-guard.sh',
+  '.claude/hooks/nirnex-trace.sh',
+  '.claude/hooks/nirnex-validate.sh',
+]);
+
+const NIRNEX_HOOK_SCRIPTS: Record<string, string> = {
+  'nirnex-bootstrap.sh': '#!/bin/sh\nexec nirnex runtime bootstrap\n',
+  'nirnex-entry.sh': '#!/bin/sh\nexec nirnex runtime entry\n',
+  'nirnex-guard.sh': '#!/bin/sh\nexec nirnex runtime guard\n',
+  'nirnex-trace.sh': '#!/bin/sh\nexec nirnex runtime trace\n',
+  'nirnex-validate.sh': '#!/bin/sh\nexec nirnex runtime validate\n',
+};
+
+const POST_COMMIT_EXACT = '#!/bin/sh\nnirnex index\n';
+const POST_COMMIT_LINE = 'nirnex index';
+
+const DEFAULT_CRITICAL_PATHS_PREFIX = '# Critical Paths\n# List architecturally critical files';
+const DEFAULT_ANALYST_PREFIX = '# Analyst Persona\n\n## Role\nYou are the Analyst agent in the Nirnex pipeline.';
+const DEFAULT_IMPLEMENTER_PREFIX = '# Implementer Persona\n\n## Role\nYou are the Implementer agent in the Nirnex pipeline.';
+const DEFAULT_CALIBRATION_PREFIX = '# Calibration\n\nProject-specific calibration files for Nirnex.';
+
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+type ActionType =
+  | 'delete_file'
+  | 'delete_dir'
+  | 'patch_json'
+  | 'patch_hook'
+  | 'skip';
+
+type Confidence = 'high' | 'medium' | 'low';
+
+interface RemovalAction {
+  path: string;
+  type: ActionType;
+  confidence: Confidence;
+  reason: string;
+  preview?: string;
+  requiresConfirmation: boolean;
+}
+
+interface RemovalPlan {
+  cwd: string;
+  actions: RemovalAction[];
+  manualReview: string[];
+}
+
+interface RemoveOpts {
+  yes: boolean;
+  dryRun: boolean;
+  force: boolean;
+  keepData: boolean;
+  keepSpecs: boolean;
+  keepClaude: boolean;
+  purgeData: boolean;
+  json: boolean;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+function cross(msg: string) {
+  process.stdout.write(`  \x1b[31m✖\x1b[0m ${msg}\n`);
+}
+
+function tick(msg: string) {
+  process.stdout.write(`  \x1b[32m✔\x1b[0m ${msg}\n`);
+}
+
+function skip(msg: string) {
+  process.stdout.write(`  \x1b[90m·\x1b[0m ${msg}\n`);
+}
+
+function warn(msg: string) {
+  process.stdout.write(`  \x1b[33m!\x1b[0m ${msg}\n`);
+}
+
+function promptYesNo(rl: readline.Interface, question: string, defaultYes = true): Promise<boolean> {
+  const hint = defaultYes ? '[Y/n]' : '[y/N]';
+  return new Promise(resolve =>
+    rl.question(`  ${question} ${hint}: `, answer => {
+      const t = answer.trim().toLowerCase();
+      resolve(!t ? defaultYes : t === 'y' || t === 'yes');
+    }),
+  );
+}
+
+function readJsonSafe(p: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function isNirnexConfig(obj: Record<string, unknown>): boolean {
+  // Recognise by shape: must have at least 3 of these nirnex-specific keys
+  const keys = ['specDirectory', 'criticalPathsFile', 'prompts', 'index', 'git', 'llm', 'hooks', 'sourceRoots', 'projectName'];
+  const present = keys.filter(k => k in obj).length;
+  return present >= 4;
+}
+
+function isDirEmpty(p: string): boolean {
+  try {
+    return fs.readdirSync(p).length === 0;
+  } catch {
+    return false;
+  }
+}
+
+function startsWith(content: string, prefix: string): boolean {
+  return content.trimStart().startsWith(prefix);
+}
+
+// ─── Scanner ──────────────────────────────────────────────────────────────
+
+function scanRemovalTargets(cwd: string, opts: RemoveOpts): RemovalPlan {
+  const actions: RemovalAction[] = [];
+  const manualReview: string[] = [];
+
+  // 1. nirnex.config.json
+  const configPath = path.join(cwd, 'nirnex.config.json');
+  if (fs.existsSync(configPath)) {
+    const obj = readJsonSafe(configPath);
+    if (obj && isNirnexConfig(obj)) {
+      actions.push({
+        path: configPath,
+        type: 'delete_file',
+        confidence: 'high',
+        reason: 'Matches Nirnex config shape (created by nirnex setup)',
+        requiresConfirmation: false,
+      });
+    } else {
+      manualReview.push(`${configPath} — exists but does not look like a Nirnex config; inspect manually`);
+    }
+  }
+
+  // 2. .aidos.db
+  const dbPath = path.join(cwd, '.aidos.db');
+  if (fs.existsSync(dbPath) && !opts.keepData) {
+    actions.push({
+      path: dbPath,
+      type: 'delete_file',
+      confidence: 'high',
+      reason: 'SQLite database created by nirnex index',
+      requiresConfirmation: false,
+    });
+  } else if (fs.existsSync(dbPath) && opts.keepData) {
+    skip(`.aidos.db preserved (--keep-data)`);
+  }
+
+  // 3. .ai-index/
+  const aiIndexDir = path.join(cwd, '.ai-index');
+  if (fs.existsSync(aiIndexDir) && !opts.keepData) {
+    actions.push({
+      path: aiIndexDir,
+      type: 'delete_dir',
+      confidence: 'high',
+      reason: 'Runtime index directory created by nirnex setup',
+      requiresConfirmation: false,
+    });
+  } else if (fs.existsSync(aiIndexDir) && opts.keepData) {
+    skip(`.ai-index/ preserved (--keep-data)`);
+  }
+
+  // 4. .ai/ — selective removal
+  const aiDir = path.join(cwd, '.ai');
+  if (fs.existsSync(aiDir)) {
+    if (opts.purgeData) {
+      // Full removal requested
+      actions.push({
+        path: aiDir,
+        type: 'delete_dir',
+        confidence: 'medium',
+        reason: 'Full .ai/ purge requested (--purge-data)',
+        requiresConfirmation: true,
+        preview: 'This will delete all files in .ai/ including any user-authored specs and calibration files.',
+      });
+    } else if (!opts.keepData && !opts.keepSpecs) {
+      // Remove only default template files, preserve user content
+      scanAiDir(cwd, aiDir, actions, manualReview);
+    } else {
+      skip(`.ai/ preserved (--keep-data or --keep-specs)`);
+    }
+  }
+
+  // 5. Git post-commit hook
+  if (!opts.keepData) {
+    const hookPath = path.join(cwd, '.git', 'hooks', 'post-commit');
+    if (fs.existsSync(hookPath)) {
+      try {
+        const content = fs.readFileSync(hookPath, 'utf8');
+        if (content === POST_COMMIT_EXACT) {
+          actions.push({
+            path: hookPath,
+            type: 'delete_file',
+            confidence: 'high',
+            reason: 'Exact match to Nirnex post-commit hook template',
+            requiresConfirmation: false,
+          });
+        } else if (content.includes(POST_COMMIT_LINE)) {
+          // Mixed hook — patch only if manageable
+          actions.push({
+            path: hookPath,
+            type: 'patch_hook',
+            confidence: 'medium',
+            reason: `Contains "nirnex index" alongside other commands — will remove only the Nirnex line`,
+            preview: `Will remove the line: ${POST_COMMIT_LINE}`,
+            requiresConfirmation: true,
+          });
+        }
+        // else: hook exists but has no nirnex content — leave it alone
+      } catch {
+        manualReview.push(`${hookPath} — could not read; inspect manually`);
+      }
+    }
+  }
+
+  // 6. Claude hook scripts
+  if (!opts.keepClaude) {
+    const claudeHooksDir = path.join(cwd, '.claude', 'hooks');
+    for (const [name, expectedContent] of Object.entries(NIRNEX_HOOK_SCRIPTS)) {
+      const p = path.join(claudeHooksDir, name);
+      if (fs.existsSync(p)) {
+        try {
+          const content = fs.readFileSync(p, 'utf8');
+          if (content === expectedContent) {
+            actions.push({
+              path: p,
+              type: 'delete_file',
+              confidence: 'high',
+              reason: `Exact match to Nirnex hook template for ${name}`,
+              requiresConfirmation: false,
+            });
+          } else {
+            manualReview.push(`${p} — exists but content differs from Nirnex template; inspect manually`);
+          }
+        } catch {
+          manualReview.push(`${p} — could not read; inspect manually`);
+        }
+      }
+    }
+  }
+
+  // 7. .claude/settings.json — surgical patch
+  if (!opts.keepClaude) {
+    const settingsPath = path.join(cwd, '.claude', 'settings.json');
+    if (fs.existsSync(settingsPath)) {
+      const obj = readJsonSafe(settingsPath);
+      if (obj && obj.hooks && hasNirnexHooks(obj.hooks as Record<string, unknown>)) {
+        actions.push({
+          path: settingsPath,
+          type: 'patch_json',
+          confidence: 'low',
+          reason: 'Contains Nirnex hook bindings — will remove only Nirnex entries, preserve all other settings',
+          preview: buildSettingsPatchPreview(obj.hooks as Record<string, unknown>),
+          requiresConfirmation: true,
+        });
+      }
+    }
+  }
+
+  // 8. .claude/ and .claude/hooks/ — remove if empty after file removal
+  // These are added dynamically during execution; see executeRemovalPlan.
+
+  return { cwd, actions, manualReview };
+}
+
+function scanAiDir(
+  cwd: string,
+  aiDir: string,
+  actions: RemovalAction[],
+  manualReview: string[],
+) {
+  const toCheck: Array<{ rel: string; defaultPrefix: string }> = [
+    { rel: 'critical-paths.txt', defaultPrefix: DEFAULT_CRITICAL_PATHS_PREFIX },
+    { rel: path.join('prompts', 'analyst.md'), defaultPrefix: DEFAULT_ANALYST_PREFIX },
+    { rel: path.join('prompts', 'implementer.md'), defaultPrefix: DEFAULT_IMPLEMENTER_PREFIX },
+    { rel: path.join('calibration', 'README.md'), defaultPrefix: DEFAULT_CALIBRATION_PREFIX },
+  ];
+
+  for (const { rel, defaultPrefix } of toCheck) {
+    const full = path.join(aiDir, rel);
+    if (!fs.existsSync(full)) continue;
+    try {
+      const content = fs.readFileSync(full, 'utf8');
+      if (startsWith(content, defaultPrefix)) {
+        actions.push({
+          path: full,
+          type: 'delete_file',
+          confidence: 'medium',
+          reason: `Default Nirnex template file (content matches setup default)`,
+          requiresConfirmation: false,
+        });
+      } else {
+        manualReview.push(
+          `${full} — appears user-modified; not removed. Delete manually if not needed.`,
+        );
+      }
+    } catch {
+      manualReview.push(`${full} — could not read; skipping`);
+    }
+  }
+
+  // Warn about specs/ — never auto-remove
+  const specsDir = path.join(aiDir, 'specs');
+  if (fs.existsSync(specsDir)) {
+    const entries = fs.readdirSync(specsDir).filter(e => e !== '.gitkeep');
+    if (entries.length > 0) {
+      manualReview.push(
+        `.ai/specs/ contains ${entries.length} file(s) — preserved. Delete manually with: rm -rf .ai/specs`,
+      );
+    }
+  }
+}
+
+// ─── Settings JSON helpers ────────────────────────────────────────────────
+
+function isNirnexHookCommand(cmd: unknown): boolean {
+  return typeof cmd === 'string' && NIRNEX_HOOK_COMMANDS.has(cmd);
+}
+
+function hasNirnexHooks(hooks: Record<string, unknown>): boolean {
+  for (const stage of Object.values(hooks)) {
+    if (!Array.isArray(stage)) continue;
+    for (const entry of stage) {
+      if (!entry || typeof entry !== 'object') continue;
+      const entryHooks = (entry as Record<string, unknown>).hooks;
+      if (!Array.isArray(entryHooks)) continue;
+      for (const h of entryHooks) {
+        if (h && typeof h === 'object' && isNirnexHookCommand((h as Record<string, unknown>).command)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function removeNirnexHooks(hooks: Record<string, unknown>): Record<string, unknown> {
+  const cleaned: Record<string, unknown> = {};
+  for (const [stage, entries] of Object.entries(hooks)) {
+    if (!Array.isArray(entries)) {
+      cleaned[stage] = entries;
+      continue;
+    }
+    const patchedEntries = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') {
+        patchedEntries.push(entry);
+        continue;
+      }
+      const e = entry as Record<string, unknown>;
+      const entryHooks = Array.isArray(e.hooks) ? e.hooks : [];
+      const filteredHooks = entryHooks.filter(
+        (h: unknown) =>
+          !(h && typeof h === 'object' && isNirnexHookCommand((h as Record<string, unknown>).command)),
+      );
+      if (filteredHooks.length > 0) {
+        patchedEntries.push({ ...e, hooks: filteredHooks });
+      }
+      // If no hooks remain in this entry, drop the entry entirely
+    }
+    if (patchedEntries.length > 0) {
+      cleaned[stage] = patchedEntries;
+    }
+    // If no entries remain for this stage, drop the stage entirely
+  }
+  return cleaned;
+}
+
+function buildSettingsPatchPreview(hooks: Record<string, unknown>): string {
+  const removed: string[] = [];
+  for (const [stage, entries] of Object.entries(hooks)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const entryHooks = (entry as Record<string, unknown>).hooks;
+      if (!Array.isArray(entryHooks)) continue;
+      for (const h of entryHooks) {
+        if (h && typeof h === 'object' && isNirnexHookCommand((h as Record<string, unknown>).command)) {
+          removed.push(`  ${stage} → ${(h as Record<string, unknown>).command}`);
+        }
+      }
+    }
+  }
+  return `Will remove Nirnex hook bindings:\n${removed.join('\n')}`;
+}
+
+// ─── Executor ─────────────────────────────────────────────────────────────
+
+function executeAction(action: RemovalAction): void {
+  switch (action.type) {
+    case 'delete_file':
+      try {
+        fs.unlinkSync(action.path);
+        tick(`Removed ${path.relative(process.cwd(), action.path)}`);
+      } catch (e) {
+        warn(`Failed to remove ${action.path}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      break;
+
+    case 'delete_dir':
+      try {
+        fs.rmSync(action.path, { recursive: true, force: true });
+        tick(`Removed ${path.relative(process.cwd(), action.path)}/`);
+      } catch (e) {
+        warn(`Failed to remove ${action.path}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      break;
+
+    case 'patch_json': {
+      const backupPath = action.path + '.nirnex-backup';
+      try {
+        fs.copyFileSync(action.path, backupPath);
+        const obj = readJsonSafe(action.path);
+        if (!obj) {
+          warn(`Could not parse ${action.path} — skipping patch`);
+          fs.unlinkSync(backupPath);
+          break;
+        }
+        const cleaned = { ...obj };
+        if (cleaned.hooks && typeof cleaned.hooks === 'object') {
+          const patchedHooks = removeNirnexHooks(cleaned.hooks as Record<string, unknown>);
+          if (Object.keys(patchedHooks).length === 0) {
+            delete cleaned.hooks;
+          } else {
+            cleaned.hooks = patchedHooks;
+          }
+        }
+        const result = JSON.stringify(cleaned, null, 2) + '\n';
+        fs.writeFileSync(action.path, result, 'utf8');
+        fs.unlinkSync(backupPath);
+        tick(`Patched ${path.relative(process.cwd(), action.path)} — Nirnex hooks removed`);
+      } catch (e) {
+        warn(`Failed to patch ${action.path}: ${e instanceof Error ? e.message : String(e)}`);
+        // Restore backup if it exists
+        if (fs.existsSync(backupPath)) {
+          try {
+            fs.copyFileSync(backupPath, action.path);
+            fs.unlinkSync(backupPath);
+            warn(`  → Restored backup`);
+          } catch {}
+        }
+      }
+      break;
+    }
+
+    case 'patch_hook': {
+      const backupPath = action.path + '.nirnex-backup';
+      try {
+        const content = fs.readFileSync(action.path, 'utf8');
+        fs.copyFileSync(action.path, backupPath);
+        const lines = content.split('\n');
+        const filtered = lines.filter(l => l.trim() !== POST_COMMIT_LINE);
+        // Clean up trailing blank lines left behind
+        while (filtered.length > 1 && filtered[filtered.length - 1].trim() === '') {
+          filtered.pop();
+        }
+        filtered.push(''); // Ensure trailing newline
+        fs.writeFileSync(action.path, filtered.join('\n'), 'utf8');
+        fs.unlinkSync(backupPath);
+        tick(`Patched ${path.relative(process.cwd(), action.path)} — removed "nirnex index" line`);
+      } catch (e) {
+        warn(`Failed to patch ${action.path}: ${e instanceof Error ? e.message : String(e)}`);
+        if (fs.existsSync(backupPath)) {
+          try {
+            fs.copyFileSync(backupPath, action.path);
+            fs.unlinkSync(backupPath);
+            warn(`  → Restored backup`);
+          } catch {}
+        }
+      }
+      break;
+    }
+
+    case 'skip':
+      skip(`Skipped ${path.relative(process.cwd(), action.path)}`);
+      break;
+  }
+}
+
+function cleanupEmptyDirs(cwd: string) {
+  // Remove .claude/hooks/ if empty
+  const claudeHooksDir = path.join(cwd, '.claude', 'hooks');
+  if (fs.existsSync(claudeHooksDir) && isDirEmpty(claudeHooksDir)) {
+    try {
+      fs.rmdirSync(claudeHooksDir);
+      tick('Removed .claude/hooks/ (empty)');
+    } catch {}
+  }
+
+  // Remove .claude/ if empty
+  const claudeDir = path.join(cwd, '.claude');
+  if (fs.existsSync(claudeDir) && isDirEmpty(claudeDir)) {
+    try {
+      fs.rmdirSync(claudeDir);
+      tick('Removed .claude/ (empty)');
+    } catch {}
+  }
+
+  // Remove .ai/prompts/ if empty
+  const promptsDir = path.join(cwd, '.ai', 'prompts');
+  if (fs.existsSync(promptsDir) && isDirEmpty(promptsDir)) {
+    try {
+      fs.rmdirSync(promptsDir);
+      tick('Removed .ai/prompts/ (empty)');
+    } catch {}
+  }
+
+  // Remove .ai/calibration/ if empty
+  const calibrationDir = path.join(cwd, '.ai', 'calibration');
+  if (fs.existsSync(calibrationDir) && isDirEmpty(calibrationDir)) {
+    try {
+      fs.rmdirSync(calibrationDir);
+      tick('Removed .ai/calibration/ (empty)');
+    } catch {}
+  }
+
+  // Remove .ai/specs/ if empty
+  const specsDir = path.join(cwd, '.ai', 'specs');
+  if (fs.existsSync(specsDir) && isDirEmpty(specsDir)) {
+    try {
+      fs.rmdirSync(specsDir);
+      tick('Removed .ai/specs/ (empty)');
+    } catch {}
+  }
+
+  // Remove .ai/ if empty
+  const aiDir = path.join(cwd, '.ai');
+  if (fs.existsSync(aiDir) && isDirEmpty(aiDir)) {
+    try {
+      fs.rmdirSync(aiDir);
+      tick('Removed .ai/ (empty)');
+    } catch {}
+  }
+}
+
+// ─── Plan display ─────────────────────────────────────────────────────────
+
+function printPlan(plan: RemovalPlan, opts: RemoveOpts) {
+  const { actions, manualReview } = plan;
+  const cwd = plan.cwd;
+
+  if (actions.length === 0 && manualReview.length === 0) {
+    console.log('\n  No Nirnex artifacts found in this repository.\n');
+    return;
+  }
+
+  console.log('\n\x1b[1mRemoval plan:\x1b[0m\n');
+
+  const autoActions = actions.filter(a => !a.requiresConfirmation || opts.yes || opts.force);
+  const confirmActions = actions.filter(a => a.requiresConfirmation && !opts.yes && !opts.force);
+
+  if (autoActions.length > 0) {
+    console.log('  \x1b[1mWill remove:\x1b[0m');
+    for (const a of autoActions) {
+      const rel = path.relative(cwd, a.path);
+      const suffix = a.type === 'delete_dir' ? '/' : a.type === 'patch_json' || a.type === 'patch_hook' ? ' (patch)' : '';
+      console.log(`    \x1b[31m✖\x1b[0m ${rel}${suffix}`);
+      console.log(`      ${a.reason}`);
+    }
+    console.log('');
+  }
+
+  if (confirmActions.length > 0) {
+    console.log('  \x1b[1mRequires confirmation:\x1b[0m');
+    for (const a of confirmActions) {
+      const rel = path.relative(cwd, a.path);
+      const suffix = a.type === 'delete_dir' ? '/' : a.type === 'patch_json' || a.type === 'patch_hook' ? ' (patch)' : '';
+      console.log(`    \x1b[33m?\x1b[0m ${rel}${suffix}`);
+      console.log(`      ${a.reason}`);
+      if (a.preview) {
+        for (const line of a.preview.split('\n')) {
+          console.log(`      \x1b[90m${line}\x1b[0m`);
+        }
+      }
+    }
+    console.log('');
+  }
+
+  if (manualReview.length > 0) {
+    console.log('  \x1b[1mPreserved (manual review):\x1b[0m');
+    for (const item of manualReview) {
+      const rel = item.replace(cwd + path.sep, '');
+      console.log(`    \x1b[90m·\x1b[0m ${rel}`);
+    }
+    console.log('');
+  }
+}
+
+function printJsonPlan(plan: RemovalPlan, _opts: RemoveOpts) {
+  const output = {
+    cwd: plan.cwd,
+    actions: plan.actions.map(a => ({
+      path: path.relative(plan.cwd, a.path),
+      type: a.type,
+      confidence: a.confidence,
+      reason: a.reason,
+      preview: a.preview,
+      requiresConfirmation: a.requiresConfirmation,
+    })),
+    manualReview: plan.manualReview.map(item => {
+      // Replace absolute path prefix with relative path
+      return item.replace(plan.cwd + path.sep, '');
+    }),
+  };
+  console.log(JSON.stringify(output, null, 2));
+}
+
+// ─── Main remove logic ────────────────────────────────────────────────────
+
+async function runRemove(cwd: string, opts: RemoveOpts): Promise<void> {
+  if (!opts.json) {
+    console.log('\n\x1b[1mNirnex Remove\x1b[0m\n');
+  }
+
+  // Quick check: is this even a Nirnex-enabled repo?
+  const configPath = path.join(cwd, 'nirnex.config.json');
+  const hasAiDir = fs.existsSync(path.join(cwd, '.ai'));
+  const hasClaudeHooks = fs.existsSync(path.join(cwd, '.claude', 'hooks', 'nirnex-bootstrap.sh'));
+
+  if (!fs.existsSync(configPath) && !hasAiDir && !hasClaudeHooks) {
+    if (!opts.json) {
+      console.log('  No Nirnex artifacts found in this directory.\n');
+    } else {
+      console.log(JSON.stringify({ cwd, actions: [], manualReview: [], message: 'No Nirnex artifacts found' }));
+    }
+    return;
+  }
+
+  const plan = scanRemovalTargets(cwd, opts);
+
+  if (opts.dryRun) {
+    if (opts.json) {
+      printJsonPlan(plan, opts);
+    } else {
+      printPlan(plan, opts);
+      console.log('  \x1b[33m[dry-run] No changes made.\x1b[0m\n');
+    }
+    return;
+  }
+
+  if (opts.json) {
+    printJsonPlan(plan, opts);
+    return;
+  }
+
+  if (plan.actions.length === 0) {
+    console.log('  No Nirnex artifacts to remove.\n');
+    if (plan.manualReview.length > 0) {
+      console.log('  Items for manual review:');
+      for (const item of plan.manualReview) {
+        console.log(`    · ${item}`);
+      }
+      console.log('');
+    }
+    return;
+  }
+
+  printPlan(plan, opts);
+
+  // Separate actions needing per-action confirmation
+  const immediateActions = plan.actions.filter(a => !a.requiresConfirmation);
+  const confirmActions = plan.actions.filter(a => a.requiresConfirmation);
+
+  // Global confirmation (unless --yes)
+  if (!opts.yes && !opts.force && immediateActions.length > 0) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const ok = await promptYesNo(rl, 'Proceed with removal?', true);
+      if (!ok) {
+        console.log('\n  Aborted. No changes made.\n');
+        return;
+      }
+    } finally {
+      rl.close();
+    }
+    console.log('');
+  }
+
+  // Execute immediate (high-confidence, no per-action confirmation) actions
+  for (const action of immediateActions) {
+    executeAction(action);
+  }
+
+  // Handle actions needing individual confirmation
+  if (confirmActions.length > 0) {
+    if (opts.yes || opts.force) {
+      // Both --yes and --force auto-approve confirmation-requiring actions
+      for (const action of confirmActions) {
+        executeAction(action);
+      }
+    } else {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        for (const action of confirmActions) {
+          const rel = path.relative(cwd, action.path);
+          console.log(`\n  \x1b[33m?\x1b[0m ${rel}`);
+          console.log(`    ${action.reason}`);
+          if (action.preview) {
+            for (const line of action.preview.split('\n')) {
+              console.log(`    \x1b[90m${line}\x1b[0m`);
+            }
+          }
+          const ok = await promptYesNo(rl, '  Apply?', false);
+          if (ok) {
+            executeAction(action);
+          } else {
+            skip(`Skipped ${rel}`);
+          }
+        }
+      } finally {
+        rl.close();
+      }
+    }
+  }
+
+  // Clean up empty directories
+  cleanupEmptyDirs(cwd);
+
+  // Summary
+  console.log('\n\x1b[32m\x1b[1mDone.\x1b[0m');
+
+  if (plan.manualReview.length > 0) {
+    console.log('\n  Items preserved — review manually if needed:');
+    for (const item of plan.manualReview) {
+      const rel = item.replace(cwd + path.sep, '');
+      console.log(`    \x1b[90m·\x1b[0m ${rel}`);
+    }
+  }
+
+  console.log('');
+}
+
+// ─── Exported command ─────────────────────────────────────────────────────
+
+export { runRemove };
+
+export async function removeCommand(args: string[]): Promise<void> {
+  const opts: RemoveOpts = {
+    yes: args.includes('--yes') || args.includes('-y'),
+    dryRun: args.includes('--dry-run'),
+    force: args.includes('--force'),
+    keepData: args.includes('--keep-data'),
+    keepSpecs: args.includes('--keep-specs'),
+    keepClaude: args.includes('--keep-claude'),
+    purgeData: args.includes('--purge-data'),
+    json: args.includes('--json'),
+  };
+
+  const cwd = process.cwd();
+  await runRemove(cwd, opts);
+}
