@@ -130,7 +130,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Current Version
 
-**v5.1.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
+**v5.2.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
 
 Check your installed version at any time:
 
@@ -515,8 +515,12 @@ Indicates how safe the decision is:
 Defines how strict execution should be:
 
 - **Lane A** → small, isolated changes
-- **Lane B** → structured work with spec
-- **Lane C** → architectural or high-risk changes
+- **Lane B** → structured work with spec; elevated constraints
+- **Lane C** → architectural or high-risk changes; critical path involved
+- **Lane D** → restricted; requires explicit human sign-off
+- **Lane E** → blocked; forced by `forced_unknown` or unresolvable constraints
+
+Lane assignment is determined by the `LaneClassifier` using a four-tier precedence chain (P1–P4). See [Stage Machine](#stage-machine-determinism--enforcement) for details.
 
 ---
 
@@ -700,6 +704,122 @@ To add a new detector:
 3. Register it in `packages/core/src/knowledge/conflict/detect-conflicts.ts`.
 
 The downstream contract (`ConflictRecord`, `ECOConflictDimension`, `TEEConflictSection`) does not change when new detectors are added.
+
+---
+
+### Stage Machine (Determinism + Enforcement)
+
+Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.
+
+#### Why this matters
+
+Adding types alone changes nothing operationally. The stage machine solves a _determinism and enforcement_ problem: the same inputs must always produce the same outputs, and a failure in one stage must produce a predictable, traceable outcome — not silent degradation.
+
+#### Canonical Stages
+
+```
+INTENT_DETECT → ECO_BUILD → SUFFICIENCY_GATE → TEE_BUILD → CLASSIFY_LANE
+```
+
+The `STAGES` const is frozen and immutable at runtime. No code can reorder or skip stages.
+
+| Stage | Responsibility | Failure mode |
+|---|---|---|
+| `INTENT_DETECT` | Classify the request intent from spec/query | `DEGRADE` — falls back to `unknown` intent |
+| `ECO_BUILD` | Build the Execution Context Object (ECO) | `ESCALATE` — continues with fallback ECO at confidence 0 |
+| `SUFFICIENCY_GATE` | Decide pass/block/ask based on ECO quality | `BLOCK` — halts pipeline immediately |
+| `TEE_BUILD` | Produce the Task Execution Envelope (TEE) | `DEGRADE` — falls back to empty TEE with warning |
+| `CLASSIFY_LANE` | Assign the final execution lane | `ESCALATE` — continues with fallback lane C |
+
+#### Failure Modes
+
+| Mode | Behaviour |
+|---|---|
+| `BLOCK` | Pipeline halts. No further stages run. `OrchestratorResult.blocked = true`. |
+| `ESCALATE` | Pipeline continues. Stage output is replaced with a safe fallback. `OrchestratorResult.escalated = true`. |
+| `DEGRADE` | Pipeline continues. Stage output is replaced with a minimal fallback. `OrchestratorResult.degraded = true`. |
+
+#### I/O Validation
+
+Each stage has a typed input validator and a typed output validator. The `StageExecutor` enforces this contract:
+
+```
+validate input → call handler (if valid) → validate output → bind trace
+```
+
+If input validation fails, the handler is **never called**. If output validation fails, the stage's failure policy is applied. Validators are pure structural functions — no Zod, no external schema dependencies.
+
+#### Trace Binding
+
+Every stage execution — success or failure — produces a `BoundTrace` record:
+
+```json
+{
+  "stage": "ECO_BUILD",
+  "status": "ok",
+  "inputHash": "a3f2c1d8",
+  "timestamp": "2026-03-26T10:00:01.234Z",
+  "durationMs": 42,
+  "input": { "intent": { "primary": "bug_fix" } },
+  "output": { "confidence_score": 85, "eco_dimensions": { ... } }
+}
+```
+
+`inputHash` is a deterministic djb2 hash of the stable-stringified input. Same input always produces the same hash — this enables offline replay and diff detection.
+
+#### Lane Classifier (P1 → P4)
+
+The `classifyLane` function is a pure deterministic function that resolves the operational lane using a four-tier precedence chain:
+
+| Tier | Signal | Effect |
+|---|---|---|
+| **P1** | `forced_unknown=true` | → Lane E (always) |
+| **P1** | `critical_path_hit=true` | → minimum Lane C |
+| **P1** | `forced_lane_minimum` | → enforces minimum lane from ECO |
+| **P2** | ECO dimension severity (`escalate`) | → minimum Lane B |
+| **P2** | ECO dimension severity (`block`) | → minimum Lane C |
+| **P3** | ≥3 `boundary_warnings` | → minimum Lane B |
+| **P4** | `composite=true` intent | → minimum Lane B |
+
+P1 always overrides P2-P4. Within the same tier, the most restrictive lane wins.
+
+```typescript
+import { classifyLane } from '@nirnex/core/lane';
+
+const decision = classifyLane(eco);
+// { lane: 'C', set_by: 'P1', reason: 'critical_path_hit=true forces minimum lane C' }
+```
+
+#### Strategy Selector
+
+`selectStrategy` maps intent to a planning strategy, enforcing never-permitted combinations:
+
+| Intent | Default strategy | Never permitted |
+|---|---|---|
+| `bug_fix` | `surgical` | — |
+| `new_feature` | `additive` | — |
+| `refactor` | `structural` | `surgical` |
+| `dep_update` | `additive` | `structural`, `full_replacement` |
+| `config_infra` | `surgical` | `full_replacement` |
+
+```typescript
+import { selectStrategy } from '@nirnex/core/strategy';
+
+selectStrategy('refactor');
+// { strategy: 'structural', source: 'default' }
+
+selectStrategy('refactor', 'surgical');
+// { strategy: 'structural', source: 'default', rejectedOverride: 'surgical',
+//   rejectionReason: "Strategy 'surgical' is never permitted for intent 'refactor'" }
+```
+
+#### Design constraints
+
+- `STAGES` const is frozen — runtime mutation throws immediately
+- `FAILURE_POLICY` is frozen — stages cannot change their failure mode at runtime
+- `classifyLane` and `selectStrategy` are pure functions — no side effects, deterministic
+- Handler injection in `runOrchestrator` enables unit testing without touching ECO/DB
+- Stage validators have no external dependencies — structural shape checks only
 
 ---
 
