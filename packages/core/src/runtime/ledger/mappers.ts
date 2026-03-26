@@ -338,6 +338,84 @@ export function fromOrchestratorResult(
   });
 }
 
+// ─── fromEvidenceGateDecision ─────────────────────────────────────────────────
+
+/**
+ * Convert an EvidenceGateDecision into a classification-stage DecisionRecord.
+ *
+ * Emits a richer ledger entry than fromBoundTrace — includes per-rule results,
+ * provenance dimensions, and the full reason code list for audit/replay.
+ *
+ * Call this alongside (or instead of) fromBoundTrace when the SUFFICIENCY_GATE
+ * stage uses the evidence gate evaluator.
+ */
+export function fromEvidenceGateDecision(
+  decision: {
+    verdict: string;
+    reasonCodes: string[];
+    summary: string;
+    perRuleResults: Array<{ ruleCode: string; passed: boolean; verdictContribution: string | null; detail: string }>;
+    provenance: { dimensionsRead: Record<string, string>; intentClass: string; forcedUnknownApplied: boolean };
+  },
+  opts: {
+    trace_id: string;
+    request_id: string;
+    tee_id?: string;
+    parent_ledger_id?: string;
+  },
+): LedgerEntry {
+  const ledgerStatus: DecisionRecord['result']['status'] =
+    decision.verdict === 'pass'    ? 'pass'   :
+    decision.verdict === 'clarify' ? 'warn'   :   // clarify = soft stop → 'warn' in ledger status
+    decision.verdict === 'refuse'  ? 'refuse' :
+    'warn';
+
+  const failedRuleCodes = decision.perRuleResults
+    .filter(r => !r.passed)
+    .map(r => r.ruleCode);
+
+  const payload: DecisionRecord = {
+    kind:          'decision',
+    decision_name: 'evidence sufficiency evaluated',
+    decision_code: 'EVIDENCE_GATE_EVALUATED',
+    input_refs: {
+      policy_ids: [`intent:${decision.provenance.intentClass}`],
+      evidence_ids: failedRuleCodes.length > 0 ? failedRuleCodes : undefined,
+    },
+    result: {
+      status: ledgerStatus,
+      selected_value: decision.verdict,
+    },
+    rationale: {
+      summary:     decision.summary,
+      rule_refs:   decision.reasonCodes,
+      signal_refs: [
+        `intent:${decision.provenance.intentClass}`,
+        `forcedUnknown:${decision.provenance.forcedUnknownApplied}`,
+        ...Object.entries(decision.provenance.dimensionsRead).map(
+          ([dim, sev]) => `${dim}:${sev}`,
+        ),
+      ],
+    },
+    severity:
+      decision.verdict === 'refuse'  ? 'critical' :
+      decision.verdict === 'clarify' ? 'high'     :
+      'low',
+  };
+
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'classification',
+    record_type:      'decision',
+    actor:            'system',
+    payload,
+    tee_id:           opts.tee_id,
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
 // ─── fromTraceJson — LEGACY IMPORT ONLY ──────────────────────────────────────
 
 /**

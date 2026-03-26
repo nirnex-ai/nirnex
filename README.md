@@ -902,6 +902,7 @@ await runOrchestrator(
   handlers,
 );
 // Produces: 5 DecisionRecords (one per stage) + 1 OutcomeRecord = 6 entries minimum
+// On gate non-pass: also emits 1 RefusalRecord → 7 entries total
 ```
 
 If `onLedgerEntry` is absent, pipeline behavior is unchanged (backward compatible).
@@ -968,9 +969,108 @@ packages/core/src/runtime/ledger/
   validators.ts  — structural + kind↔record_type invariant validators
   writer.ts      — initLedgerDb(), appendLedgerEntry() (insert-only)
   reader.ts      — LedgerReader class
-  mappers.ts     — 6 subsystem-to-LedgerEntry mapper functions
+  mappers.ts     — 7 subsystem-to-LedgerEntry mapper functions (incl. fromEvidenceGateDecision)
   index.ts       — re-exports
 ```
+
+---
+
+### Evidence Sufficiency Gate
+
+The Evidence Sufficiency Gate is the **single runtime authority** on whether the system has enough evidence to proceed for the current intent. It sits at `SUFFICIENCY_GATE` — the third pipeline stage — and is a hard enforcement boundary before TEE construction.
+
+#### Problem it solves
+
+Prior to Sprint 13, `checkEvidence()` was an unconditional-pass stub. The gate stage existed in the pipeline's type system and the orchestrator's stage ordering, but it never actually evaluated anything. This broke the architecture's main safety promise: _refuse if blind_.
+
+#### Three-verdict contract
+
+The gate evaluates ECO output and returns exactly one of:
+
+| Verdict | Pipeline behavior | When |
+|---|---|---|
+| `pass` | Continue to TEE\_BUILD | Evidence is sufficient for the detected intent |
+| `clarify` | Hard stop — emit refusal ledger entry, return `behavior: 'ask'` | Evidence is partial; clarification would unlock execution |
+| `refuse` | Hard stop — emit refusal ledger entry, return `behavior: 'block'` | Evidence is insufficient or condition is policy-unsafe |
+
+Both `clarify` and `refuse` halt the pipeline. Advisory continuation is not permitted.
+
+#### Per-intent evidence policies
+
+Rules are not generic. Each intent class has its own `IntentEvidencePolicy` with a distinct set of `RuleCheck` functions:
+
+| Intent | Mandatory evidence | Refuse triggers | Clarify triggers |
+|---|---|---|---|
+| `bug_fix` | Code path, mapping, coverage | forced\_unknown, conflict=block, coverage=block, mapping=block | Ambiguous mapping, no modules found, escalated coverage |
+| `new_feature` | Bounded scope, graph path | forced\_unknown, conflict=block, coverage=block, graph=block | Ambiguous intent, incomplete graph, unclear scope |
+| `refactor` | Graph coverage, no ownership overlap | forced\_unknown, conflict=block, graph=block | Incomplete graph, ownership overlap conflict |
+| `dep_update` | Target dep + graph coverage | forced\_unknown, conflict=block, coverage=block, graph=block | Same clarify triggers as feature |
+| `config_infra` | Target config area | forced\_unknown, conflict=block, coverage=block | High conflict (escalated) |
+| `unknown` | (none — always refuses) | always (MISSING\_TARGET\_FILES) | n/a |
+
+#### Evaluation flow
+
+```
+extract EvidenceGateFacts → resolve IntentEvidencePolicy → run all rules
+→ accumulate worst verdict (refuse > clarify > pass) → build EvidenceGateDecision
+```
+
+#### Freshness handling
+
+Freshness is intentionally non-blocking in standard intents. `freshness=block` triggers `clarify` (not `refuse`) — the user can re-index and retry. Only the `unknown` policy treats freshness as a potential refusal trigger.
+
+#### Forced unknown
+
+`eco.forced_unknown = true` is always a `refuse`, regardless of other dimension quality. This verdict is marked `overrideable: false` in the refusal payload — no downstream component may bypass it.
+
+#### Decision provenance
+
+Every `EvidenceGateDecision` includes:
+- `perRuleResults[]` — each rule's pass/fail result with detail
+- `provenance.dimensionsRead` — which ECO dimension severities were read
+- `clarificationQuestions[]` — what is missing and what would satisfy the rule
+- `refusalDetail` — why refused, which rules failed, which dimensions blocked, whether overrideable
+
+#### Ledger integration
+
+The gate emits two ledger entries on non-pass verdicts:
+1. **RefusalRecord** — `refusal_code: 'EVIDENCE_GATE_REFUSED'` or `'EVIDENCE_GATE_CLARIFY'` at stage `classification`
+2. **OutcomeRecord** — `completion_state: 'refused'` at stage `outcome`
+
+A richer `fromEvidenceGateDecision()` mapper is available for detailed audit:
+
+```typescript
+import { fromEvidenceGateDecision } from '@nirnex/core/runtime/ledger';
+
+const entry = fromEvidenceGateDecision(decision, { trace_id, request_id });
+// Emits decision_code: 'EVIDENCE_GATE_EVALUATED' with per-rule signal_refs
+```
+
+#### Using the gate handler
+
+```typescript
+import { evidenceGateHandler } from '@nirnex/core/checkpoints';
+
+await runOrchestrator(input, {
+  SUFFICIENCY_GATE: evidenceGateHandler,
+  // ... other handlers
+});
+```
+
+#### Module structure
+
+```
+packages/core/src/runtime/evidence/
+  types.ts        — EvidenceGateVerdict, EvidenceGateReasonCode, EvidenceGateFacts,
+                    EvidenceGateDecision, IntentEvidencePolicy, RuleCheck, RuleResult
+  rules.ts        — EVIDENCE_RULES_BY_INTENT table + getEvidencePolicy()
+  checkpoints.ts  — evaluateEvidenceGate() + extractEvidenceFacts()
+  index.ts        — public API + evidenceGateHandler (SUFFICIENCY_GATE stage handler)
+```
+
+#### Extension
+
+To add a new intent class: add one `IntentEvidencePolicy` value to `EVIDENCE_RULES_BY_INTENT` in `rules.ts`. No changes to the evaluator, orchestrator, or pipeline types are needed.
 
 ---
 

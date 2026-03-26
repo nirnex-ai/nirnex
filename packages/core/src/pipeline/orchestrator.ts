@@ -40,7 +40,7 @@ import {
 import { StageExecutor } from "./stage-executor.js";
 import { FAILURE_POLICY, applyFailureMode } from "./failure-policy.js";
 import type { LedgerEntry } from "../runtime/ledger/types.js";
-import { fromBoundTrace, fromOrchestratorResult } from "../runtime/ledger/mappers.js";
+import { fromBoundTrace, fromOrchestratorResult, fromRefusal } from "../runtime/ledger/mappers.js";
 import { randomUUID } from "crypto";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -253,13 +253,13 @@ export async function runOrchestrator(
     if (result.status === "escalated") escalated = true;
     if (result.status === "degraded") degraded = true;
 
-    // ── SUFFICIENCY_GATE special: block behavior from output ───────────────
-    // When SUFFICIENCY_GATE succeeds but its output says behavior="block",
-    // we treat it as a pipeline block (the gate has passed validation but
-    // the gate decision itself is to block the pipeline).
+    // ── SUFFICIENCY_GATE special: block/ask behavior from output ──────────
+    // When SUFFICIENCY_GATE succeeds but its output says behavior="block"
+    // (refuse) or behavior="ask" (clarify), we treat it as a pipeline block.
+    // Both verdicts stop execution — advisory continuation is not permitted.
     if (stage === "SUFFICIENCY_GATE" && result.status === "ok") {
       const gate = result.output as SufficiencyGateOutput;
-      if (gate.behavior === "block") {
+      if (gate.behavior === "block" || gate.behavior === "ask") {
         const gateBlockResult: OrchestratorResult = {
           completed: false,
           blocked: true,
@@ -271,6 +271,17 @@ export async function runOrchestrator(
         };
         if (input.onLedgerEntry) {
           try {
+            // Emit a dedicated RefusalRecord for the gate verdict
+            const refusalCode = gate.behavior === "block" ? "EVIDENCE_GATE_REFUSED" : "EVIDENCE_GATE_CLARIFY";
+            const refusalEntry = fromRefusal(
+              'classification',
+              refusalCode,
+              gate.reason,
+              { trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId },
+            );
+            prevLedgerId = refusalEntry.ledger_id;
+            input.onLedgerEntry(refusalEntry);
+
             const outcomeEntry = fromOrchestratorResult(gateBlockResult, {
               trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId,
             });
