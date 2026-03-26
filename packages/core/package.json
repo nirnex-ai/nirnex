@@ -10,6 +10,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./scope": {
+      "import": "./dist/scope/index.js",
+      "types": "./dist/scope/index.d.ts"
+    },
     "./dist/*.js": {
       "import": "./dist/*.js",
       "types": "./dist/*.d.ts"

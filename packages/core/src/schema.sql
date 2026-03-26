@@ -1,8 +1,10 @@
--- Nirnex SQLite schema
--- All 8 tables: modules, dependencies, edges, patterns, gate_results, summaries, hub_summaries, _meta
+-- Nirnex SQLite schema  v2
+-- Schema version 2: adds scope control columns to modules table.
+-- Databases at version < 2 require: nirnex index --rebuild
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
+PRAGMA user_version = 2;
 
 -- ─── _meta ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS _meta (
@@ -12,36 +14,43 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- ─── modules ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS modules (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  path          TEXT    NOT NULL UNIQUE,
-  name          TEXT    NOT NULL,
-  language      TEXT,
-  loc           INTEGER DEFAULT 0,
-  complexity    REAL    DEFAULT 0,
-  indexed_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-  content_hash  TEXT,
-  is_hub        BOOLEAN DEFAULT 0
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  path            TEXT    NOT NULL UNIQUE,
+  name            TEXT    NOT NULL,
+  language        TEXT,
+  loc             INTEGER DEFAULT 0,
+  complexity      REAL    DEFAULT 0,
+  indexed_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  content_hash    TEXT,
+  is_hub          BOOLEAN DEFAULT 0,
+  -- Scope control (schema v2)
+  tier            TEXT    NOT NULL DEFAULT 'FULL',  -- FULL | EXCLUDED
+  reason_code     TEXT,    -- ReasonCode enum value
+  decision_source TEXT,    -- cli | user-file | builtin
+  matched_rule    TEXT     -- pattern that triggered the decision
 );
+
+CREATE INDEX IF NOT EXISTS idx_modules_tier ON modules(tier);
 
 -- ─── dependencies ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS dependencies (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  module_id   INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
-  specifier   TEXT    NOT NULL,
-  resolved    TEXT,
-  kind        TEXT    NOT NULL DEFAULT 'import',  -- import | require | dynamic
-  is_local    BOOLEAN DEFAULT 0,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  module_id       INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+  specifier       TEXT    NOT NULL,
+  resolved        TEXT,
+  kind            TEXT    NOT NULL DEFAULT 'import',  -- import | require | dynamic
+  is_local        BOOLEAN DEFAULT 0,
   is_cross_module BOOLEAN DEFAULT 0,
   UNIQUE(module_id, specifier)
 );
 
 -- ─── edges ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS edges (
-  id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  from_id   INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
-  to_id     INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
-  kind      TEXT    NOT NULL DEFAULT 'static',  -- static | dynamic | re-export
-  weight    REAL    DEFAULT 1.0,
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+  to_id   INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+  kind    TEXT    NOT NULL DEFAULT 'static',  -- static | dynamic | re-export
+  weight  REAL    DEFAULT 1.0,
   UNIQUE(from_id, to_id, kind)
 );
 
