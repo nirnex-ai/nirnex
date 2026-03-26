@@ -1,10 +1,17 @@
 import fs from 'fs';
 import path from 'path';
+import Database from 'better-sqlite3';
 import { detectIntent } from './intent.js';
 import { mapEntities } from './entity-mapper.js';
 import { checkEvidence } from './checkpoints.js';
 import { detectConflicts } from './knowledge/conflict/index.js';
 import type { EvidenceItem } from './knowledge/conflict/types.js';
+import { openDb } from './db.js';
+import { buildFreshnessSnapshot } from './knowledge/freshness/build-freshness-snapshot.js';
+import { extractStaleScopes } from './knowledge/freshness/extract-stale-scopes.js';
+import { extractRequiredScopes } from './knowledge/freshness/extract-required-scopes.js';
+import { computeFreshnessImpact } from './knowledge/freshness/compute-freshness-impact.js';
+import type { FreshnessDimensionEntry, FreshnessImpact } from './knowledge/freshness/types.js';
 
 export function buildECO(specPath: string | null, targetRoot: string, opts?: { query?: string }) {
   const intent = detectIntent(specPath, opts);
@@ -26,7 +33,19 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
       graph: { severity: "pass", detail: "" }
     },
     evidence_checkpoints: {},
-    freshness: {},
+    freshness: {
+      status: 'fresh' as 'fresh' | 'stale_unrelated' | 'stale_impacted',
+      indexedCommit: '',
+      headCommit: '',
+      impactedFiles: [] as string[],
+      impactedScopeIds: [] as string[],
+      impactRatio: 0,
+      severity: 'none' as 'none' | 'warn' | 'escalate' | 'block',
+      provenance: {
+        requiredScopesSource: [] as string[],
+        staleScopesSource: [] as string[],
+      },
+    } satisfies FreshnessDimensionEntry,
     confidence_score: 80,
     penalties: [] as any[],
     conflicts: [] as any[],
@@ -140,6 +159,72 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
     };
   }
 
+  // ── Scope-aware freshness impact ───────────────────────────────────────────
+  try {
+    const dbPath = path.join(targetRoot, '.aidos.db');
+    let db = fs.existsSync(dbPath) ? openDb(dbPath) : null;
+
+    if (!db) {
+      // No on-disk DB — create a transient in-memory DB so buildFreshnessSnapshot
+      // can still run (it will find no commit_hash and treat the index as unindexed).
+      const mem = new Database(':memory:');
+      mem.exec('CREATE TABLE _meta (key TEXT PRIMARY KEY, value TEXT)');
+      db = mem;
+    }
+
+    const resolvedSnapshot = buildFreshnessSnapshot(targetRoot, db);
+
+    const staleScopes    = extractStaleScopes(resolvedSnapshot, db ?? undefined);
+    const requiredScopes = extractRequiredScopes({
+      modulesTouched: eco.modules_touched,
+      hubNodes:       eco.hub_nodes_in_path,
+    });
+
+    const impact: FreshnessImpact = computeFreshnessImpact(
+      resolvedSnapshot,
+      requiredScopes,
+      staleScopes,
+    );
+
+    // Build the FreshnessDimensionEntry
+    const freshnessStatus: FreshnessDimensionEntry['status'] = !impact.isStale
+      ? 'fresh'
+      : impact.intersectedScopeCount === 0
+        ? 'stale_unrelated'
+        : 'stale_impacted';
+
+    const freshnessDim: FreshnessDimensionEntry = {
+      status:          freshnessStatus,
+      indexedCommit:   resolvedSnapshot.indexedCommit,
+      headCommit:      resolvedSnapshot.headCommit,
+      impactedFiles:   impact.impactedFiles,
+      impactedScopeIds: impact.impactedScopeIds,
+      impactRatio:     impact.impactRatio,
+      severity:        impact.severity,
+      provenance: {
+        requiredScopesSource: requiredScopes.map(r => r.source),
+        staleScopesSource:    staleScopes.map(s => s.filePath),
+      },
+    };
+
+    eco.freshness = freshnessDim;
+
+    // Update the ECO freshness dimension with severity and detail
+    const severityMap: Record<string, 'pass' | 'warn' | 'escalate' | 'block'> = {
+      none:     'pass',
+      warn:     'warn',
+      escalate: 'escalate',
+      block:    'block',
+    };
+    eco.eco_dimensions.freshness = {
+      severity: severityMap[impact.severity] ?? 'pass',
+      detail: buildFreshnessDetail(freshnessStatus, impact),
+    };
+  } catch {
+    // Freshness computation failure must not crash ECO construction
+    eco.eco_dimensions.freshness = { severity: 'pass', detail: 'Freshness check unavailable — degraded mode' };
+  }
+
   // Ensure output directory exists before writing to disk
   if (!opts?.query) {
     const outDir = path.join(targetRoot, '.ai-index');
@@ -148,4 +233,18 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
   }
 
   return eco;
+}
+
+// ─── Private helpers ──────────────────────────────────────────────────────────
+
+function buildFreshnessDetail(
+  status: FreshnessDimensionEntry['status'],
+  impact: FreshnessImpact,
+): string {
+  if (status === 'fresh') return 'Index is current.';
+  if (status === 'stale_unrelated') {
+    return `Index is ${impact.staleScopeCount} commit(s) behind HEAD, but no changed scope intersects the required paths.`;
+  }
+  const pct = (impact.impactRatio * 100).toFixed(0);
+  return `${impact.intersectedScopeCount} of ${impact.requiredScopeCount} required scope(s) are stale (${pct}% impact). Reindex recommended.`;
 }

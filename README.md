@@ -130,7 +130,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Current Version
 
-**v5.0.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
+**v5.1.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
 
 Check your installed version at any time:
 
@@ -532,7 +532,86 @@ Nirnex evaluates five dimensions per request:
 | **Conflict** | Whether evidence sources make incompatible claims about the same subject |
 | Graph Traversal | Depth and completeness of graph-based retrieval |
 
-These directly influence confidence and lane selection. Conflict scoring is **independent** — it cannot be masked by high coverage or clean mapping.
+These directly influence confidence and lane selection. Both Conflict and Freshness scoring are **independent** — they cannot be masked by high coverage or clean mapping.
+
+---
+
+### Scope-Aware Freshness
+
+Nirnex does not apply a flat penalty whenever the index is stale. It computes **which changed files intersect the scopes required by the current request**, and only penalises confidence when that intersection is non-empty.
+
+#### The three freshness states
+
+| State | Meaning | Effect |
+|---|---|---|
+| `fresh` | Index commit matches HEAD | No penalty |
+| `stale_unrelated` | Index stale, but no required scope changed | No penalty — staleness is irrelevant to this request |
+| `stale_impacted` | Stale scopes overlap required scopes | Graduated penalty based on impact ratio |
+
+#### Severity thresholds (deterministic)
+
+Freshness severity is computed from the **impact ratio** — the fraction of required scopes that are stale:
+
+| Severity | Condition | Confidence deduction |
+|---|---|---|
+| `none` | No intersection | 0 pts |
+| `warn` | Ratio > 0 and < 0.25 | −5 pts |
+| `escalate` | Ratio ≥ 0.25 and < 0.60 | −15 pts |
+| `block` | Ratio ≥ 0.60 | −25 pts |
+| `block` | Any deleted or renamed required scope | −25 pts |
+
+#### What the ECO carries
+
+```json
+{
+  "freshness": {
+    "status": "stale_impacted",
+    "indexedCommit": "abc1234",
+    "headCommit": "def5678",
+    "impactedFiles": ["src/services/payments.ts"],
+    "impactedScopeIds": ["src/services/payments.ts"],
+    "impactRatio": 0.33,
+    "severity": "escalate",
+    "provenance": {
+      "requiredScopesSource": ["retrieval", "retrieval"],
+      "staleScopesSource": ["src/services/payments.ts"]
+    }
+  }
+}
+```
+
+#### Reason codes (for trace and replay)
+
+| Code | When emitted |
+|---|---|
+| `INDEX_FRESH` | Index is current |
+| `INDEX_STALE_NO_SCOPE_INTERSECTION` | Stale, but no required scope affected |
+| `INDEX_STALE_SCOPE_INTERSECTION_LOW` | Impact ratio < 0.25 (warn) |
+| `INDEX_STALE_SCOPE_INTERSECTION_MEDIUM` | Impact ratio ≥ 0.25 (escalate) |
+| `INDEX_STALE_SCOPE_INTERSECTION_HIGH` | Impact ratio ≥ 0.60 (block) |
+| `INDEX_STALE_REQUIRED_SCOPE_DELETED` | A required file was deleted since last index |
+| `INDEX_STALE_REQUIRED_SCOPE_RENAMED` | A required file was renamed since last index |
+
+#### Design constraints
+
+- No global stale penalty. If the changed files are unrelated to the request, confidence is not affected.
+- All thresholds are deterministic — no model inference.
+- Deleted or renamed required scopes always escalate to `block`, regardless of ratio.
+- Freshness penalty is independent of coverage, mapping, and conflict dimensions.
+- Failure to compute freshness degrades gracefully — ECO continues with `severity: pass`.
+
+#### Module structure
+
+```
+packages/core/src/knowledge/freshness/
+  types.ts                    — FreshnessSnapshot, RequiredScopeRef, StaleScopeRef, FreshnessImpact
+  freshness-reason-codes.ts   — 7 machine-readable reason code constants
+  build-freshness-snapshot.ts — git diff integration (isolated here only)
+  extract-stale-scopes.ts     — FreshnessSnapshot → StaleScopeRef[]
+  extract-required-scopes.ts  — ECO data → RequiredScopeRef[]
+  compute-freshness-impact.ts — deterministic intersection engine
+  index.ts                    — re-exports
+```
 
 ---
 
@@ -686,6 +765,28 @@ Or enable the git hook during setup.
 
 ---
 
+**Freshness escalation — stale scopes in required path**
+
+When `nirnex plan` warns about stale scopes, it means that files changed since the last index are also required by the current request. Fix:
+
+```sh
+nirnex index        # incremental — re-indexes only changed files
+```
+
+Or for a full rebuild:
+
+```sh
+nirnex index --rebuild
+```
+
+To understand which files triggered the freshness escalation, check the ECO freshness field:
+
+```sh
+cat .ai-index/last-eco.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d['freshness'], indent=2))"
+```
+
+---
+
 **Pipeline blocked**
 
 Causes:
@@ -693,10 +794,12 @@ Causes:
 - missing entity
 - low coverage
 - conflict detected that prevents safe bounded execution
+- freshness block: a required file was deleted or renamed since the last index run
 
 Fix:
 - narrow scope
 - use a spec file
+- run `nirnex index` to refresh stale scopes
 - resolve the conflict shown in the gate decision output
 - run `nirnex query` to inspect which evidence sources are in conflict
 
