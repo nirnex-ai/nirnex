@@ -3,7 +3,6 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import { detectIntent } from './intent.js';
 import { mapEntities } from './entity-mapper.js';
-import { checkEvidence } from './checkpoints.js';
 import { detectConflicts } from './knowledge/conflict/index.js';
 import type { EvidenceItem } from './knowledge/conflict/types.js';
 import { openDb } from './db.js';
