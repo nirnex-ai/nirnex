@@ -130,7 +130,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Current Version
 
-**v5.2.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
+**v5.3.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
 
 Check your installed version at any time:
 
@@ -526,17 +526,134 @@ Lane assignment is determined by the `LaneClassifier` using a four-tier preceden
 
 ### Constraint Dimensions
 
-Nirnex evaluates five dimensions per request:
+Nirnex evaluates five dimensions per request. Each runs an **independent evaluator** with its own normalized signals, threshold policy, and reason codes — no cross-dimension coupling:
 
-| Dimension | What it measures |
+| Dimension | What it measures | Hard block condition |
+|---|---|---|
+| Coverage | How completely retrieved evidence covers the requested scope and intent | All mandatory evidence classes missing |
+| Freshness | How current the index is relative to HEAD (scope-aware) | Stale impact ratio ≥ 0.60, or required scope deleted/renamed |
+| Mapping Quality | How precisely the request maps to a bounded implementation target | Scattered pattern (`1:scattered`) |
+| **Conflict** | Whether evidence sources make incompatible claims about the same subject | Blocking semantic or structural conflict |
+| Graph Completeness | Depth and symbol resolution completeness for the required reasoning path | Critical nodes missing from required scope |
+
+These directly influence confidence and lane selection. All five dimensions are **independent** — a block on one cannot be masked or overridden by a high score on another.
+
+---
+
+### Knowledge Layer — ECO Dimension Computation
+
+Each of the five dimensions runs a distinct pure-function evaluator. All evaluators share a single normalized input object (`DimensionSignals`) — preventing architecture leakage and coupling between subsystems.
+
+#### Architecture
+
+```
+buildECO()
+  │
+  ├── detectConflicts()       → eco.conflicts (Sprint 8)
+  ├── computeFreshnessImpact() → eco.freshness (Sprint 9)
+  │
+  └── scoreDimensions()       → eco.eco_dimensions (Sprint 11)
+        │
+        ├── buildDimensionSignals()   — single normalization boundary
+        ├── getThresholds(intent)     — centralized threshold policy
+        │
+        ├── computeCoverageDimension()
+        ├── computeFreshnessDimension()
+        ├── computeMappingDimension()
+        ├── computeConflictDimension()
+        └── computeGraphCompletenessDimension()
+              │
+              └── composite_internal_confidence  (weighted, severity-capped)
+```
+
+#### Signal isolation contract
+
+All evaluators read only from `DimensionSignals`. They never read from raw `ConflictRecord[]`, `FreshnessImpact`, or any other subsystem object directly. `buildDimensionSignals()` is the single conversion boundary between raw ECO-builder data and the evaluator layer.
+
+#### Composite confidence
+
+The final `confidence_score` is a weighted sum of each dimension's normalized value (0–100), subject to severity caps:
+
+| Dimension | Weight |
 |---|---|
-| Coverage | How completely the dependency graph covers the requested scope |
-| Freshness | How current the index is relative to HEAD |
-| Mapping Quality | How precisely the request maps to a bounded implementation target |
-| **Conflict** | Whether evidence sources make incompatible claims about the same subject |
-| Graph Traversal | Depth and completeness of graph-based retrieval |
+| Coverage | 25% |
+| Mapping | 25% |
+| Freshness | 20% |
+| Conflict | 20% |
+| Graph Completeness | 10% |
 
-These directly influence confidence and lane selection. Both Conflict and Freshness scoring are **independent** — they cannot be masked by high coverage or clean mapping.
+Severity caps applied after weighting:
+
+| Condition | Cap |
+|---|---|
+| Any dimension → `block` | ≤ 40 |
+| Any dimension → `escalate` (no block) | ≤ 70 |
+
+#### Dimension output shape (`DimensionResult`)
+
+Every evaluator returns the same contract:
+
+```typescript
+{
+  value:        number;          // 0..1 normalized score
+  status:       'pass' | 'warn' | 'escalate' | 'block';
+  reason_codes: string[];        // stable machine-readable codes for ledger/replay
+  summary:      string;          // short human-safe description
+  provenance: {
+    signals:    string[];        // which input signals were used
+    thresholds: Record<string, number>;  // exact threshold values applied
+  };
+  metrics:      Record<string, number | string | boolean>;  // raw inputs for calibration
+}
+```
+
+#### Default thresholds
+
+```typescript
+coverage:  { pass: 0.80, warn: 0.60, escalate: 0.30 }
+freshness: { pass: 1.00, warn: 0.85, escalate: 0.60 }
+mapping:   { pass: 0.80, warn: 0.60, escalate: 0.30 }
+conflict:  { pass: 1.00, warn: 0.75, escalate: 0.40 }
+graph:     { pass: 0.80, warn: 0.60, escalate: 0.30 }
+```
+
+`getThresholds(intent?)` is exported for callers that need intent-specific overrides.
+
+#### Ledger trace
+
+Every scoring session can be captured for replay and calibration via `traceDimensionScoring()`:
+
+```typescript
+import { traceDimensionScoring } from '@nirnex/core/knowledge/ledger/traceDimensionScoring';
+
+const trace = traceDimensionScoring(dimOutput);
+// trace.coverage.status       — top-level access
+// trace.dimensions.coverage   — nested iteration
+// trace.signal_snapshot       — full replay input snapshot
+// trace.calculation_version   — semver for calibration diff
+```
+
+The trace record stores all five dimension entries at **both** top-level (`.coverage`) and nested (`.dimensions.coverage`) for backward-compatible iteration.
+
+#### Module structure
+
+```
+packages/core/src/knowledge/dimensions/
+  types.ts               — DimensionResult, DimensionSignals, RawDimensionInput, ScoreDimensionsOutput
+  reason-codes.ts        — stable machine-readable reason code constants (all 5 dimensions)
+  thresholds.ts          — DEFAULT_THRESHOLDS, getThresholds(intent?)
+  signals.ts             — buildDimensionSignals() — single normalization boundary
+  coverage.ts            — computeCoverageDimension()
+  freshness.ts           — computeFreshnessDimension()
+  mapping.ts             — computeMappingDimension()
+  conflict.ts            — computeConflictDimension()
+  graphCompleteness.ts   — computeGraphCompletenessDimension()
+  scoreDimensions.ts     — coordinator: scoreDimensions(), CALCULATION_VERSION
+  index.ts               — re-exports
+
+packages/core/src/knowledge/ledger/
+  traceDimensionScoring.ts — DimensionScoringTrace, traceDimensionScoring()
+```
 
 ---
 

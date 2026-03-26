@@ -12,6 +12,7 @@ import { extractStaleScopes } from './knowledge/freshness/extract-stale-scopes.j
 import { extractRequiredScopes } from './knowledge/freshness/extract-required-scopes.js';
 import { computeFreshnessImpact } from './knowledge/freshness/compute-freshness-impact.js';
 import type { FreshnessDimensionEntry, FreshnessImpact } from './knowledge/freshness/types.js';
+import { scoreDimensions } from './knowledge/dimensions/scoreDimensions.js';
 
 export function buildECO(specPath: string | null, targetRoot: string, opts?: { query?: string }) {
   const intent = detectIntent(specPath, opts);
@@ -160,6 +161,9 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
   }
 
   // ── Scope-aware freshness impact ───────────────────────────────────────────
+  // Hoisted so the dimension scorer can use it after the try block.
+  let capturedFreshnessImpact: FreshnessImpact | null = null;
+
   try {
     const dbPath = path.join(targetRoot, '.aidos.db');
     let db = fs.existsSync(dbPath) ? openDb(dbPath) : null;
@@ -208,6 +212,7 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
     };
 
     eco.freshness = freshnessDim;
+    capturedFreshnessImpact = impact;
 
     // Update the ECO freshness dimension with severity and detail
     const severityMap: Record<string, 'pass' | 'warn' | 'escalate' | 'block'> = {
@@ -223,6 +228,49 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
   } catch {
     // Freshness computation failure must not crash ECO construction
     eco.eco_dimensions.freshness = { severity: 'pass', detail: 'Freshness check unavailable — degraded mode' };
+  }
+
+  // ── Score all 5 ECO dimensions ─────────────────────────────────────────────
+  // Replaces hardcoded coverage='pass', mapping='pass', graph='pass' with real
+  // independent computation from the Sprint 11 dimension evaluators.
+  // Freshness and conflict are already set from their dedicated blocks above;
+  // we only overwrite the three that were previously stubbed.
+  try {
+    const intentPrimary: string = (eco.intent as any)?.primary ?? 'unknown';
+    const dimOutput = scoreDimensions({
+      intent:             intentPrimary,
+      modulesTouched:     eco.modules_touched,
+      evidence,
+      conflicts:          eco.conflicts,
+      mappingPattern:     eco.mapping.pattern,
+      mappingRootsRanked: (eco.mapping.roots_ranked as Array<{ rank: string; edge_count: number }>).map(
+        (r: any) => ({ rank: r.rank ?? 'primary', edge_count: r.edge_count ?? 0 }),
+      ),
+      freshnessImpact:  capturedFreshnessImpact,
+      graphDiagnostics: undefined,
+      scopeIds:         eco.modules_touched,
+    });
+
+    // Coverage — was hardcoded 'pass'; now real
+    eco.eco_dimensions.coverage = {
+      severity: dimOutput.dimensions.coverage.status,
+      detail:   dimOutput.dimensions.coverage.summary,
+    };
+    // Mapping — was hardcoded 'pass'; now real
+    eco.eco_dimensions.mapping = {
+      severity: dimOutput.dimensions.mapping.status,
+      detail:   dimOutput.dimensions.mapping.summary,
+    };
+    // Graph — was hardcoded 'pass'; now real
+    eco.eco_dimensions.graph = {
+      severity: dimOutput.dimensions.graph.status,
+      detail:   dimOutput.dimensions.graph.summary,
+    };
+    // Composite confidence — was hardcoded 80; now dimension-weighted
+    eco.confidence_score = dimOutput.composite_internal_confidence;
+  } catch {
+    // scoreDimensions failure must not crash ECO construction.
+    // eco_dimensions already carry values set in prior steps; leave them in place.
   }
 
   // Ensure output directory exists before writing to disk
