@@ -130,7 +130,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Current Version
 
-**v4.0.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
+**v4.2.2** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
 
 Check your installed version at any time:
 
@@ -235,16 +235,116 @@ nirnex status
 Build or refresh the structural index.
 
 ```sh
-nirnex index           # incremental — changed files only (via git diff)
-nirnex index --rebuild # full rebuild — re-parses every .ts / .tsx file
+nirnex index                      # incremental — changed files only (via git diff)
+nirnex index --rebuild            # full rebuild — re-parses every .ts / .tsx file
+
+# Scope control
+nirnex index --ignore "src/legacy/**,vendor/**"   # exclude patterns from this run
+nirnex index --include "vendor/special.ts"        # force-include a specific path
+
+# Explain why a file was indexed or excluded
+nirnex index --explain-scope src/api/payments.ts
+```
+
+**Scope tiers**
+
+Every file in the repo is assigned a tier before parsing begins:
+
+| Tier | Meaning |
+|---|---|
+| `FULL` | File is fully parsed and included in the dependency graph |
+| `EXCLUDED` | File is recorded but not parsed (presence tracked, no symbols or deps) |
+
+The classifier runs through these rules in order (first match wins):
+
+| Priority | Rule | Tier |
+|---|---|---|
+| 1 | Binary extension (`.png`, `.mp4`, `.woff`, …) | `EXCLUDED` |
+| 2 | Unsupported extension (not `.ts` / `.tsx`) | `EXCLUDED` |
+| 3 | File exceeds size limit (default: 1 MB) | `EXCLUDED` |
+| 4 | Matched by `--include` or `.nirnexinclude` | `FULL` |
+| 5 | Matched by `--ignore` or `.nirnexignore` | `EXCLUDED` |
+| 6 | Known build output / noise (`dist/`, `.next/`, `.d.ts`, …) | `EXCLUDED` |
+| 7 | Framework-critical file (`page.tsx`, `layout.tsx`, `route.ts`, …) | `FULL` |
+| 8 | Execution-critical file (`.service.ts`, `routes/`, `store/`, …) | `FULL` |
+| 9 | Everything else | `FULL` |
+
+**Scope summary**
+
+Every run prints a scope summary:
+
+```
+────────────────────────────────────────────────
+  Nirnex Index — Scope Summary
+────────────────────────────────────────────────
+  Candidates scanned : 312
+  FULL indexed       : 198
+  EXCLUDED           : 114
+
+  Top exclusion sources:
+    builtin       KNOWN_NOISE                       87 files
+    nirnexignore  src/legacy/**                     14 files
+    builtin       HARD_SCREEN_UNSUPPORTED_EXT        9 files
+    cli           vendor/**                          4 files
+
+  FULL — reasons:
+    default full                  121 files
+    execution critical             44 files
+    framework critical             33 files
+
+  Duration: 412ms
+────────────────────────────────────────────────
+```
+
+**Explain scope**
+
+To understand why a specific file was included or excluded:
+
+```sh
+nirnex index --explain-scope src/services/auth.service.ts
+```
+
+```
+  Path          : src/services/auth.service.ts
+  Tier          : FULL
+  Reason code   : EXECUTION_CRITICAL
+  Decision from : builtin
+  Explanation   : heuristic: path pattern matches runtime-bearing file
+```
+
+**Scope control files**
+
+Create `.nirnexignore` or `.nirnexinclude` at your repo root to persist scope rules across runs:
+
+```sh
+# .nirnexignore
+src/legacy/**
+vendor/**
+**/__generated__/**
+```
+
+```sh
+# .nirnexinclude
+vendor/special.ts
+```
+
+Pattern precedence (highest first): `--include` > `--ignore` > `.nirnexinclude` > `.nirnexignore` > built-in defaults.
+
+**Schema migrations**
+
+When the index schema changes between versions, Nirnex detects this automatically:
+
+```sh
+# If you see: "Index schema is out of date. Run: nirnex index --rebuild"
+nirnex index --rebuild
 ```
 
 **Output states**
 
 | State | What it means |
 |---|---|
-| `Finished: 184/184 file(s) indexed` | All files parsed successfully |
-| `Finished with degraded coverage: 181/184 indexed, 3 failed` | Some files could not be parsed — index is partial |
+| `Finished: 198 FULL, 114 EXCLUDED` | All FULL-tier files parsed successfully |
+| `Finished with degraded coverage: 195/198 indexed, 3 failed` | Some files could not be parsed — index is partial |
 
 When parse failures occur, Nirnex prints each failed file and the stage where it failed:
 
@@ -439,6 +539,46 @@ These directly influence confidence and lane selection.
 
 ```sh
 nirnex index --rebuild
+```
+
+---
+
+**Schema out of date**
+
+If you see `Index schema is out of date` after upgrading Nirnex:
+
+```sh
+nirnex index --rebuild
+```
+
+This rebuilds the index from scratch using the current schema. Your source files are never modified.
+
+---
+
+**Too many files excluded**
+
+Run the scope summary (`nirnex index`) and check "Top exclusion sources". Then use `--explain-scope` to inspect specific files:
+
+```sh
+nirnex index --explain-scope src/my-file.ts
+```
+
+To override exclusions for the current run:
+
+```sh
+nirnex index --include "src/legacy/**"
+```
+
+To persist overrides, add the pattern to `.nirnexinclude` at the repo root.
+
+---
+
+**Too many files included (index is slow)**
+
+Add patterns to `.nirnexignore` at the repo root, or use `--ignore` for a one-off run:
+
+```sh
+nirnex index --ignore "src/experimental/**,packages/internal/**"
 ```
 
 ---
