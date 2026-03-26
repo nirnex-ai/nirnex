@@ -3,31 +3,36 @@ import path from 'path';
 import { detectIntent } from './intent.js';
 import { mapEntities } from './entity-mapper.js';
 import { checkEvidence } from './checkpoints.js';
+import { detectConflicts } from './knowledge/conflict/index.js';
+import type { EvidenceItem } from './knowledge/conflict/types.js';
 
 export function buildECO(specPath: string | null, targetRoot: string, opts?: { query?: string }) {
   const intent = detectIntent(specPath, opts);
-  
+
   const eco = {
     query: opts?.query || "",
     intent,
     entity_scope: {},
     modules_touched: ["src/services"],
     dependency_depth: 1,
-    cross_module_edges: [],
+    cross_module_edges: [] as string[],
     critical_path_hit: false,
-    hub_nodes_in_path: [],
-    eco_dimensions: { 
-      coverage: { severity: "pass", detail: "" }, 
-      freshness: { severity: "pass", detail: "" }, 
-      mapping: { severity: "pass", detail: "" }, 
-      conflict: { severity: "pass", detail: "" }, 
-      graph: { severity: "pass", detail: "" } 
+    hub_nodes_in_path: [] as string[],
+    eco_dimensions: {
+      coverage: { severity: "pass", detail: "" },
+      freshness: { severity: "pass", detail: "" },
+      mapping: { severity: "pass", detail: "" },
+      conflict: { severity: "pass", detail: "", conflict_payload: null as any },
+      graph: { severity: "pass", detail: "" }
     },
     evidence_checkpoints: {},
     freshness: {},
     confidence_score: 80,
-    penalties: [],
-    conflicts: [],
+    penalties: [] as any[],
+    conflicts: [] as any[],
+    conflict_ledger_events: [] as any[],
+    tee_conflict: null as any,
+    gate_decision: null as any,
     forced_lane_minimum: "A",
     forced_retrieval_mode: "",
     forced_unknown: false,
@@ -61,6 +66,78 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
     eco.evidence_checkpoints = { inbound_chain_traced: { status: "pass" } };
   } else if (specPath?.includes("config-change.md")) {
     eco.unobservable_factors = ["env var mentioned"];
+  }
+
+  // ── Conflict detection ─────────────────────────────────────────────────────
+  // Build evidence items from available sources
+  const evidence: EvidenceItem[] = [];
+
+  // Read spec content if a spec path is provided
+  if (specPath && fs.existsSync(specPath)) {
+    try {
+      const specContent = fs.readFileSync(specPath, 'utf-8');
+      evidence.push({
+        source: 'spec',
+        ref: specPath,
+        content: specContent,
+      });
+    } catch {
+      // Skip if unreadable
+    }
+  }
+
+  // Add query as a synthetic spec item
+  if (opts?.query) {
+    evidence.push({
+      source: 'spec',
+      ref: 'query',
+      content: opts.query,
+    });
+  }
+
+  // Run conflict detection
+  try {
+    const conflictResult = detectConflicts({
+      touchedPaths: eco.modules_touched,
+      touchedSymbols: [],
+      hubNodes: eco.hub_nodes_in_path,
+      crossModuleEdges: eco.cross_module_edges,
+      criticalPathHit: eco.critical_path_hit,
+      evidence,
+      query: opts?.query,
+      // db is not available here without a db path — could be threaded in later
+    });
+
+    // Populate ECO with conflict results
+    eco.conflicts = conflictResult.conflicts;
+    eco.eco_dimensions.conflict = {
+      severity: conflictResult.ecoEntry.severity,
+      detail: conflictResult.ecoEntry.detail,
+      conflict_payload: conflictResult.ecoEntry.conflict_payload,
+    };
+    eco.tee_conflict = conflictResult.tee;
+    eco.gate_decision = conflictResult.gate;
+    eco.conflict_ledger_events = conflictResult.ledgerEvents;
+
+    // Propagate blocking conflicts into ECO blocked state
+    if (conflictResult.gate.behavior === 'refuse') {
+      eco.blocked = true;
+      eco.escalation_reasons.push(`conflict:${conflictResult.gate.reason}`);
+    } else if (conflictResult.gate.behavior === 'ask') {
+      eco.escalation_reasons.push(`conflict_clarification_required`);
+    }
+
+    // Propagate blocked paths into boundary warnings
+    for (const p of conflictResult.tee.blocked_paths) {
+      eco.boundary_warnings.push(`${p}:blocked_by_conflict`);
+    }
+  } catch {
+    // Conflict detection failure must not crash ECO construction
+    eco.eco_dimensions.conflict = {
+      severity: "pass",
+      detail: "Conflict detection unavailable — degraded mode",
+      conflict_payload: null,
+    };
   }
 
   // Ensure output directory exists before writing to disk

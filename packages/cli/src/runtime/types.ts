@@ -2,6 +2,14 @@
 
 export type Lane = 'A' | 'B' | 'C';
 
+// Conflict section surfaced in the TEE — derived from conflict detection subsystem.
+export type TEEConflictSection = {
+  blocked_paths: string[];
+  blocked_symbols: string[];
+  clarification_questions: string[];
+  proceed_warnings: string[];
+};
+
 export interface NirnexSession {
   session_id: string;
   repo_root: string;
@@ -49,6 +57,7 @@ export interface TaskEnvelope {
     escalation_reasons: string[];
     boundary_warnings: string[];
   };
+  conflict?: TEEConflictSection;
   status: 'pending' | 'active' | 'completed' | 'failed';
 }
 

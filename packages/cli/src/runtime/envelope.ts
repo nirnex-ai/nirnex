@@ -4,6 +4,7 @@
 import { TaskEnvelope, Lane } from './types.js';
 import { generateTaskId } from './session.js';
 import { getConfidenceLabel } from '@nirnex/core/dist/confidence.js';
+import type { TEEConflictSection } from '@nirnex/core/dist/knowledge/conflict/types.js';
 
 const LANE_TOOL_POLICY: Record<Lane, TaskEnvelope['tool_policy']> = {
   A: {
@@ -32,9 +33,14 @@ export function buildEnvelope(eco: Record<string, any>, prompt: string, sessionI
 
   // Derive scope from ECO
   const modulesTouched: string[] = eco.modules_touched ?? [];
+
+  // Merge conflict-detected blocked paths with boundary warning paths
+  const conflictTEE: TEEConflictSection | null = eco.tee_conflict ?? null;
+  const conflictBlockedPaths: string[] = conflictTEE?.blocked_paths ?? [];
   const blockedPaths: string[] = [
+    ...conflictBlockedPaths,
     ...(eco.boundary_warnings ?? []).map((w: string) => w.split(':')[0]).filter(Boolean),
-  ];
+  ].filter((v, i, a) => a.indexOf(v) === i);
 
   // Derive acceptance criteria from evidence checkpoints
   const checkpoints = eco.evidence_checkpoints ?? {};
@@ -53,6 +59,15 @@ export function buildEnvelope(eco: Record<string, any>, prompt: string, sessionI
   }
   for (const r of (eco.escalation_reasons ?? [])) {
     constraints.push(`escalation:${r}`);
+  }
+
+  // Inject conflict clarification questions as constraints
+  for (const q of (conflictTEE?.clarification_questions ?? [])) {
+    constraints.push(`conflict_clarification:${q}`);
+  }
+  // Inject conflict warnings as constraints
+  for (const w of (conflictTEE?.proceed_warnings ?? [])) {
+    constraints.push(`conflict_warning:${w}`);
   }
 
   const penalties = eco.penalties ?? [];
@@ -89,6 +104,7 @@ export function buildEnvelope(eco: Record<string, any>, prompt: string, sessionI
       escalation_reasons: eco.escalation_reasons ?? [],
       boundary_warnings: eco.boundary_warnings ?? [],
     },
+    ...(conflictTEE ? { conflict: conflictTEE } : {}),
     status: 'active',
   };
 
@@ -118,6 +134,20 @@ export function formatEnvelopeContext(envelope: TaskEnvelope): string {
   }
   if (envelope.eco_summary.escalation_reasons.length > 0) {
     lines.push(`Escalation: ${envelope.eco_summary.escalation_reasons.join('; ')}`);
+  }
+
+  // Surface conflict findings
+  if (envelope.conflict) {
+    const c = envelope.conflict;
+    if (c.blocked_paths.length > 0) {
+      lines.push(`Conflict-blocked paths: ${c.blocked_paths.join(', ')}`);
+    }
+    if (c.clarification_questions.length > 0) {
+      lines.push(`Clarification required: ${c.clarification_questions[0]}`);
+    }
+    if (c.proceed_warnings.length > 0) {
+      lines.push(`Conflict warnings: ${c.proceed_warnings.slice(0, 2).join('; ')}`);
+    }
   }
 
   return lines.join('\n');

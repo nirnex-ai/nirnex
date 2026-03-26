@@ -130,7 +130,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Current Version
 
-**v4.2.2** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
+**v5.0.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
 
 Check your installed version at any time:
 
@@ -492,6 +492,7 @@ A bounded representation of a task. Includes:
 - scope
 - constraints
 - confidence
+- conflict report (typed, not a scalar)
 
 ---
 
@@ -521,15 +522,105 @@ Defines how strict execution should be:
 
 ### Constraint Dimensions
 
-Nirnex evaluates:
+Nirnex evaluates five dimensions per request:
 
-- Coverage
-- Freshness
-- Mapping Quality
-- Conflicts
-- Graph Traversal
+| Dimension | What it measures |
+|---|---|
+| Coverage | How completely the dependency graph covers the requested scope |
+| Freshness | How current the index is relative to HEAD |
+| Mapping Quality | How precisely the request maps to a bounded implementation target |
+| **Conflict** | Whether evidence sources make incompatible claims about the same subject |
+| Graph Traversal | Depth and completeness of graph-based retrieval |
 
-These directly influence confidence and lane selection.
+These directly influence confidence and lane selection. Conflict scoring is **independent** — it cannot be masked by high coverage or clean mapping.
+
+---
+
+### Conflict Detection
+
+Nirnex includes a typed conflict detection subsystem that runs on every planning request and produces a structured `ConflictReport` before any code is written.
+
+#### What conflicts are detected
+
+**Structural conflicts** — derived from the dependency graph:
+
+| Type | What triggers it |
+|---|---|
+| `circular_dependency` | A dependency cycle touches the requested edit scope |
+| `hub_collision` | The scope includes a high-centrality node (>50 inbound edges) |
+| `ownership_overlap` | The scope spans incompatible architectural zones (e.g. API layer × UI layer) |
+| `entrypoint_mismatch` | A domain-intent query maps only to display-layer paths |
+
+**Semantic conflicts** — derived from retrieved evidence (spec, docs, bug reports, code):
+
+| Type | What triggers it |
+|---|---|
+| `source_claim_contradiction` | Two sources make opposing factual claims about the same subject |
+| `spec_code_divergence` | The spec asserts something exists; the code evidence shows it is absent |
+| `multi_source_disagreement` | Non-code sources (spec, docs, bug report) contradict each other |
+| `ambiguity_cluster` | Multiple competing implementation targets found with no clear winner |
+
+#### Gate behavior
+
+Conflict severity determines what Nirnex allows next:
+
+| Gate outcome | When |
+|---|---|
+| **Pass** | No material conflicts, or only low-severity advisory findings |
+| **Warn** | Medium-severity conflict — bounded execution is still safe |
+| **Ask** | Ambiguous target or multi-source disagreement — clarification required before commit |
+| **Explore** | High-severity structural conflict — investigation allowed, commit disabled |
+| **Refuse** | Blocking conflict — safe bounded execution is impossible |
+
+#### Conflict output in ECO
+
+Each ECO now carries a typed conflict payload:
+
+```json
+{
+  "eco_dimensions": {
+    "conflict": {
+      "severity": "escalate",
+      "detail": "2 high-severity conflict(s) require review.",
+      "conflict_payload": {
+        "score": 0.25,
+        "severity": "escalate",
+        "conflicts": [ ... ],
+        "dominant_conflicts": ["<id>"]
+      }
+    }
+  },
+  "gate_decision": {
+    "behavior": "explore",
+    "reason": "Contradictory evidence detected. Investigation allowed, commit disabled.",
+    "dominant_conflict_ids": ["<id>"]
+  },
+  "tee_conflict": {
+    "blocked_paths": [],
+    "blocked_symbols": [],
+    "clarification_questions": [],
+    "proceed_warnings": ["[EXPLORE] Scope touches hub node: src/core/index.ts"]
+  }
+}
+```
+
+#### Design constraints
+
+- Every conflict record includes at least one cited evidence reference.
+- Semantic contradictions require claims from at least two **different** sources.
+- Semantic detection is rule-based — no LLM inference. Same input always yields the same result.
+- Conflict score is independent of coverage and mapping scores inside the ECO.
+- A failure in semantic detection degrades gracefully to structural-only mode with a trace note.
+
+#### Extending conflict detection
+
+To add a new detector:
+
+1. Create a file under `packages/core/src/knowledge/conflict/structural/` or `semantic/`.
+2. Export a function that returns `ConflictRecord[]`.
+3. Register it in `packages/core/src/knowledge/conflict/detect-conflicts.ts`.
+
+The downstream contract (`ConflictRecord`, `ECOConflictDimension`, `TEEConflictSection`) does not change when new detectors are added.
 
 ---
 
@@ -601,10 +692,13 @@ Causes:
 - vague task
 - missing entity
 - low coverage
+- conflict detected that prevents safe bounded execution
 
 Fix:
 - narrow scope
-- use spec file
+- use a spec file
+- resolve the conflict shown in the gate decision output
+- run `nirnex query` to inspect which evidence sources are in conflict
 
 ---
 
@@ -752,5 +846,8 @@ It makes decisions:
 - bounded
 - traceable
 - confidence-aware
+- conflict-aware
 
 So teams can move faster without losing control.
+
+Nirnex will never proceed silently when evidence materially disagrees. If two sources say different things about the same subject, Nirnex surfaces that conflict, records it in the decision ledger, and gates execution accordingly — before a single line of code is written.
