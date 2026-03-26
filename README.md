@@ -130,7 +130,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Current Version
 
-**v5.3.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
+**v5.4.0** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
 
 Check your installed version at any time:
 
@@ -821,6 +821,156 @@ To add a new detector:
 3. Register it in `packages/core/src/knowledge/conflict/detect-conflicts.ts`.
 
 The downstream contract (`ConflictRecord`, `ECOConflictDimension`, `TEEConflictSection`) does not change when new detectors are added.
+
+---
+
+### Decision Ledger
+
+Nirnex maintains a **canonical Decision Ledger** — a versioned, validated, append-only audit store that captures every governance-relevant event across the planning pipeline. The ledger is distinct from the existing JSON trace system: traces are observability artifacts; ledger entries are governance records.
+
+#### Why a separate ledger
+
+The existing trace system writes ad-hoc JSON blobs to `.ai-index/traces/`. These are readable but not structured for:
+- override accountability (who bypassed what, and why)
+- outcome traceability without inspecting raw traces manually
+- replay verification (same inputs → same outputs)
+- calibration sampling
+
+The Decision Ledger addresses all of these without replacing or modifying the trace system.
+
+#### LedgerEntry — canonical envelope
+
+Every persisted record conforms to:
+
+```typescript
+{
+  schema_version:    '1.0.0',      // increments on incompatible changes
+  ledger_id:         string,       // unique record ID (crypto.randomUUID)
+  trace_id:          string,       // execution trace root (per runOrchestrator call)
+  request_id:        string,       // user request root (multiple traces may share one request)
+  tee_id?:           string,
+  parent_ledger_id?: string,       // parent-child chain (see semantics below)
+  timestamp:         string,       // ISO 8601 — mapper-supplied, not writer-generated
+  stage:             LedgerStage,
+  record_type:       LedgerRecordType,  // SQL projection of payload.kind — must match
+  actor:             'system' | 'analyst' | 'human',
+  payload:           LedgerPayload,
+}
+```
+
+**`record_type` is the SQL-queryable projection of `payload.kind`.** They must always be equal. The validator enforces this as a hard error — mismatch indicates a mapper bug.
+
+#### Five record families
+
+| Record type | When emitted | Hard fields |
+|---|---|---|
+| `decision` | Any stage decision (intent, ECO, gate, lane, etc.) | `decision_code`, `result.status`, `rationale` |
+| `override` | System protection bypassed | `override_id`, `effect`, `approved_by`, `scope` |
+| `outcome` | Terminal state (merged / escalated / refused / abandoned) | `completion_state`, `final_disposition_reason` |
+| `refusal` | Hard block issued | `refusal_code`, `refusal_reason`, `blocking_dimension` |
+| `deviation` | Drift from expected behavior detected | `detected_at_stage`, `severity`, `disposition` |
+
+`record_type: 'trace'` exists for legacy Sprint 6 import only. New code must use the typed families.
+
+#### Parent semantics
+
+```
+1. Stage DecisionRecords — linear pipeline chain:
+   parent_ledger_id = previous stage's ledger_id (undefined for first stage)
+
+2. OverrideRecords — point to the overridden record:
+   parent_ledger_id = ledger_id of the target record
+
+3. OutcomeRecord — points to last stage:
+   parent_ledger_id = last CLASSIFY_LANE record's ledger_id
+
+4. Trace-adapter records (legacy):
+   parent_ledger_id = undefined
+```
+
+#### Orchestrator integration
+
+The orchestrator emits a ledger entry after each stage and a terminal `OutcomeRecord` at completion. Integration is opt-in via an optional callback:
+
+```typescript
+await runOrchestrator(
+  {
+    specPath: null,
+    query: 'fix the timeout',
+    onLedgerEntry: (entry) => appendLedgerEntry(db, entry),
+  },
+  handlers,
+);
+// Produces: 5 DecisionRecords (one per stage) + 1 OutcomeRecord = 6 entries minimum
+```
+
+If `onLedgerEntry` is absent, pipeline behavior is unchanged (backward compatible).
+
+#### Storage
+
+Separate SQLite DB from the index: `.aidos-ledger.db` per project root.
+
+```typescript
+import { initLedgerDb, getLedgerDbPath, appendLedgerEntry } from '@nirnex/core/runtime/ledger';
+
+const db    = initLedgerDb(getLedgerDbPath(targetRoot));
+const entry = fromBoundTrace(stageResult.trace, { trace_id, request_id, stage: 'knowledge' });
+appendLedgerEntry(db, entry);
+```
+
+**Write rule**: No component writes raw JSON directly to ledger storage. All writes through `appendLedgerEntry`.
+
+#### Read path
+
+```typescript
+import { LedgerReader } from '@nirnex/core/runtime/ledger';
+
+const reader = new LedgerReader(db);
+
+reader.fetchByTraceId(traceId)      // all records for a trace, ASC
+reader.buildTimeline(traceId)       // audit timeline (alias for fetchByTraceId)
+reader.fetchOutcome(traceId)        // latest OutcomeRecord (multiple allowed — latest wins)
+reader.fetchOverrides(requestId)    // all overrides for a request, across traces
+reader.fetchRefusals(requestId)     // all refusals for a request
+reader.fetchByStage(traceId, stage) // filter by stage
+```
+
+**Multiple-outcome policy**: allowed by design — retries create a new trace_id under the same request_id. `fetchOutcome(traceId)` returns latest by timestamp; superseded outcomes remain in the ledger (append-only).
+
+#### Mappers — subsystem → LedgerEntry
+
+```typescript
+fromBoundTrace(bt, opts)               // pipeline BoundTrace → DecisionRecord
+fromDimensionScoringTrace(dt, opts)    // ECO scoring → DecisionRecord
+fromConflictEvents(events, opts)       // ConflictLedgerEvent[] → single DecisionRecord
+fromRefusal(stage, code, reason, opts) // gate block → RefusalRecord
+fromOrchestratorResult(result, opts)   // OrchestratorResult → OutcomeRecord
+fromTraceJson(json, opts)              // LEGACY: Sprint 6 trace → record_type: 'trace'
+```
+
+`fromConflictEvents` collapses multiple events into one decision record — preserving event count and stable refs in `rationale.signal_refs` without record explosion.
+
+#### Validation
+
+Every write is validated before persistence. A mismatch between `record_type` and `payload.kind` is a hard error:
+
+```typescript
+validateLedgerEntry(entry)   // { valid: boolean, errors: string[] }
+// Enforces: payload.kind === record_type (hard invariant — mismatch is invalid)
+```
+
+#### Module structure
+
+```
+packages/core/src/runtime/ledger/
+  types.ts       — LedgerEntry + 5 record families (discriminated union)
+  schema.ts      — SQL DDL, getLedgerDbPath()
+  validators.ts  — structural + kind↔record_type invariant validators
+  writer.ts      — initLedgerDb(), appendLedgerEntry() (insert-only)
+  reader.ts      — LedgerReader class
+  mappers.ts     — 6 subsystem-to-LedgerEntry mapper functions
+  index.ts       — re-exports
+```
 
 ---
 

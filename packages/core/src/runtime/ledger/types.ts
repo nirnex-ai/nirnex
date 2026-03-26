@@ -1,0 +1,201 @@
+/**
+ * Runtime Ledger — Canonical Types
+ *
+ * Defines the LedgerEntry envelope and 5 record families (discriminated union).
+ * Every ledger write must conform to LedgerEntry.
+ *
+ * Design constraints:
+ *   - record_type is the SQL-queryable projection of payload.kind — they MUST match
+ *   - 'override' and 'outcome' are synthetic stages (not pipeline positions)
+ *   - record_type: 'trace' is LEGACY IMPORT ONLY — not for new governance records
+ *   - Multiple traces may share a request_id (retries, replays)
+ *
+ * Parent semantics:
+ *   1. Stage DecisionRecords — linear chain: parent = previous stage's ledger_id
+ *   2. OverrideRecords      — parent = ledger_id of the targeted record
+ *   3. OutcomeRecord        — parent = last stage's ledger_id
+ *   4. Trace-adapter records — no parent (undefined)
+ */
+
+// ─── Schema version ───────────────────────────────────────────────────────────
+
+export const LEDGER_SCHEMA_VERSION = '1.0.0' as const;
+
+// ─── Stage ────────────────────────────────────────────────────────────────────
+
+/**
+ * Pipeline positions + synthetic terminal/system stages.
+ *
+ * NOTE: 'override' and 'outcome' are NOT pipeline positions.
+ * They are event categories. Timeline reconstruction must not assume
+ * they appear between pipeline stages.
+ */
+export type LedgerStage =
+  | 'knowledge'
+  | 'eco'
+  | 'classification'
+  | 'strategy'
+  | 'pre_tool_guard'
+  | 'implementation'
+  | 'validation'
+  | 'post_tool_trace'
+  | 'stop'
+  | 'override'   // synthetic — marks an override event, not a pipeline position
+  | 'outcome';   // synthetic — marks terminal state, not a pipeline position
+
+// ─── Record type ──────────────────────────────────────────────────────────────
+
+export type LedgerRecordType =
+  | 'decision'
+  | 'trace'
+  | 'override'
+  | 'outcome'
+  | 'refusal'
+  | 'deviation';
+
+// ─── Actor ────────────────────────────────────────────────────────────────────
+
+export type LedgerActor = 'system' | 'analyst' | 'human';
+
+// ─── Record families ──────────────────────────────────────────────────────────
+
+export type DecisionRecord = {
+  kind: 'decision';
+  decision_name: string;
+  decision_code: string;
+  input_refs: {
+    eco_id?: string;
+    tee_id?: string;
+    trace_ids?: string[];
+    evidence_ids?: string[];
+    policy_ids?: string[];
+  };
+  result: {
+    status: 'pass' | 'warn' | 'escalate' | 'block' | 'refuse';
+    selected_value?: string;
+    selected_lane?: 'A' | 'B' | 'C';
+  };
+  rationale: {
+    summary: string;
+    rule_refs: string[];
+    signal_refs?: string[];
+  };
+  severity?: 'low' | 'medium' | 'high' | 'critical';
+};
+
+export type OverrideRecord = {
+  kind: 'override';
+  override_id: string;
+  target_stage: string;
+  target_record_id?: string;
+  scope: {
+    files?: string[];
+    commands?: string[];
+    tee_ids?: string[];
+  };
+  reason: string;
+  token_id?: string;
+  expires_at?: string;
+  approved_by: 'human' | 'analyst';
+  effect: 'allow' | 'force_lane' | 'bypass_guard' | 'accept_deviation';
+};
+
+export type OutcomeRecord = {
+  kind: 'outcome';
+  completion_state: 'merged' | 'escalated' | 'abandoned' | 'refused';
+  artifact_refs?: {
+    commit_sha?: string;
+    files_changed?: string[];
+    validation_run_ids?: string[];
+  };
+  quality_summary?: {
+    validations_passed: string[];
+    validations_failed: string[];
+    deviations_detected?: number;
+  };
+  final_lane?: 'A' | 'B' | 'C';
+  final_disposition_reason: string;
+};
+
+export type RefusalRecord = {
+  kind: 'refusal';
+  refusal_code: string;
+  refusal_reason: string;
+  blocking_dimension?: 'coverage' | 'freshness' | 'mapping' | 'conflict' | 'graph';
+  required_action?: string;
+};
+
+export type DeviationRecord = {
+  kind: 'deviation';
+  detected_at_stage: string;
+  expected_ref?: string;
+  observed_summary: string;
+  severity: 'low' | 'medium' | 'high';
+  disposition: 'logged' | 'escalated' | 'overridden' | 'abandoned';
+};
+
+/**
+ * LEGACY IMPORT ONLY.
+ *
+ * Used exclusively to adapt pre-existing Sprint 6 trace blobs into the ledger.
+ * New governance-producing code MUST NOT emit TraceAdapterRecord unless
+ * explicitly importing historical data. This is a bounded loophole — bypassing
+ * typed record families undermines ledger governance discipline.
+ */
+export type TraceAdapterRecord = {
+  kind: 'trace';
+  raw: unknown;
+};
+
+export type LedgerPayload =
+  | DecisionRecord
+  | OverrideRecord
+  | OutcomeRecord
+  | RefusalRecord
+  | DeviationRecord
+  | TraceAdapterRecord;
+
+// ─── Canonical ledger envelope ────────────────────────────────────────────────
+
+export interface LedgerEntry {
+  /** Always '1.0.0' — increment when schema changes incompatibly */
+  schema_version: typeof LEDGER_SCHEMA_VERSION;
+
+  /** Unique record ID — crypto.randomUUID() */
+  ledger_id: string;
+
+  /** Execution trace root — one per runOrchestrator() invocation */
+  trace_id: string;
+
+  /**
+   * User request root. Multiple traces may share one request_id
+   * (e.g. retries create a new trace under the same request).
+   */
+  request_id: string;
+
+  session_id?: string;
+  tee_id?: string;
+
+  /**
+   * Parent record linkage — see parent semantics in module header comment.
+   */
+  parent_ledger_id?: string;
+
+  /**
+   * ISO 8601. Mapper-supplied event timestamp; writer fills only if absent.
+   * Always reflects when the event occurred, not when it was written.
+   */
+  timestamp: string;
+
+  stage: LedgerStage;
+
+  /**
+   * SQL-queryable projection of payload.kind.
+   * Validators enforce strict equality: record_type MUST equal payload.kind.
+   * Mismatch is a hard validation error — not silently accepted.
+   */
+  record_type: LedgerRecordType;
+
+  actor: LedgerActor;
+  payload: LedgerPayload;
+}

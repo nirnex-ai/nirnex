@@ -39,6 +39,9 @@ import {
 
 import { StageExecutor } from "./stage-executor.js";
 import { FAILURE_POLICY, applyFailureMode } from "./failure-policy.js";
+import type { LedgerEntry } from "../runtime/ledger/types.js";
+import { fromBoundTrace, fromOrchestratorResult } from "../runtime/ledger/mappers.js";
+import { randomUUID } from "crypto";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +49,14 @@ export interface OrchestratorInput {
   specPath: string | null;
   query?: string;
   targetRoot?: string;
+  /**
+   * Optional ledger entry callback. Called after each stage completes and once
+   * after the final terminal OutcomeRecord is emitted.
+   *
+   * Backward compatible: if absent, no ledger writes occur and pipeline behavior
+   * is unchanged.
+   */
+  onLedgerEntry?: (entry: LedgerEntry) => void;
 }
 
 export interface OrchestratorResult {
@@ -81,6 +92,12 @@ export async function runOrchestrator(
   const stageResults: Array<StageResult & { stage: StageId }> = [];
   let escalated = false;
   let degraded = false;
+
+  // Ledger correlation IDs — stable for this orchestrator invocation
+  const traceId   = `tr_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+  const requestId = `req_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  // Chain tracking: ledger_id of the previous stage entry (for parent_ledger_id)
+  let prevLedgerId: string | undefined = undefined;
 
   // Pipeline context — accumulates outputs from each stage
   let intentOutput: IntentDetectOutput | undefined;
@@ -196,9 +213,23 @@ export async function runOrchestrator(
 
     stageResults.push(result as StageResult & { stage: StageId });
 
+    // ── Emit ledger entry for this stage ───────────────────────────────────
+    if (input.onLedgerEntry) {
+      try {
+        const stageEntry = fromBoundTrace(
+          result.trace,
+          { trace_id: traceId, request_id: requestId, stage: 'knowledge', parent_ledger_id: prevLedgerId },
+        );
+        prevLedgerId = stageEntry.ledger_id;
+        input.onLedgerEntry(stageEntry);
+      } catch {
+        // Ledger emission failure must never crash the pipeline
+      }
+    }
+
     // ── Check for BLOCK ────────────────────────────────────────────────────
     if (result.status === "blocked") {
-      return {
+      const blockedResult: OrchestratorResult = {
         completed: false,
         blocked: true,
         blockedAt: stage,
@@ -207,6 +238,16 @@ export async function runOrchestrator(
         stageResults,
         finalLane: undefined,
       };
+      // Emit terminal outcome for blocked pipeline
+      if (input.onLedgerEntry) {
+        try {
+          const outcomeEntry = fromOrchestratorResult(blockedResult, {
+            trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId,
+          });
+          input.onLedgerEntry(outcomeEntry);
+        } catch { /* ledger failure must not crash pipeline */ }
+      }
+      return blockedResult;
     }
 
     if (result.status === "escalated") escalated = true;
@@ -219,7 +260,7 @@ export async function runOrchestrator(
     if (stage === "SUFFICIENCY_GATE" && result.status === "ok") {
       const gate = result.output as SufficiencyGateOutput;
       if (gate.behavior === "block") {
-        return {
+        const gateBlockResult: OrchestratorResult = {
           completed: false,
           blocked: true,
           blockedAt: stage,
@@ -228,11 +269,20 @@ export async function runOrchestrator(
           stageResults,
           finalLane: undefined,
         };
+        if (input.onLedgerEntry) {
+          try {
+            const outcomeEntry = fromOrchestratorResult(gateBlockResult, {
+              trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId,
+            });
+            input.onLedgerEntry(outcomeEntry);
+          } catch { /* ledger failure must not crash pipeline */ }
+        }
+        return gateBlockResult;
       }
     }
   }
 
-  return {
+  const finalResult: OrchestratorResult = {
     completed: true,
     blocked: false,
     escalated,
@@ -240,6 +290,18 @@ export async function runOrchestrator(
     stageResults,
     finalLane: laneOutput?.lane,
   };
+
+  // Emit terminal outcome for completed pipeline
+  if (input.onLedgerEntry) {
+    try {
+      const outcomeEntry = fromOrchestratorResult(finalResult, {
+        trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId,
+      });
+      input.onLedgerEntry(outcomeEntry);
+    } catch { /* ledger failure must not crash pipeline */ }
+  }
+
+  return finalResult;
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
