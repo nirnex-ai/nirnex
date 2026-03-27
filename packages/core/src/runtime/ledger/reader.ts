@@ -171,4 +171,51 @@ export class LedgerReader {
       .all(traceId) as LedgerRow[];
     return rows.map(deserializeRow);
   }
+
+  /**
+   * All run_outcome_summary entries, ordered by timestamp ASC.
+   *
+   * When traceId is provided, returns only summaries for that trace.
+   * When absent, returns all outcome summaries across all runs (for window analysis).
+   * Use this to build comparison windows for regression detection.
+   */
+  fetchOutcomeSummaries(traceId?: string): LedgerEntry[] {
+    const rows = traceId
+      ? this.db
+          .prepare(
+            `SELECT * FROM ledger_entries WHERE trace_id = ? AND record_type = 'run_outcome_summary'
+             ORDER BY timestamp ASC`
+          )
+          .all(traceId) as LedgerRow[]
+      : this.db
+          .prepare(
+            `SELECT * FROM ledger_entries WHERE record_type = 'run_outcome_summary'
+             ORDER BY timestamp ASC`
+          )
+          .all() as LedgerRow[];
+    return rows.map(deserializeRow);
+  }
+
+  /**
+   * All regression_report entries, ordered by timestamp ASC.
+   *
+   * When traceId is provided, returns only reports for that trace.
+   * When absent, returns all regression reports.
+   */
+  fetchRegressionReports(traceId?: string): LedgerEntry[] {
+    const rows = traceId
+      ? this.db
+          .prepare(
+            `SELECT * FROM ledger_entries WHERE trace_id = ? AND record_type = 'regression_report'
+             ORDER BY timestamp ASC`
+          )
+          .all(traceId) as LedgerRow[]
+      : this.db
+          .prepare(
+            `SELECT * FROM ledger_entries WHERE record_type = 'regression_report'
+             ORDER BY timestamp ASC`
+          )
+          .all() as LedgerRow[];
+    return rows.map(deserializeRow);
+  }
 }

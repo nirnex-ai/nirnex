@@ -44,7 +44,8 @@ export type LedgerStage =
   | 'outcome'    // synthetic — marks terminal state, not a pipeline position
   | 'execution'  // synthetic — marks idempotency replay/rejection events
   | 'confidence' // synthetic — marks confidence evolution snapshots
-  | 'replay';    // synthetic — marks replay engine records (materials, attempts, results)
+  | 'replay'     // synthetic — marks replay engine records (materials, attempts, results)
+  | 'analysis';  // synthetic — marks regression analysis records (outcome summaries, reports)
 
 // ─── Record type ──────────────────────────────────────────────────────────────
 
@@ -62,7 +63,9 @@ export type LedgerRecordType =
   | 'replay_material'
   | 'replay_attempted'
   | 'replay_verified'
-  | 'replay_failed';
+  | 'replay_failed'
+  | 'run_outcome_summary'
+  | 'regression_report';
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -224,7 +227,9 @@ export type LedgerPayload =
   | import('../replay/types.js').ReplayMaterialRecord
   | import('../replay/types.js').ReplayAttemptedRecord
   | import('../replay/types.js').ReplayVerifiedRecord
-  | import('../replay/types.js').ReplayFailedRecord;
+  | import('../replay/types.js').ReplayFailedRecord
+  | import('../regression/types.js').RunOutcomeSummaryRecord
+  | import('../regression/types.js').RegressionReportRecord;
 
 // ─── Canonical ledger envelope ────────────────────────────────────────────────
 

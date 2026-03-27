@@ -2137,6 +2137,184 @@ packages/core/src/runtime/ledger/reader.ts
 
 ---
 
+### Historical Regression Detection (Sprint 23)
+
+Sprint 23 adds **deterministic historical regression detection** — the system can now compare current pipeline behavior against historical baselines to identify regressions in confidence, refusal rate, and other key quality metrics.
+
+The Decision Ledger serves as the authoritative source. Comparisons are entirely rule-based — no statistical models, no probabilistic inference, no ML. The same inputs always produce the same findings.
+
+#### Three phases
+
+**1. Outcome summary emission**
+
+Every completed run emits a normalized `run_outcome_summary` ledger entry (opt-in: `enableOutcomeSummary: true`). This record captures:
+
+| Field | Description |
+|---|---|
+| `completion_state` | `merged` / `escalated` / `abandoned` / `refused` |
+| `final_confidence` | ECO stage confidence score |
+| `final_lane` | `A` / `B` / `C` / `null` |
+| `had_refusal` | Whether the run was refused |
+| `evidence_gate_failed` | Whether the evidence gate did not pass |
+| `forced_unknown_applied` | Whether forced_unknown was applied |
+| `stages_completed` | Number of pipeline stages that ran `ok` |
+
+**2. Window construction**
+
+Count-based windows are the primary comparison mechanism:
+
+```typescript
+import { buildCountWindow, buildTimeWindow } from '@nirnex/core/regression';
+
+// last 20 runs as baseline, last 5 as current
+const baseline = buildCountWindow(allSummaries, 20);
+const current  = buildCountWindow(allSummaries, 5);
+
+// or time-based: last 30 days vs last 7 days
+const baselineT = buildTimeWindow(allSummaries, 30);
+const currentT  = buildTimeWindow(allSummaries, 7);
+```
+
+**3. Regression detection**
+
+Rule-based threshold comparison across all tracked metrics:
+
+```typescript
+import {
+  computeRunMetrics,
+  detectRegressions,
+  buildRegressionReport,
+  DEFAULT_REGRESSION_THRESHOLDS,
+} from '@nirnex/core/regression';
+
+const baselineMetrics = computeRunMetrics(baselineWindow);
+const currentMetrics  = computeRunMetrics(currentWindow);
+
+const findings = detectRegressions(
+  baselineMetrics,
+  currentMetrics,
+  DEFAULT_REGRESSION_THRESHOLDS,
+);
+
+const report = buildRegressionReport({
+  baselineWindow: { kind: 'count', count: 20, label: 'baseline (last 20)' },
+  currentWindow:  { kind: 'count', count: 5,  label: 'current (last 5)' },
+  baselineRunCount: baselineWindow.length,
+  currentRunCount:  currentWindow.length,
+  baselineMetrics,
+  currentMetrics,
+  findings,
+});
+// report.overall_severity: 'none' | 'warn' | 'escalate'
+```
+
+#### Tracked metrics
+
+| Metric | Description | Regression = |
+|---|---|---|
+| `avg_confidence` | Mean final confidence | Decline |
+| `median_confidence` | Median final confidence | Decline |
+| `low_confidence_share` | Fraction of runs with confidence < 60 | Increase |
+| `refusal_rate` | Fraction of runs refused | Increase |
+| `forced_unknown_rate` | Fraction with forced_unknown applied | Increase |
+| `override_rate` | Fraction with at least one override | Increase |
+| `evidence_gate_fail_rate` | Fraction where evidence gate failed | Increase |
+| `lane_c_rate` | Fraction assigned to lane C | Increase |
+
+#### Default thresholds
+
+| Metric | Warn | Escalate |
+|---|---|---|
+| `avg_confidence` | drop ≥ 10 pts | drop ≥ 20 pts |
+| `refusal_rate` | increase ≥ 10pp | increase ≥ 20pp |
+| `low_confidence_share` | increase ≥ 15pp | increase ≥ 25pp |
+
+#### Severity
+
+| `overall_severity` | Condition |
+|---|---|
+| `none` | No regressions detected |
+| `warn` | At least one warn finding, no escalate |
+| `escalate` | At least one escalate finding |
+
+#### Correlated markers (NOT causal claims)
+
+Regression findings include `correlated_markers` — co-occurring patterns observed in the same window. These are annotations, not explanations. The system explicitly does not claim causality.
+
+```typescript
+// finding.correlated_markers example:
+// ["correlated: refusal_rate +12.0pp", "correlated: low_confidence_share +18.0pp"]
+// These are observations, not causes.
+```
+
+#### Enabling outcome summary emission
+
+```typescript
+await runOrchestrator({
+  specPath: null,
+  query: 'your-query',
+  enableOutcomeSummary: true, // emit run_outcome_summary to ledger
+  onLedgerEntry: (entry) => {
+    if (entry.record_type === 'run_outcome_summary') {
+      // persist or stream this record for window analysis
+    }
+  },
+}, handlers);
+```
+
+#### Reader helpers
+
+```typescript
+// All outcome summaries across all runs (for window construction)
+const summaryEntries = reader.fetchOutcomeSummaries();
+
+// Summaries for a specific run
+const runSummaries = reader.fetchOutcomeSummaries(traceId);
+
+// All regression reports
+const reports = reader.fetchRegressionReports();
+```
+
+#### Module layout
+
+```
+packages/core/src/runtime/regression/
+  types.ts      — RunOutcomeSummaryRecord, RegressionReportRecord, RegressionFinding,
+                  RunMetrics, WindowSpec, RegressionThresholds
+  summary.ts    — buildRunOutcomeSummary()
+  metrics.ts    — computeRunMetrics()
+  windows.ts    — buildCountWindow(), buildTimeWindow()
+  detectors.ts  — detectRegressions()
+  thresholds.ts — DEFAULT_REGRESSION_THRESHOLDS
+  report.ts     — buildRegressionReport()
+  index.ts      — re-exports all of the above
+
+packages/core/src/regression.ts     — public entry point
+
+packages/core/src/runtime/ledger/types.ts
+  — New: 'analysis' added to LedgerStage
+  — New: 'run_outcome_summary', 'regression_report' added to LedgerRecordType
+  — New: RunOutcomeSummaryRecord, RegressionReportRecord in LedgerPayload union
+
+packages/core/src/runtime/ledger/validators.ts
+  — New: validateRunOutcomeSummaryRecord()
+  — New: validateRegressionReportRecord()
+
+packages/core/src/runtime/ledger/mappers.ts
+  — New: fromRunOutcomeSummary()
+  — New: fromRegressionReport()
+
+packages/core/src/runtime/ledger/reader.ts
+  — New: fetchOutcomeSummaries(traceId?)
+  — New: fetchRegressionReports(traceId?)
+
+packages/core/src/pipeline/orchestrator.ts
+  — New: OrchestratorInput.enableOutcomeSummary
+  — Emits run_outcome_summary at run completion when flag is set
+```
+
+---
+
 ### Stage Machine (Determinism + Enforcement)
 
 Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.

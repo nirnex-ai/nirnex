@@ -73,7 +73,8 @@ import {
 import {
   buildReplayMaterial,
 } from "../runtime/replay/capture.js";
-import { fromReplayMaterial } from "../runtime/ledger/mappers.js";
+import { fromReplayMaterial, fromRunOutcomeSummary } from "../runtime/ledger/mappers.js";
+import { buildRunOutcomeSummary } from "../runtime/regression/summary.js";
 import { randomUUID, createHash } from "crypto";
 import { runStageWithTimeout, type StageTimeoutEvent } from "./timeout.js";
 import { getStageTimeoutConfig } from "../config/stageTimeouts.js";
@@ -133,6 +134,13 @@ export interface OrchestratorInput {
    * (deterministic reconstruction), not fresh re-execution against live dependencies.
    */
   enableReplayCapture?: boolean;
+  /**
+   * Sprint 23: opt-in outcome summary emission.
+   * When true, emits a run_outcome_summary ledger entry at run completion.
+   * This normalized per-run record is the primary input to regression detection.
+   * Backward compatible: false/undefined → no outcome summary emitted.
+   */
+  enableOutcomeSummary?: boolean;
 }
 
 export interface OrchestratorResult {
@@ -791,6 +799,22 @@ export async function runOrchestrator(
         trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId,
       });
       input.onLedgerEntry(outcomeEntry);
+
+      // Sprint 23: emit run_outcome_summary after final outcome
+      if (input.enableOutcomeSummary) {
+        const ecoConf = ecoOutput ? (ecoOutput as EcoBuildOutput).confidence_score : undefined;
+        const gateVerdict = gateOutput?.behavior;
+        const summary = buildRunOutcomeSummary(finalResult, {
+          traceId,
+          finalConfidence: ecoConf,
+          forcedUnknownApplied: gateVerdict !== undefined && gateVerdict !== 'pass',
+          evidenceGateFailed:   gateVerdict !== undefined && gateVerdict !== 'pass',
+        });
+        const summaryEntry = fromRunOutcomeSummary(summary, {
+          trace_id: traceId, request_id: requestId,
+        });
+        input.onLedgerEntry(summaryEntry);
+      }
     } catch { /* ledger failure must not crash pipeline */ }
   }
 

@@ -36,6 +36,10 @@ import type {
   ReplayVerifiedRecord,
   ReplayFailedRecord,
 } from '../replay/types.js';
+import type {
+  RunOutcomeSummaryRecord,
+  RegressionReportRecord,
+} from '../regression/types.js';
 import type { BoundTrace } from '../../pipeline/types.js';
 import type { ConflictLedgerEvent } from '../../knowledge/conflict/types.js';
 import type { DimensionScoringTrace } from '../../knowledge/ledger/traceDimensionScoring.js';
@@ -624,6 +628,50 @@ export function fromReplayMaterial(
     record_type:      'replay_material',
     actor:            'system',
     payload:          material as unknown as LedgerEntry['payload'],
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromRunOutcomeSummary ────────────────────────────────────────────────────
+
+/**
+ * Create a run_outcome_summary ledger entry from a RunOutcomeSummaryRecord.
+ * Written by the orchestrator at run completion (when enableOutcomeSummary=true).
+ */
+export function fromRunOutcomeSummary(
+  summary: RunOutcomeSummaryRecord,
+  opts: { trace_id: string; request_id: string; parent_ledger_id?: string },
+): LedgerEntry {
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        summary.run_timestamp,
+    stage:            'analysis',
+    record_type:      'run_outcome_summary',
+    actor:            'system',
+    payload:          summary as unknown as LedgerEntry['payload'],
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromRegressionReport ─────────────────────────────────────────────────────
+
+/**
+ * Create a regression_report ledger entry from a RegressionReportRecord.
+ * Written after regression analysis is complete.
+ */
+export function fromRegressionReport(
+  report: RegressionReportRecord,
+  opts: { trace_id: string; request_id: string; parent_ledger_id?: string },
+): LedgerEntry {
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        report.generated_at,
+    stage:            'analysis',
+    record_type:      'regression_report',
+    actor:            'system',
+    payload:          report as unknown as LedgerEntry['payload'],
     parent_ledger_id: opts.parent_ledger_id,
   });
 }

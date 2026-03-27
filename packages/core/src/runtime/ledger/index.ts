@@ -56,5 +56,7 @@ export {
   fromStageRejection,
   fromConfidenceSnapshot,
   fromReplayMaterial,
+  fromRunOutcomeSummary,
+  fromRegressionReport,
   fromTraceJson,
 } from './mappers.js';

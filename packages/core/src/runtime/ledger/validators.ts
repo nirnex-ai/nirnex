@@ -31,13 +31,14 @@ export interface ValidationResult {
 const VALID_STAGES: Set<string> = new Set<LedgerStage>([
   'knowledge', 'eco', 'classification', 'strategy',
   'pre_tool_guard', 'implementation', 'validation',
-  'post_tool_trace', 'stop', 'override', 'outcome', 'execution', 'confidence', 'replay',
+  'post_tool_trace', 'stop', 'override', 'outcome', 'execution', 'confidence', 'replay', 'analysis',
 ]);
 
 const VALID_RECORD_TYPES: Set<string> = new Set<LedgerRecordType>([
   'decision', 'trace', 'override', 'outcome', 'refusal', 'deviation',
   'stage_replay', 'stage_rejection', 'correction', 'confidence_snapshot',
   'replay_material', 'replay_attempted', 'replay_verified', 'replay_failed',
+  'run_outcome_summary', 'regression_report',
 ]);
 
 const VALID_ACTORS = new Set(['system', 'analyst', 'human']);
@@ -140,7 +141,9 @@ export function validatePayload(recordType: string, payload: unknown): Validatio
     case 'replay_material':     return validateReplayMaterialRecord(payload);
     case 'replay_attempted':    return validateReplayAttemptedRecord(payload);
     case 'replay_verified':     return validateReplayVerifiedRecord(payload);
-    case 'replay_failed':       return validateReplayFailedRecord(payload);
+    case 'replay_failed':         return validateReplayFailedRecord(payload);
+    case 'run_outcome_summary':   return validateRunOutcomeSummaryRecord(payload);
+    case 'regression_report':     return validateRegressionReportRecord(payload);
     default:
       return { valid: false, errors: [`unknown record_type for payload validation: '${recordType}'`] };
   }
@@ -420,6 +423,72 @@ function validateReplayFailedRecord(p: unknown): ValidationResult {
 
   if (!r.run_trace_id || typeof r.run_trace_id !== 'string') errors.push('missing or invalid: run_trace_id');
   if (!r.failure_reason || typeof r.failure_reason !== 'string') errors.push('missing or invalid: failure_reason');
+
+  return { valid: errors.length === 0, errors };
+}
+
+// ─── Regression record validators ─────────────────────────────────────────────
+
+const VALID_COMPLETION_STATES_SUMMARY = new Set(['merged', 'escalated', 'abandoned', 'refused']);
+const VALID_SUMMARY_LANES = new Set(['A', 'B', 'C']);
+
+export function validateRunOutcomeSummaryRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.summarized_trace_id || typeof r.summarized_trace_id !== 'string') {
+    errors.push('missing or invalid: summarized_trace_id');
+  }
+  if (!r.completion_state || !VALID_COMPLETION_STATES_SUMMARY.has(r.completion_state as string)) {
+    errors.push(
+      `invalid completion_state: '${r.completion_state}'. Valid: ${[...VALID_COMPLETION_STATES_SUMMARY].join(', ')}`,
+    );
+  }
+  // final_lane may be null or a valid lane
+  if (r.final_lane !== null && r.final_lane !== undefined && !VALID_SUMMARY_LANES.has(r.final_lane as string)) {
+    errors.push(`invalid final_lane: '${r.final_lane}'. Valid: A, B, C, or null`);
+  }
+  if (typeof r.had_refusal !== 'boolean')           errors.push('missing or invalid: had_refusal (must be boolean)');
+  if (typeof r.had_override !== 'boolean')          errors.push('missing or invalid: had_override (must be boolean)');
+  if (typeof r.forced_unknown_applied !== 'boolean') errors.push('missing or invalid: forced_unknown_applied (must be boolean)');
+  if (typeof r.evidence_gate_failed !== 'boolean')  errors.push('missing or invalid: evidence_gate_failed (must be boolean)');
+  if (typeof r.stages_completed !== 'number')       errors.push('missing or invalid: stages_completed (must be a number)');
+  if (!r.run_timestamp || typeof r.run_timestamp !== 'string') {
+    errors.push('missing or invalid: run_timestamp');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+const VALID_OVERALL_SEVERITIES = new Set(['none', 'warn', 'escalate']);
+
+export function validateRegressionReportRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.baseline_window || typeof r.baseline_window !== 'object') {
+    errors.push('missing or invalid: baseline_window');
+  }
+  if (!r.current_window || typeof r.current_window !== 'object') {
+    errors.push('missing or invalid: current_window');
+  }
+  if (typeof r.baseline_run_count !== 'number') errors.push('missing or invalid: baseline_run_count (must be a number)');
+  if (typeof r.current_run_count !== 'number')  errors.push('missing or invalid: current_run_count (must be a number)');
+  if (!r.baseline_metrics || typeof r.baseline_metrics !== 'object') {
+    errors.push('missing or invalid: baseline_metrics');
+  }
+  if (!r.current_metrics || typeof r.current_metrics !== 'object') {
+    errors.push('missing or invalid: current_metrics');
+  }
+  if (!Array.isArray(r.findings)) errors.push('missing or invalid: findings (must be an array)');
+  if (!r.overall_severity || !VALID_OVERALL_SEVERITIES.has(r.overall_severity as string)) {
+    errors.push(`invalid overall_severity: '${r.overall_severity}'. Valid: none, warn, escalate`);
+  }
+  if (!r.generated_at || typeof r.generated_at !== 'string') {
+    errors.push('missing or invalid: generated_at');
+  }
 
   return { valid: errors.length === 0, errors };
 }
