@@ -5,6 +5,13 @@
  * BLOCK failures halt the pipeline immediately.
  * ESCALATE/DEGRADE failures continue with fallback output and set flags.
  *
+ * Sprint 15 additions:
+ *   - Per-stage timeout enforcement via runStageWithTimeout
+ *   - OrchestratorInput.stageTimeoutOverrides — caller-supplied budget overrides
+ *   - OrchestratorResult.stageTimeouts  — all StageTimeoutEvents emitted
+ *   - OrchestratorResult.degradedStages — stages degraded due to timeout
+ *   - OrchestratorResult.executionWarnings — human-readable timeout warnings
+ *
  * Design constraints:
  *   - STAGES order is authoritative — no handler may reorder stages
  *   - Each stage receives the output of previous stages as its input context
@@ -42,6 +49,8 @@ import { FAILURE_POLICY, applyFailureMode } from "./failure-policy.js";
 import type { LedgerEntry } from "../runtime/ledger/types.js";
 import { fromBoundTrace, fromOrchestratorResult, fromRefusal } from "../runtime/ledger/mappers.js";
 import { randomUUID } from "crypto";
+import { runStageWithTimeout, type StageTimeoutEvent } from "./timeout.js";
+import { getStageTimeoutConfig } from "../config/stageTimeouts.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +66,12 @@ export interface OrchestratorInput {
    * is unchanged.
    */
   onLedgerEntry?: (entry: LedgerEntry) => void;
+  /**
+   * Optional per-stage timeout overrides (milliseconds).
+   * Unspecified stages use DEFAULT_STAGE_TIMEOUTS.
+   * Backward compatible: if absent, all stages use their default budgets.
+   */
+  stageTimeoutOverrides?: Partial<Record<StageId, number>>;
 }
 
 export interface OrchestratorResult {
@@ -68,12 +83,18 @@ export interface OrchestratorResult {
   blockedAt?: StageId;
   /** true when any ESCALATE failure occurred */
   escalated: boolean;
-  /** true when any DEGRADE failure occurred */
+  /** true when any DEGRADE failure occurred (including timeout-degraded stages) */
   degraded: boolean;
   /** per-stage results in execution order */
   stageResults: Array<StageResult & { stage: StageId }>;
   /** final lane from CLASSIFY_LANE, or undefined if pipeline was blocked before */
   finalLane?: string;
+  /** StageTimeoutEvents emitted during this run (empty when all stages completed on time) */
+  stageTimeouts: StageTimeoutEvent[];
+  /** stages that timed out and were handled with a degraded fallback */
+  degradedStages: StageId[];
+  /** human-readable warnings for each timeout event */
+  executionWarnings: string[];
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -92,6 +113,11 @@ export async function runOrchestrator(
   const stageResults: Array<StageResult & { stage: StageId }> = [];
   let escalated = false;
   let degraded = false;
+
+  // Sprint 15: accumulated timeout tracking
+  const stageTimeouts: StageTimeoutEvent[] = [];
+  const degradedStages: StageId[] = [];
+  const executionWarnings: string[] = [];
 
   // Ledger correlation IDs — stable for this orchestrator invocation
   const traceId   = `tr_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
@@ -114,12 +140,34 @@ export async function runOrchestrator(
       const result = applyFailureMode(FAILURE_POLICY[stage], stage, error);
       stageResults.push(result as StageResult & { stage: StageId });
       if (result.status === "blocked") {
-        return { completed: false, blocked: true, blockedAt: stage, escalated, degraded, stageResults };
+        return {
+          completed: false, blocked: true, blockedAt: stage, escalated, degraded, stageResults,
+          stageTimeouts, degradedStages, executionWarnings,
+        };
       }
       if (result.status === "escalated") escalated = true;
       if (result.status === "degraded") degraded = true;
       continue;
     }
+
+    // ── Build timeout-wrapped handler ──────────────────────────────────────
+    const timeoutConfig = getStageTimeoutConfig(stage, input.stageTimeoutOverrides);
+    let pendingTimeoutEvent: StageTimeoutEvent | undefined;
+
+    const wrappedHandler = async (executorInput: unknown): Promise<unknown> => {
+      const execResult = await runStageWithTimeout(
+        stage,
+        (_signal) => (handler as (i: unknown) => Promise<unknown>)(executorInput),
+        timeoutConfig,
+      );
+      pendingTimeoutEvent = execResult.timeoutEvent;
+      if (execResult.status === 'success') return execResult.output;
+      throw execResult.error ?? new Error(
+        execResult.timedOut
+          ? `Stage ${stage} timed out after ${timeoutConfig.timeoutMs}ms`
+          : `Stage ${stage} failed`,
+      );
+    };
 
     let result: StageResult;
 
@@ -129,7 +177,7 @@ export async function runOrchestrator(
         const stageInput: IntentDetectInput = { specPath: input.specPath, query: input.query };
         result = await executor.execute(
           stage,
-          handler as (i: IntentDetectInput) => Promise<IntentDetectOutput>,
+          wrappedHandler as (i: IntentDetectInput) => Promise<IntentDetectOutput>,
           stageInput,
           validateIntentDetectInput,
           validateIntentDetectOutput,
@@ -146,7 +194,7 @@ export async function runOrchestrator(
         };
         result = await executor.execute(
           stage,
-          handler as (i: typeof stageInput) => Promise<EcoBuildOutput>,
+          wrappedHandler as (i: typeof stageInput) => Promise<EcoBuildOutput>,
           stageInput,
           validateEcoBuildInput,
           validateEcoBuildOutput,
@@ -160,7 +208,7 @@ export async function runOrchestrator(
         const stageInput = ecoOutput ?? { confidence_score: 0, eco_dimensions: makePassDimensions(), intent: { primary: "unknown", composite: false } };
         result = await executor.execute(
           stage,
-          handler as (i: typeof stageInput) => Promise<SufficiencyGateOutput>,
+          wrappedHandler as (i: typeof stageInput) => Promise<SufficiencyGateOutput>,
           stageInput,
           validateSufficiencyGateInput,
           validateSufficiencyGateOutput,
@@ -176,7 +224,7 @@ export async function runOrchestrator(
         };
         result = await executor.execute(
           stage,
-          handler as (i: typeof stageInput) => Promise<TeeBuildOutput>,
+          wrappedHandler as (i: typeof stageInput) => Promise<TeeBuildOutput>,
           stageInput,
           validateTeeBuildInput,
           validateTeeBuildOutput,
@@ -193,7 +241,7 @@ export async function runOrchestrator(
         };
         result = await executor.execute(
           stage,
-          handler as (i: typeof stageInput) => Promise<ClassifyLaneOutput>,
+          wrappedHandler as (i: typeof stageInput) => Promise<ClassifyLaneOutput>,
           stageInput,
           validateClassifyLaneInput,
           validateClassifyLaneOutput,
@@ -227,6 +275,27 @@ export async function runOrchestrator(
       }
     }
 
+    // ── Sprint 15: Timeout post-processing ────────────────────────────────
+    // Runs BEFORE the BLOCK check so timeout events are captured even when
+    // a critical stage (SUFFICIENCY_GATE) times out and blocks the pipeline.
+    if (pendingTimeoutEvent?.timed_out) {
+      stageTimeouts.push(pendingTimeoutEvent);
+      executionWarnings.push(`Stage ${stage} timed out after ${timeoutConfig.timeoutMs}ms`);
+
+      // Annotate the BoundTrace with timeout metadata
+      const traceMut = result.trace as Record<string, unknown>;
+      traceMut['timedOut']        = true;
+      traceMut['timeoutMs']       = timeoutConfig.timeoutMs;
+      traceMut['failureClass']    = 'timeout';
+      traceMut['fallbackApplied'] = pendingTimeoutEvent.fallback_applied;
+
+      if (!timeoutConfig.isCritical) {
+        // Non-critical timeout → degrade (regardless of the stage's normal failure mode)
+        degradedStages.push(stage);
+        degraded = true;
+      }
+    }
+
     // ── Check for BLOCK ────────────────────────────────────────────────────
     if (result.status === "blocked") {
       const blockedResult: OrchestratorResult = {
@@ -237,6 +306,9 @@ export async function runOrchestrator(
         degraded,
         stageResults,
         finalLane: undefined,
+        stageTimeouts,
+        degradedStages,
+        executionWarnings,
       };
       // Emit terminal outcome for blocked pipeline
       if (input.onLedgerEntry) {
@@ -268,6 +340,9 @@ export async function runOrchestrator(
           degraded,
           stageResults,
           finalLane: undefined,
+          stageTimeouts,
+          degradedStages,
+          executionWarnings,
         };
         if (input.onLedgerEntry) {
           try {
@@ -300,6 +375,9 @@ export async function runOrchestrator(
     degraded,
     stageResults,
     finalLane: laneOutput?.lane,
+    stageTimeouts,
+    degradedStages,
+    executionWarnings,
   };
 
   // Emit terminal outcome for completed pipeline

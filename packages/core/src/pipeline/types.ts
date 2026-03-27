@@ -46,6 +46,11 @@ export interface BoundTrace {
   input: unknown;
   output: unknown;
   errorMessage?: string;
+  // Sprint 15: populated by orchestrator when a stage times out
+  timedOut?: boolean;
+  timeoutMs?: number;
+  failureClass?: 'timeout' | 'error' | null;
+  fallbackApplied?: boolean;
 }
 
 export interface StageResult<T = unknown> {

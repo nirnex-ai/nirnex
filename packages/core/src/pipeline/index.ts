@@ -38,3 +38,5 @@ export type { BoundTrace as TraceBoundTrace } from "./trace-binder.js";
 export { StageExecutor } from "./stage-executor.js";
 export { runOrchestrator } from "./orchestrator.js";
 export type { OrchestratorInput, OrchestratorResult } from "./orchestrator.js";
+export { runStageWithTimeout } from "./timeout.js";
+export type { StageTimeoutConfig, StageTimeoutEvent, StageExecutionResult } from "./timeout.js";

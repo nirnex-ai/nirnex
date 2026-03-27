@@ -1133,6 +1133,126 @@ To add a new intent class: add one `IntentEvidencePolicy` value to `EVIDENCE_RUL
 
 ---
 
+### Stage Timeout Handling (Sprint 15)
+
+The pipeline enforces a **deterministic per-stage timeout budget** so that a hung or slow stage cannot block the pipeline indefinitely. Each stage has an explicit millisecond deadline; if the deadline is exceeded the stage is either degraded (pipeline continues) or the pipeline is blocked (critical stages only).
+
+#### Problem it solves
+
+Without timeout enforcement, a network call, database lock, or infinite loop inside a stage handler can stall the entire pipeline. There is no bounded failure — the pipeline simply hangs. Sprint 15 adds a deterministic enforcement layer: every stage execution races against a configurable `setTimeout`, and the outcome is fully typed and traceable.
+
+#### Mechanism
+
+```
+runStageWithTimeout(stageId, fn, config)
+  │
+  ├── new AbortController()
+  ├── Promise.race([ fn(signal), timeoutPromise ])
+  │
+  ├── On success:   clearTimeout → StageExecutionResult { status: 'success' }
+  ├── On timeout:   controller.abort() → StageExecutionResult { status: 'timed_out' | 'failed' }
+  └── On error:     StageExecutionResult { status: 'failed' }
+```
+
+`fn` receives the `AbortSignal` for cooperative cancellation. When the timeout fires, the signal is aborted and the timeout promise wins the race. Handlers that respect the signal can clean up promptly; handlers that ignore it are abandoned (not awaited) and their eventual resolution is discarded.
+
+#### Default timeout budgets
+
+| Stage | Budget | Policy | Critical |
+|---|---|---|---|
+| `INTENT_DETECT` | 15 s | `degrade` | No |
+| `ECO_BUILD` | 60 s | `degrade` | No |
+| `SUFFICIENCY_GATE` | 10 s | **`fail`** | **Yes** |
+| `TEE_BUILD` | 30 s | `degrade` | No |
+| `CLASSIFY_LANE` | 5 s | `degrade` | No |
+
+`SUFFICIENCY_GATE` is the only critical stage. A gate verdict cannot be safely approximated by a fallback — the pipeline must halt and report the failure. All other stages fall back to their existing `DEGRADE` outputs (empty TEE, unknown intent, lane C, etc.).
+
+#### Per-stage timeout policies
+
+| Policy | Outcome on timeout |
+|---|---|
+| `fail` | `StageExecutionResult.status = 'failed'` → pipeline BLOCK |
+| `degrade` | `StageExecutionResult.status = 'timed_out'` → pipeline continues with fallback |
+
+#### StageTimeoutEvent
+
+Every execution — success or timeout — emits a `StageTimeoutEvent`:
+
+```typescript
+{
+  stage_id:        'ECO_BUILD',
+  started_at:      '2026-03-27T12:00:00.000Z',  // ISO 8601
+  ended_at:        '2026-03-27T12:01:00.001Z',
+  elapsed_ms:      60001,
+  timeout_ms:      60000,
+  timed_out:       true,
+  outcome:         'timeout',        // 'success' | 'timeout' | 'failed'
+  fallback_applied: true,            // true when onTimeout='degrade'
+  failure_class:   'timeout',        // null | 'timeout' | 'error'
+  recoverable:     true,             // false for critical stages
+}
+```
+
+On success, `timed_out = false`, `failure_class = null`, `fallback_applied = false`.
+
+#### OrchestratorResult — new fields
+
+```typescript
+const result = await runOrchestrator(input, handlers);
+
+result.stageTimeouts      // StageTimeoutEvent[] — all timeout events emitted this run
+result.degradedStages     // StageId[] — stages that timed out and were degraded
+result.executionWarnings  // string[] — human-readable per-timeout warning messages
+```
+
+These arrays are always present (never `undefined`). On a happy-path run with no timeouts, all three are empty.
+
+#### BoundTrace — timeout annotations
+
+When a stage times out, its `BoundTrace` is annotated:
+
+```json
+{
+  "stage": "ECO_BUILD",
+  "status": "degraded",
+  "timedOut": true,
+  "timeoutMs": 60000,
+  "failureClass": "timeout",
+  "fallbackApplied": true
+}
+```
+
+#### Caller-supplied overrides
+
+Per-stage budgets can be overridden at call time:
+
+```typescript
+await runOrchestrator({
+  specPath: null,
+  query: 'fix the login timeout',
+  stageTimeoutOverrides: {
+    ECO_BUILD: 120_000,  // give ECO 2 minutes for this large repo
+  },
+}, handlers);
+```
+
+Unspecified stages use `DEFAULT_STAGE_TIMEOUTS`. Override is purely additive — no other behavior changes.
+
+#### Module structure
+
+```
+packages/core/src/pipeline/
+  timeout.ts           — StageTimeoutConfig, StageTimeoutEvent, StageExecutionResult,
+                         runStageWithTimeout()
+
+packages/core/src/config/
+  stageTimeouts.ts     — DEFAULT_STAGE_TIMEOUTS, STAGE_TIMEOUT_POLICY,
+                         STAGE_IS_CRITICAL, getStageTimeoutConfig()
+```
+
+---
+
 ### Stage Machine (Determinism + Enforcement)
 
 Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.
