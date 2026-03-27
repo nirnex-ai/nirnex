@@ -63,7 +63,13 @@ import {
   fromRefusal,
   fromStageReplay,
   fromStageRejection,
+  fromConfidenceSnapshot,
 } from "../runtime/ledger/mappers.js";
+import {
+  buildConfidenceSnapshot,
+  ecoDimensionsToConfidence,
+  type ConfidenceSnapshotRecord,
+} from "../runtime/confidence/index.js";
 import { randomUUID, createHash } from "crypto";
 import { runStageWithTimeout, type StageTimeoutEvent } from "./timeout.js";
 import { getStageTimeoutConfig } from "../config/stageTimeouts.js";
@@ -107,6 +113,12 @@ export interface OrchestratorInput {
    * Bumping a stage's contract version forces re-execution even if input is unchanged.
    */
   contractVersionOverrides?: Partial<Record<StageId, string>>;
+  /**
+   * Sprint 21: opt-in confidence evolution tracking.
+   * When true, emits ConfidenceSnapshotRecord ledger entries at 4 pipeline checkpoints.
+   * Backward compatible: false/undefined → no confidence snapshots emitted.
+   */
+  enableConfidenceTracking?: boolean;
 }
 
 export interface OrchestratorResult {
@@ -161,6 +173,22 @@ export async function runOrchestrator(
   // Sprint 19: idempotency tracking
   const replayedStages: StageId[] = [];
   const rejectedDuplicateStages: StageId[] = [];
+
+  // Sprint 21: confidence evolution tracking
+  let confidenceSnapshotIndex = 0;
+  let prevConfidenceSnapshot: ConfidenceSnapshotRecord | undefined = undefined;
+
+  function emitConfidenceSnapshot(snapshot: ConfidenceSnapshotRecord): void {
+    if (!input.onLedgerEntry) return;
+    try {
+      const entry = fromConfidenceSnapshot(snapshot, {
+        trace_id: traceId,
+        request_id: requestId,
+      });
+      input.onLedgerEntry(entry);
+      prevConfidenceSnapshot = snapshot;
+    } catch { /* confidence tracking must not crash the pipeline */ }
+  }
 
   // Sprint 19: idempotency store (file-based when targetRoot is available)
   let store: StageExecutionStore | null = null;
@@ -585,6 +613,52 @@ export async function runOrchestrator(
       }
     }
 
+    // ── Sprint 21: Confidence snapshot checkpoints ─────────────────────────
+    if (input.enableConfidenceTracking && ecoOutput && !isRejected) {
+      if (stage === 'ECO_BUILD' && ecoOutput) {
+        const eco = ecoOutput as EcoBuildOutput & { forced_unknown?: boolean; forced_lane_minimum?: string };
+        confidenceSnapshotIndex++;
+        const snapshot = buildConfidenceSnapshot({
+          snapshot_index: confidenceSnapshotIndex,
+          computed_confidence: eco.confidence_score,
+          stage_name: 'ECO_BUILD',
+          trigger_type: 'eco_initialized',
+          dimensions: ecoDimensionsToConfidence(eco.eco_dimensions),
+          forced_unknown: eco.forced_unknown,
+          effective_lane: eco.forced_lane_minimum,
+          previous: prevConfidenceSnapshot,
+        });
+        emitConfidenceSnapshot(snapshot);
+      } else if (stage === 'SUFFICIENCY_GATE' && gateOutput) {
+        const eco = ecoOutput as EcoBuildOutput;
+        confidenceSnapshotIndex++;
+        const snapshot = buildConfidenceSnapshot({
+          snapshot_index: confidenceSnapshotIndex,
+          computed_confidence: eco.confidence_score,
+          stage_name: 'SUFFICIENCY_GATE',
+          trigger_type: 'evidence_gate_evaluated',
+          dimensions: ecoDimensionsToConfidence(eco.eco_dimensions),
+          gates: { sufficiency_gate_verdict: gateOutput.behavior, lane: gateOutput.lane },
+          previous: prevConfidenceSnapshot,
+        });
+        emitConfidenceSnapshot(snapshot);
+      } else if (stage === 'CLASSIFY_LANE' && laneOutput) {
+        const eco = ecoOutput as EcoBuildOutput;
+        confidenceSnapshotIndex++;
+        const snapshot = buildConfidenceSnapshot({
+          snapshot_index: confidenceSnapshotIndex,
+          computed_confidence: eco.confidence_score,
+          stage_name: 'CLASSIFY_LANE',
+          trigger_type: 'lane_classified',
+          dimensions: ecoDimensionsToConfidence(eco.eco_dimensions),
+          effective_lane: laneOutput.lane,
+          gates: { lane: laneOutput.lane },
+          previous: prevConfidenceSnapshot,
+        });
+        emitConfidenceSnapshot(snapshot);
+      }
+    }
+
     // ── Sprint 15: Timeout post-processing ────────────────────────────────
     if (!isReplayed && !isRejected && pendingTimeoutEvent?.timed_out) {
       stageTimeouts.push(pendingTimeoutEvent);
@@ -669,6 +743,24 @@ export async function runOrchestrator(
   // Emit terminal outcome for completed pipeline
   if (input.onLedgerEntry) {
     try {
+      // Sprint 21: emit final_outcome_sealed confidence snapshot
+      if (input.enableConfidenceTracking && ecoOutput) {
+        const eco = ecoOutput as EcoBuildOutput & { forced_unknown?: boolean };
+        confidenceSnapshotIndex++;
+        const finalSnapshot = buildConfidenceSnapshot({
+          snapshot_index: confidenceSnapshotIndex,
+          computed_confidence: eco.confidence_score,
+          stage_name: 'OUTCOME',
+          trigger_type: 'final_outcome_sealed',
+          dimensions: ecoDimensionsToConfidence(eco.eco_dimensions),
+          forced_unknown: eco.forced_unknown,
+          effective_lane: laneOutput?.lane,
+          gates: laneOutput ? { lane: laneOutput.lane } : undefined,
+          previous: prevConfidenceSnapshot,
+        });
+        emitConfidenceSnapshot(finalSnapshot);
+      }
+
       const outcomeEntry = fromOrchestratorResult(finalResult, {
         trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId,
       });

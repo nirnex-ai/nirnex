@@ -29,6 +29,7 @@ import type {
   StageReplayRecord,
   StageRejectionRecord,
 } from './types.js';
+import type { ConfidenceSnapshotRecord } from '../confidence/types.js';
 import type { BoundTrace } from '../../pipeline/types.js';
 import type { ConflictLedgerEvent } from '../../knowledge/conflict/types.js';
 import type { DimensionScoringTrace } from '../../knowledge/ledger/traceDimensionScoring.js';
@@ -570,6 +571,31 @@ export function fromStageRejection(
     record_type:      'stage_rejection',
     actor:            'system',
     payload,
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromConfidenceSnapshot ───────────────────────────────────────────────────
+
+/**
+ * Create a confidence_snapshot ledger entry from a ConfidenceSnapshotRecord.
+ */
+export function fromConfidenceSnapshot(
+  snapshot: ConfidenceSnapshotRecord,
+  opts: {
+    trace_id: string;
+    request_id: string;
+    parent_ledger_id?: string;
+  },
+): LedgerEntry {
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'confidence',
+    record_type:      'confidence_snapshot',
+    actor:            'system',
+    payload:          snapshot as unknown as LedgerEntry['payload'],
     parent_ledger_id: opts.parent_ledger_id,
   });
 }

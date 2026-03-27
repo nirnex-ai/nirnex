@@ -124,4 +124,35 @@ export class LedgerReader {
       .all(requestId) as LedgerRow[];
     return rows.map(deserializeRow);
   }
+
+  /**
+   * All confidence_snapshot records for a trace, ordered by snapshot_index ASC.
+   *
+   * Returns only 'confidence_snapshot' record_type entries.
+   * Use this to reconstruct the full confidence evolution timeline for a trace.
+   */
+  fetchConfidenceTimeline(traceId: string): LedgerEntry[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM ledger_entries WHERE trace_id = ? AND record_type = 'confidence_snapshot'
+         ORDER BY CAST(json_extract(payload_json, '$.snapshot_index') AS INTEGER) ASC`
+      )
+      .all(traceId) as LedgerRow[];
+    return rows.map(deserializeRow);
+  }
+
+  /**
+   * The most recent confidence_snapshot for a trace (highest snapshot_index).
+   *
+   * Returns null if no confidence snapshots exist for the trace.
+   */
+  fetchLatestConfidenceSnapshot(traceId: string): LedgerEntry | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM ledger_entries WHERE trace_id = ? AND record_type = 'confidence_snapshot'
+         ORDER BY CAST(json_extract(payload_json, '$.snapshot_index') AS INTEGER) DESC LIMIT 1`
+      )
+      .get(traceId) as LedgerRow | undefined;
+    return row ? deserializeRow(row) : null;
+  }
 }

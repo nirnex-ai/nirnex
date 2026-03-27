@@ -18,6 +18,7 @@ export {
   type StageReplayRecord,
   type StageRejectionRecord,
   type CorrectionRecord,
+  type ConfidenceSnapshotRecord,
 } from './types.js';
 
 export {
@@ -53,5 +54,6 @@ export {
   fromOrchestratorResult,
   fromStageReplay,
   fromStageRejection,
+  fromConfidenceSnapshot,
   fromTraceJson,
 } from './mappers.js';

@@ -42,7 +42,8 @@ export type LedgerStage =
   | 'stop'
   | 'override'   // synthetic — marks an override event, not a pipeline position
   | 'outcome'    // synthetic — marks terminal state, not a pipeline position
-  | 'execution'; // synthetic — marks idempotency replay/rejection events
+  | 'execution'  // synthetic — marks idempotency replay/rejection events
+  | 'confidence'; // synthetic — marks confidence evolution snapshots
 
 // ─── Record type ──────────────────────────────────────────────────────────────
 
@@ -55,7 +56,8 @@ export type LedgerRecordType =
   | 'deviation'
   | 'stage_replay'
   | 'stage_rejection'
-  | 'correction';
+  | 'correction'
+  | 'confidence_snapshot';
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -194,6 +196,15 @@ export type CorrectionRecord = {
   corrected_fields_summary: string;
 };
 
+// ─── Confidence snapshot record ───────────────────────────────────────────────
+
+/**
+ * Ledger payload for a confidence evolution snapshot.
+ * Re-exported from the confidence module — defined here for ledger type completeness.
+ * Import from runtime/confidence for the full type with all fields.
+ */
+export type { ConfidenceSnapshotRecord } from '../confidence/types.js';
+
 export type LedgerPayload =
   | DecisionRecord
   | OverrideRecord
@@ -203,7 +214,8 @@ export type LedgerPayload =
   | TraceAdapterRecord
   | StageReplayRecord
   | StageRejectionRecord
-  | CorrectionRecord;
+  | CorrectionRecord
+  | import('../confidence/types.js').ConfidenceSnapshotRecord;
 
 // ─── Canonical ledger envelope ────────────────────────────────────────────────
 

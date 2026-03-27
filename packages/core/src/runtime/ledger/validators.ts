@@ -31,12 +31,12 @@ export interface ValidationResult {
 const VALID_STAGES: Set<string> = new Set<LedgerStage>([
   'knowledge', 'eco', 'classification', 'strategy',
   'pre_tool_guard', 'implementation', 'validation',
-  'post_tool_trace', 'stop', 'override', 'outcome', 'execution',
+  'post_tool_trace', 'stop', 'override', 'outcome', 'execution', 'confidence',
 ]);
 
 const VALID_RECORD_TYPES: Set<string> = new Set<LedgerRecordType>([
   'decision', 'trace', 'override', 'outcome', 'refusal', 'deviation',
-  'stage_replay', 'stage_rejection', 'correction',
+  'stage_replay', 'stage_rejection', 'correction', 'confidence_snapshot',
 ]);
 
 const VALID_ACTORS = new Set(['system', 'analyst', 'human']);
@@ -134,7 +134,8 @@ export function validatePayload(recordType: string, payload: unknown): Validatio
     case 'trace':           return validateTraceAdapterRecord(payload);
     case 'stage_replay':    return validateStageReplayRecord(payload);
     case 'stage_rejection': return validateStageRejectionRecord(payload);
-    case 'correction':      return validateCorrectionRecord(payload);
+    case 'correction':          return validateCorrectionRecord(payload);
+    case 'confidence_snapshot': return validateConfidenceSnapshotRecord(payload);
     default:
       return { valid: false, errors: [`unknown record_type for payload validation: '${recordType}'`] };
   }
@@ -301,6 +302,53 @@ export function validateStageRejectionRecord(p: unknown): ValidationResult {
   if (!r.stage_id || typeof r.stage_id !== 'string') errors.push('missing or invalid: stage_id');
   if (!r.execution_key || typeof r.execution_key !== 'string') errors.push('missing or invalid: execution_key');
   if (!r.rejection_reason || typeof r.rejection_reason !== 'string') errors.push('missing or invalid: rejection_reason');
+
+  return { valid: errors.length === 0, errors };
+}
+
+const VALID_CONFIDENCE_BANDS = new Set([
+  'high', 'moderate', 'low', 'very_low', 'forced_unknown', 'blocked',
+]);
+
+const VALID_TRIGGER_TYPES = new Set([
+  'eco_initialized', 'evidence_gate_evaluated', 'conflict_penalty_applied',
+  'dimension_scored', 'lane_classified', 'lane_escalated',
+  'override_acknowledged', 'final_outcome_sealed',
+]);
+
+export function validateConfidenceSnapshotRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (typeof r.snapshot_index !== 'number' || r.snapshot_index < 1) {
+    errors.push('missing or invalid: snapshot_index (must be a positive number)');
+  }
+  if (!r.confidence_model_version || typeof r.confidence_model_version !== 'string') {
+    errors.push('missing or invalid: confidence_model_version');
+  }
+  if (typeof r.computed_confidence !== 'number') {
+    errors.push('missing or invalid: computed_confidence (must be a number)');
+  }
+  if (typeof r.effective_confidence !== 'number') {
+    errors.push('missing or invalid: effective_confidence (must be a number)');
+  }
+  if (!r.confidence_band || !VALID_CONFIDENCE_BANDS.has(r.confidence_band as string)) {
+    errors.push(
+      `invalid confidence_band: '${r.confidence_band}'. Valid: ${[...VALID_CONFIDENCE_BANDS].join(', ')}`,
+    );
+  }
+  if (!r.stage_name || typeof r.stage_name !== 'string') {
+    errors.push('missing or invalid: stage_name');
+  }
+  if (!r.trigger_type || !VALID_TRIGGER_TYPES.has(r.trigger_type as string)) {
+    errors.push(
+      `invalid trigger_type: '${r.trigger_type}'. Valid: ${[...VALID_TRIGGER_TYPES].join(', ')}`,
+    );
+  }
+  if (!r.dimensions || typeof r.dimensions !== 'object') {
+    errors.push('missing or invalid: dimensions (must be an object)');
+  }
 
   return { valid: errors.length === 0, errors };
 }

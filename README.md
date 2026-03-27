@@ -1874,6 +1874,123 @@ packages/core/src/runtime/ledger/types.ts
 
 ---
 
+### Confidence Evolution Tracking (Sprint 21)
+
+Sprint 21 adds **confidence evolution tracking** — the pipeline now records how its confidence changes across the lifecycle of every run as an immutable time series in the Decision Ledger.
+
+Rather than surfacing a single final confidence scalar, each run produces an ordered sequence of `ConfidenceSnapshotRecord` entries, one per defined checkpoint. Reviewers and diagnostics can replay exactly how confidence moved from an initial ECO assessment through gate evaluation and final lane classification.
+
+#### Four pipeline checkpoints
+
+| `snapshot_index` | Stage | `trigger_type` | What changed |
+|---|---|---|---|
+| 1 | ECO_BUILD | `eco_initialized` | ECO dimensions scored, base confidence established |
+| 2 | SUFFICIENCY_GATE | `evidence_gate_evaluated` | Gate verdict known (pass/block/ask) |
+| 3 | CLASSIFY_LANE | `lane_classified` | Final lane determined |
+| 4 | Outcome | `final_outcome_sealed` | Pipeline terminal state sealed |
+
+#### ConfidenceBand
+
+Each snapshot derives a categorical band from its numeric confidence score plus runtime override flags:
+
+| Band | Threshold | Notes |
+|---|---|---|
+| `high` | ≥ 80 | |
+| `moderate` | ≥ 60 | |
+| `low` | ≥ 40 | |
+| `very_low` | < 40 | |
+| `forced_unknown` | any score | `forced_unknown=true` flag in ECO output |
+| `blocked` | any score | Hard gate failure prevents proceeding |
+
+#### Dimension score mapping
+
+ECO dimension severities map to numeric scores for confidence computation:
+
+| Severity | Score |
+|---|---|
+| `pass` | 100 |
+| `warn` | 60 |
+| `escalate` | 40 |
+| `block` | 0 |
+
+#### Diff between snapshots
+
+Each snapshot records the delta from the prior snapshot:
+
+```typescript
+{
+  delta_composite: 10,          // confidence increased by 10 from prior snapshot
+  delta_reasons: [
+    'band_transition: moderate → high',
+    'confidence_increased: +10',
+  ],
+  changed_from_snapshot_index: 2,
+}
+```
+
+First snapshot always has `delta_composite: null` (no prior).
+
+#### Enabling confidence tracking
+
+```typescript
+const result = await runOrchestrator(
+  {
+    specPath: './my-repo',
+    query: 'refactor auth module',
+    enableConfidenceTracking: true,
+    onLedgerEntry: (entry) => {
+      if (entry.record_type === 'confidence_snapshot') {
+        const snap = entry.payload as ConfidenceSnapshotRecord;
+        console.log(`[${snap.snapshot_index}] ${snap.trigger_type}: ${snap.computed_confidence} (${snap.confidence_band})`);
+      }
+    },
+  },
+  handlers,
+);
+```
+
+`enableConfidenceTracking` is opt-in. When absent or `false`, no confidence snapshots are emitted and pipeline behavior is unchanged.
+
+#### Reader helpers
+
+```typescript
+const reader = new LedgerReader(db);
+
+// Full confidence timeline for a trace (ordered by snapshot_index ASC)
+const timeline = reader.fetchConfidenceTimeline(traceId);
+// [snapshot_index=1, 2, 3, 4]
+
+// Most recent snapshot
+const latest = reader.fetchLatestConfidenceSnapshot(traceId);
+// { snapshot_index: 4, trigger_type: 'final_outcome_sealed', ... }
+```
+
+#### Module structure
+
+```
+packages/core/src/runtime/confidence/
+  types.ts     — ConfidenceSnapshotRecord, ConfidenceBand, ConfidenceTriggerType,
+                 ConfidenceDimensions, ConfidenceGates, CONFIDENCE_MODEL_VERSION
+  bands.ts     — computeConfidenceBand(), ecoSeverityToScore()
+  diff.ts      — computeConfidenceDiff()
+  snapshot.ts  — buildConfidenceSnapshot(), ecoDimensionsToConfidence()
+  index.ts     — public API
+
+packages/core/src/runtime/ledger/types.ts
+  — New: ConfidenceSnapshotRecord re-exported
+  — New: 'confidence_snapshot' added to LedgerRecordType
+  — New: 'confidence' added to LedgerStage
+
+packages/core/src/runtime/ledger/mappers.ts
+  — New: fromConfidenceSnapshot()
+
+packages/core/src/runtime/ledger/reader.ts
+  — New: fetchConfidenceTimeline(traceId)
+  — New: fetchLatestConfidenceSnapshot(traceId)
+```
+
+---
+
 ### Stage Machine (Determinism + Enforcement)
 
 Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.
