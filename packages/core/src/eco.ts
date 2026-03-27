@@ -12,6 +12,9 @@ import { extractRequiredScopes } from './knowledge/freshness/extract-required-sc
 import { computeFreshnessImpact } from './knowledge/freshness/compute-freshness-impact.js';
 import type { FreshnessDimensionEntry, FreshnessImpact } from './knowledge/freshness/types.js';
 import { scoreDimensions } from './knowledge/dimensions/scoreDimensions.js';
+import { scoreMappingQuality } from './knowledge/mapping/score.js';
+import { buildMappingQualityInput } from './knowledge/mapping/signals.js';
+import type { MappingQualityResult } from './knowledge/mapping/types.js';
 
 export function buildECO(specPath: string | null, targetRoot: string, opts?: { query?: string }) {
   const intent = detectIntent(specPath, opts);
@@ -62,7 +65,8 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
     boundary_warnings: [] as string[],
     unobservable_factors: [] as string[],
     suggested_next: { action: "Proceed" },
-    mapping: { pattern: "1:1", roots_ranked: [{rank: "primary"}] }
+    mapping: { pattern: "1:1", roots_ranked: [{rank: "primary"}] },
+    mapping_quality: null as MappingQualityResult | null,
   };
 
   // Mocking adjustments to satisfy tests dynamically
@@ -270,6 +274,49 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
   } catch {
     // scoreDimensions failure must not crash ECO construction.
     // eco_dimensions already carry values set in prior steps; leave them in place.
+  }
+
+  // ── Mapping Quality Metric (Sprint 14) ────────────────────────────────────
+  // Compute the full MappingQualityResult and expose it on eco.mapping_quality.
+  // Also ensures eco.eco_dimensions.mapping.severity is driven by the quantitative score.
+  try {
+    const intentPrimary: string = (eco.intent as any)?.primary ?? 'unknown';
+    const roots = ((eco.mapping.roots_ranked as Array<{ rank: string; edge_count?: number }>)).map(
+      (r: any) => ({ rank: r.rank ?? 'primary', edge_count: r.edge_count ?? 0 }),
+    );
+    const sortedRoots = [...roots].sort((a, b) => b.edge_count - a.edge_count);
+    const maxEdges = sortedRoots[0]?.edge_count ?? 0;
+    const allCandidateScores = maxEdges > 0
+      ? sortedRoots.map(r => r.edge_count / maxEdges)
+      : [];
+
+    const mqInput = buildMappingQualityInput({
+      intent:                    intentPrimary,
+      mappingPattern:            (eco.mapping.pattern as any) ?? 'unknown',
+      primaryCandidateScore:     allCandidateScores[0] ?? 0,
+      alternateCandidateScore:   allCandidateScores[1] ?? 0,
+      allCandidateScores,
+      matchedScopeCount:         eco.modules_touched.length,
+      requestedScopeCount:       eco.modules_touched.length,
+      retrievedEvidenceClasses:  [...new Set(evidence.map(e => e.source))],
+      requiredEvidenceClasses:   [],
+      symbolsResolved:           0,
+      symbolsUnresolved:         0,
+      scopeIds:                  eco.modules_touched,
+      knownScopePaths:           eco.modules_touched,
+    });
+
+    const mqResult = scoreMappingQuality(mqInput);
+    eco.mapping_quality = mqResult;
+
+    // Keep eco.eco_dimensions.mapping aligned with quantitative level
+    eco.eco_dimensions.mapping = {
+      severity: mqResult.level,
+      detail:   mqResult.reasons[0] ?? `Mapping quality ${mqResult.level} (${mqResult.score}/100).`,
+    };
+  } catch {
+    // Mapping quality computation must not crash ECO construction.
+    // eco.eco_dimensions.mapping already has a value from scoreDimensions; leave it.
   }
 
   // Ensure output directory exists before writing to disk

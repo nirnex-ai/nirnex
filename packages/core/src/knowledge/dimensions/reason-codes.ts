@@ -48,3 +48,10 @@ export const GRAPH_REASON_CODES = {
   GRAPH_CRITICAL_NODES_MISSING:         'GRAPH_CRITICAL_NODES_MISSING',
   GRAPH_SYMBOL_RESOLUTION_UNKNOWN:      'GRAPH_SYMBOL_RESOLUTION_UNKNOWN',
 } as const;
+
+export const MAPPING_QUALITY_REASON_CODES = {
+  /** Mapping dimension was scored using the quantitative 4-sub-metric engine (Sprint 14+). */
+  MAPPING_QUALITY_SCORED:               'MAPPING_QUALITY_SCORED',
+  /** Hard-block condition triggered — no safe execution target can be identified. */
+  MAPPING_QUALITY_HARD_BLOCK:           'MAPPING_QUALITY_HARD_BLOCK',
+} as const;

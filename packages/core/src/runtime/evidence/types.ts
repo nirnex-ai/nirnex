@@ -70,6 +70,11 @@ export type EvidenceGateFacts = {
   // Confidence
   confidenceScore: number;          // 0..100
 
+  // Mapping quality metric (Sprint 14)
+  mappingQualityScore: number | undefined;      // 0..100 from MappingQualityResult.score
+  mappingQualityHardBlock: boolean | undefined; // true when hard-block condition triggered
+  mappingQualityLevel: string | undefined;      // 'pass' | 'warn' | 'escalate' | 'block'
+
   // Reclassification (extension point — may be absent)
   hasReclassification: boolean;
   reclassificationRequired: boolean;

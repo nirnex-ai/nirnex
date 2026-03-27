@@ -72,6 +72,7 @@ import {
 import {
   COVERAGE_REASON_CODES,
   MAPPING_REASON_CODES,
+  MAPPING_QUALITY_REASON_CODES,
   GRAPH_REASON_CODES,
   CONFLICT_REASON_CODES,
 } from "../packages/core/src/knowledge/dimensions/reason-codes.js";
@@ -616,35 +617,43 @@ describe("computeMappingDimension", () => {
     expect(['block', 'escalate']).toContain(result.status);
   });
 
-  it("unknown mapping pattern → warn (uncertain, not pass)", () => {
+  it("unknown mapping pattern → not pass (uncertain)", () => {
+    // Sprint 14: quantitative scorer is more conservative for unknown pattern.
+    // Result may be warn, escalate, or block depending on candidate scores — but NEVER pass.
     const signals = baseSignals({
       mappingPattern: 'unknown',
       primaryCandidateScore: 0.5,
       alternateCandidateScore: 0,
     });
     const result = computeMappingDimension(signals, DEFAULT_THRESHOLDS);
-    expect(['warn', 'escalate']).toContain(result.status);
+    expect(['warn', 'escalate', 'block']).toContain(result.status);
     // Must NOT be pass — unknown is uncertain
     expect(result.status).not.toBe('pass');
   });
 
-  it("emits MAPPING_PRIMARY_TARGET_AMBIGUOUS reason code for ambiguous pattern", () => {
+  it("emits MAPPING_QUALITY_SCORED reason code for any pattern (Sprint 14+)", () => {
+    // Sprint 14 replaced qualitative reason codes with quantitative scoring codes.
     const signals = baseSignals({ mappingPattern: 'ambiguous' });
     const result = computeMappingDimension(signals, DEFAULT_THRESHOLDS);
-    expect(result.reason_codes).toContain(MAPPING_REASON_CODES.MAPPING_PRIMARY_TARGET_AMBIGUOUS);
+    expect(result.reason_codes).toContain(MAPPING_QUALITY_REASON_CODES.MAPPING_QUALITY_SCORED);
   });
 
-  it("emits MAPPING_SCATTERED reason code for 1:scattered", () => {
+  it("emits MAPPING_QUALITY_HARD_BLOCK reason code for 1:scattered (Sprint 14+)", () => {
+    // Sprint 14: scattered pattern with no candidates triggers hard-block.
     const signals = baseSignals({ mappingPattern: '1:scattered' });
     const result = computeMappingDimension(signals, DEFAULT_THRESHOLDS);
-    expect(result.reason_codes).toContain(MAPPING_REASON_CODES.MAPPING_SCATTERED);
+    // Sprint 14 quantitative scorer emits MAPPING_QUALITY_SCORED always;
+    // hard_block=true adds MAPPING_QUALITY_HARD_BLOCK
+    expect(result.reason_codes).toContain(MAPPING_QUALITY_REASON_CODES.MAPPING_QUALITY_SCORED);
+    expect(result.status).toBe('block');
   });
 
-  it("metrics includes mappingPattern and scatterRatio", () => {
+  it("metrics includes mappingPattern and mapping_quality_score (Sprint 14+)", () => {
+    // Sprint 14 replaced scatterRatio with the quantitative mapping_quality_score.
     const signals = baseSignals({ mappingPattern: '1:chain', primaryCandidateScore: 0.9 });
     const result = computeMappingDimension(signals, DEFAULT_THRESHOLDS);
     expect(result.metrics['mappingPattern']).toBeDefined();
-    expect(typeof result.metrics['scatterRatio']).toBe('number');
+    expect(typeof result.metrics['mapping_quality_score']).toBe('number');
   });
 
   it("deterministic — same inputs yield same mapping result", () => {

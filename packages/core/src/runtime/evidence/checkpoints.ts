@@ -99,6 +99,12 @@ export function extractEvidenceFacts(eco: SufficiencyGateInput): EvidenceGateFac
   // ── Confidence ────────────────────────────────────────────────────────────
   const confidenceScore = typeof eco.confidence_score === 'number' ? eco.confidence_score : 0;
 
+  // ── Mapping quality metric (Sprint 14) ───────────────────────────────────
+  const mqObj = ecoAny['mapping_quality'] as Record<string, unknown> | null | undefined;
+  const mappingQualityScore     = typeof mqObj?.['score']      === 'number'  ? mqObj['score']      as number  : undefined;
+  const mappingQualityHardBlock = typeof mqObj?.['hard_block'] === 'boolean' ? mqObj['hard_block'] as boolean : undefined;
+  const mappingQualityLevel     = typeof mqObj?.['level']      === 'string'  ? mqObj['level']      as string  : undefined;
+
   // ── Reclassification (extension point) ───────────────────────────────────
   const reclassObj            = ecoAny['reclassification'] as Record<string, unknown> | null | undefined;
   const hasReclassification   = reclassObj != null;
@@ -123,6 +129,9 @@ export function extractEvidenceFacts(eco: SufficiencyGateInput): EvidenceGateFac
     forcedUnknown,
     ecoBlocked,
     confidenceScore,
+    mappingQualityScore,
+    mappingQualityHardBlock,
+    mappingQualityLevel,
     hasReclassification,
     reclassificationRequired,
   };

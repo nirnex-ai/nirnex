@@ -416,6 +416,86 @@ export function fromEvidenceGateDecision(
   });
 }
 
+// ─── fromMappingQualityScored ─────────────────────────────────────────────────
+
+/**
+ * Create a knowledge-stage DecisionRecord for a completed mapping quality scoring run.
+ *
+ * Captures the full MappingQualityResult including score, level, hard_block, and
+ * sub-metric breakdown as signal_refs for calibration/replay.
+ *
+ * @param mqResult  - the MappingQualityResult from scoreMappingQuality()
+ * @param opts      - correlation IDs and optional intent class
+ */
+export function fromMappingQualityScored(
+  mqResult: {
+    score: number;
+    level: string;
+    hard_block: boolean;
+    breakdown: {
+      scope_alignment: number;
+      structural_coherence: number;
+      evidence_concentration: number;
+      intent_alignment: number;
+    };
+    reasons: string[];
+  },
+  opts: {
+    trace_id: string;
+    request_id: string;
+    intent?: string;
+    tee_id?: string;
+    parent_ledger_id?: string;
+  },
+): LedgerEntry {
+  const ledgerStatus: DecisionRecord['result']['status'] =
+    mqResult.level === 'pass'     ? 'pass'    :
+    mqResult.level === 'warn'     ? 'warn'    :
+    mqResult.level === 'escalate' ? 'escalate':
+    mqResult.level === 'block'    ? 'block'   :
+    'warn';
+
+  const payload: DecisionRecord = {
+    kind:          'decision',
+    decision_name: 'mapping quality scored',
+    decision_code: 'MAPPING_QUALITY_SCORED',
+    input_refs: {
+      policy_ids: opts.intent ? [`intent:${opts.intent}`] : undefined,
+    },
+    result: {
+      status:         ledgerStatus,
+      selected_value: `${mqResult.score}/100 (${mqResult.level})`,
+    },
+    rationale: {
+      summary:     mqResult.reasons[0]
+        ?? `Mapping quality ${mqResult.level} (${mqResult.score}/100).`,
+      rule_refs:   ['sprint14:scoreMappingQuality'],
+      signal_refs: [
+        `score:${mqResult.score}`,
+        `level:${mqResult.level}`,
+        `hard_block:${mqResult.hard_block}`,
+        `scope_alignment:${mqResult.breakdown.scope_alignment}`,
+        `structural_coherence:${mqResult.breakdown.structural_coherence}`,
+        `evidence_concentration:${mqResult.breakdown.evidence_concentration}`,
+        `intent_alignment:${mqResult.breakdown.intent_alignment}`,
+      ],
+    },
+    ...(mqResult.hard_block ? { severity: 'critical' as const } : {}),
+  };
+
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'eco',
+    record_type:      'decision',
+    actor:            'system',
+    payload,
+    tee_id:           opts.tee_id,
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
 // ─── fromTraceJson — LEGACY IMPORT ONLY ──────────────────────────────────────
 
 /**

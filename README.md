@@ -532,7 +532,7 @@ Nirnex evaluates five dimensions per request. Each runs an **independent evaluat
 |---|---|---|
 | Coverage | How completely retrieved evidence covers the requested scope and intent | All mandatory evidence classes missing |
 | Freshness | How current the index is relative to HEAD (scope-aware) | Stale impact ratio ≥ 0.60, or required scope deleted/renamed |
-| Mapping Quality | How precisely the request maps to a bounded implementation target | Scattered pattern (`1:scattered`) |
+| Mapping Quality | How precisely the request maps to a bounded implementation target | No scoped candidates, scattered+no primary, all evidence out-of-scope, or scattered+fragmented clusters |
 | **Conflict** | Whether evidence sources make incompatible claims about the same subject | Blocking semantic or structural conflict |
 | Graph Completeness | Depth and symbol resolution completeness for the required reasoning path | Critical nodes missing from required scope |
 
@@ -549,21 +549,28 @@ Each of the five dimensions runs a distinct pure-function evaluator. All evaluat
 ```
 buildECO()
   │
-  ├── detectConflicts()       → eco.conflicts (Sprint 8)
-  ├── computeFreshnessImpact() → eco.freshness (Sprint 9)
+  ├── detectConflicts()         → eco.conflicts (Sprint 8)
+  ├── computeFreshnessImpact()  → eco.freshness (Sprint 9)
   │
-  └── scoreDimensions()       → eco.eco_dimensions (Sprint 11)
+  ├── scoreDimensions()         → eco.eco_dimensions (Sprint 11, v2.0.0)
+  │     │
+  │     ├── buildDimensionSignals()   — single normalization boundary
+  │     ├── getThresholds(intent)     — centralized threshold policy
+  │     │
+  │     ├── computeCoverageDimension()
+  │     ├── computeFreshnessDimension()
+  │     ├── computeMappingDimension() ──→ scoreMappingQuality() (Sprint 14)
+  │     ├── computeConflictDimension()
+  │     └── computeGraphCompletenessDimension()
+  │           │
+  │           └── composite_internal_confidence  (weighted, severity-capped)
+  │
+  └── scoreMappingQuality()     → eco.mapping_quality (Sprint 14)
         │
-        ├── buildDimensionSignals()   — single normalization boundary
-        ├── getThresholds(intent)     — centralized threshold policy
-        │
-        ├── computeCoverageDimension()
-        ├── computeFreshnessDimension()
-        ├── computeMappingDimension()
-        ├── computeConflictDimension()
-        └── computeGraphCompletenessDimension()
-              │
-              └── composite_internal_confidence  (weighted, severity-capped)
+        ├── computeScopeAlignmentScore()        (weight: 35%)
+        ├── computeStructuralCoherenceScore()   (weight: 30%)
+        ├── computeEvidenceConcentrationScore() (weight: 20%)
+        └── computeIntentAlignmentScore()       (weight: 15%)
 ```
 
 #### Signal isolation contract
@@ -618,6 +625,58 @@ graph:     { pass: 0.80, warn: 0.60, escalate: 0.30 }
 ```
 
 `getThresholds(intent?)` is exported for callers that need intent-specific overrides.
+
+#### Mapping Quality Metric (Sprint 14)
+
+`computeMappingDimension()` now delegates to a **quantitative 4-sub-metric scoring engine** (`scoreMappingQuality`) instead of the previous qualitative pattern-only evaluation.
+
+**Sub-metrics and weights:**
+
+| Sub-metric | Weight | Measures |
+|---|---|---|
+| `scope_alignment` | 35% | Evidence overlap with the requested execution scope |
+| `structural_coherence` | 30% | Whether evidence forms a coherent dependency chain |
+| `evidence_concentration` | 20% | Dominance of the primary candidate over alternatives |
+| `intent_alignment` | 15% | Evidence type and pattern fit for the declared intent |
+
+**Scoring thresholds (0–100 scale):**
+
+| Score | Level |
+|---|---|
+| 90–100 | `pass` |
+| 75–89 | `warn` |
+| 55–74 | `escalate` |
+| 0–54 | `block` |
+
+Per-intent threshold overrides are available via `getMappingThresholds(intent?)`.
+
+**Hard-block conditions** (override composite score — always force `block`):
+- No mapping candidates retrieved (system is blind)
+- Scattered pattern with zero primary candidate score
+- All candidates are outside the requested scope
+- Scattered pattern with more than 3 disconnected evidence clusters
+
+**ECO output:**
+
+```typescript
+eco.mapping_quality: MappingQualityResult  // full typed result
+eco.eco_dimensions.mapping.severity        // aligned with mapping_quality.level
+eco.eco_dimensions.mapping.detail          // first reason from mapping_quality.reasons[]
+```
+
+**Ledger integration:**
+
+```typescript
+import { fromMappingQualityScored } from '@nirnex/core/runtime/ledger/mappers';
+
+const entry = fromMappingQualityScored(mqResult, { trace_id, request_id, intent: 'bug_fix' });
+// entry.payload.decision_code === 'MAPPING_QUALITY_SCORED'
+// entry.stage === 'eco'
+```
+
+**Backward compatibility:** `DimensionSignals.allCandidateScores` and `.disconnectedClusterCount` are populated by `buildDimensionSignals()`. When these signals are absent (legacy callers), `buildMappingQualityInput()` derives safe conservative defaults from `mappingRootsRanked` and the mapping pattern.
+
+`CALCULATION_VERSION` was bumped to `2.0.0` to mark this semantic change to the scoring algorithm.
 
 #### Ledger trace
 

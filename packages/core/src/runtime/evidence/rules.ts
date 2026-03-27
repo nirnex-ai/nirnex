@@ -174,6 +174,14 @@ const LOW_MAPPING_BUG_FIX = makeRule(
   'LOW_MAPPING_CONFIDENCE',
   'Mapping ambiguity on bug fix — target code path is unclear',
   (facts) => {
+    // Sprint 14: hard-block from quantitative mapping quality engine → always refuse
+    if (facts.mappingQualityHardBlock === true) {
+      return refuseResult(
+        'Mapping quality hard-block triggered — the system cannot identify a safe execution target for this bug fix. ' +
+          'No scoped, concentrated evidence was found for the target code path.',
+        ['mappingQualityHardBlock', 'mappingSeverity', 'mappingPattern'],
+      );
+    }
     if (facts.mappingSeverity === 'block') {
       return refuseResult(
         'Mapping dimension is blocking — the target code path cannot be identified for this bug fix. ' +

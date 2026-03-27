@@ -30,7 +30,7 @@ import { computeGraphCompletenessDimension } from './graphCompleteness.js';
  * Increment MAJOR when scoring semantics change incompatibly.
  * This version is stored in every trace record for future calibration.
  */
-export const CALCULATION_VERSION = '1.0.0';
+export const CALCULATION_VERSION = '2.0.0';
 
 // ─── Dimension weights for composite confidence ───────────────────────────────
 

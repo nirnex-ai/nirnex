@@ -50,22 +50,24 @@ function normalizePattern(raw: string): NormalizedMappingPattern {
  * Normalize mapping root scores.
  * Converts raw edge_counts into 0..1 relative scores.
  * Primary = highest-ranked candidate; alternate = second strongest.
+ * Returns all normalized scores sorted descending for evidence_concentration sub-metric.
  */
 function extractCandidateScores(
   roots: Array<{ rank: string; edge_count: number }>,
-): { primary: number; alternate: number } {
-  if (!roots || roots.length === 0) return { primary: 0, alternate: 0 };
+): { primary: number; alternate: number; allScores: number[] } {
+  if (!roots || roots.length === 0) return { primary: 0, alternate: 0, allScores: [] };
 
   // Sort by edge_count descending
   const sorted = [...roots].sort((a, b) => b.edge_count - a.edge_count);
   const maxEdges = sorted[0].edge_count;
 
-  if (maxEdges === 0) return { primary: 0, alternate: 0 };
+  if (maxEdges === 0) return { primary: 0, alternate: 0, allScores: [] };
 
-  const primaryScore = sorted[0].edge_count / maxEdges; // always 1.0
-  const alternateScore = sorted.length > 1 ? sorted[1].edge_count / maxEdges : 0;
+  const allScores = sorted.map(r => r.edge_count / maxEdges);
+  const primaryScore = allScores[0]!;  // always 1.0
+  const alternateScore = allScores.length > 1 ? allScores[1]! : 0;
 
-  return { primary: primaryScore, alternate: alternateScore };
+  return { primary: primaryScore, alternate: alternateScore, allScores };
 }
 
 // ─── buildDimensionSignals ────────────────────────────────────────────────────
@@ -99,8 +101,14 @@ export function buildDimensionSignals(raw: RawDimensionInput): DimensionSignals 
 
   // ── Mapping signals ────────────────────────────────────────────────────────
   const mappingPattern = normalizePattern(raw.mappingPattern ?? 'unknown');
-  const { primary: primaryCandidateScore, alternate: alternateCandidateScore } =
-    extractCandidateScores(raw.mappingRootsRanked ?? []);
+  const {
+    primary: primaryCandidateScore,
+    alternate: alternateCandidateScore,
+    allScores: allCandidateScores,
+  } = extractCandidateScores(raw.mappingRootsRanked ?? []);
+
+  // Disconnected cluster count — 0 means unknown or fully connected graph
+  const disconnectedClusterCount = raw.disconnectedClusters ?? 0;
 
   // Symbol resolution — not available from raw input yet; use 0/0 = unknown state
   // Downstream code will detect totalSymbolCount=0 as "unknown" and emit warn
@@ -131,6 +139,8 @@ export function buildDimensionSignals(raw: RawDimensionInput): DimensionSignals 
     mappingPattern,
     primaryCandidateScore,
     alternateCandidateScore,
+    allCandidateScores,
+    disconnectedClusterCount,
     symbolsResolved,
     symbolsUnresolved,
 

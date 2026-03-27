@@ -74,6 +74,19 @@ export interface DimensionSignals {
   symbolsResolved: number;
   /** Number of symbols that failed to resolve. */
   symbolsUnresolved: number;
+  /**
+   * All candidate scores [0..1] sorted descending. Used by evidence_concentration
+   * sub-metric to compute dominance and entropy.
+   * Derived from mappingRootsRanked by buildDimensionSignals().
+   * Empty when no candidate data is available.
+   */
+  allCandidateScores: number[];
+  /**
+   * Number of disconnected evidence clusters detected in the graph.
+   * 0 = unknown state (not computed) or fully connected graph.
+   * Used by structural_coherence sub-metric.
+   */
+  disconnectedClusterCount: number;
 
   // ── Conflict signals ───────────────────────────────────────────────────────
   /** Normalized ConflictRecord[] from Sprint 8 conflict detection. */
@@ -124,6 +137,8 @@ export interface RawDimensionInput {
   freshnessImpact: FreshnessImpact | null;
   graphDiagnostics?: RawGraphDiagnostics;
   scopeIds?: string[];
+  /** Number of disconnected evidence clusters from graph analysis. 0 = unknown/fully connected. */
+  disconnectedClusters?: number;
 }
 
 // ─── Coordinator output ───────────────────────────────────────────────────────
