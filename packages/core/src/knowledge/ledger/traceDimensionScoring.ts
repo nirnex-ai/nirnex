@@ -8,15 +8,18 @@
  *   - refusal audit (what signals drove a block?)
  *   - regression diagnosis (did a threshold change affect behavior?)
  *   - override governance (what would happen without the override?)
+ *   - causal cluster inspection (what got clustered, why, what was suppressed)
  *
  * Design constraints:
  *   - Pure function — no filesystem I/O (caller decides where to persist)
  *   - All per-dimension metrics, reason codes, and thresholds are included
  *   - calculation_version is always present for future calibration
  *   - Timestamp is ISO 8601
+ *   - causal_clustering section is always present from v3.0.0 onward
  */
 
 import type { ScoreDimensionsOutput, DimensionResult } from '../dimensions/types.js';
+import type { SuppressionRecord } from '../causal-clustering/types.js';
 
 // ─── Trace types ──────────────────────────────────────────────────────────────
 
@@ -27,6 +30,42 @@ export interface DimensionTraceEntry {
   summary: string;
   metrics: Record<string, number | string | boolean>;
   provenance: { signals: string[]; thresholds: Record<string, number> };
+}
+
+export interface CausalClusteringTrace {
+  /** All raw causal signals emitted before clustering. */
+  raw_signals: Array<{
+    signal_id: string;
+    dimension: string;
+    signal_type: string;
+    severity_candidate: string;
+    cause_hints: string[];
+    fingerprint: string;
+    scope_refs: string[];
+  }>;
+  /** All clusters formed this session. */
+  clusters: Array<{
+    cluster_id: string;
+    root_cause_type: string;
+    fingerprint: string;
+    primary_signal_id: string;
+    member_signal_ids: string[];
+    affected_dimensions: string[];
+    severity_ceiling: string;
+    suppression_rule: string;
+    explanation: string;
+  }>;
+  /** Full suppression decision for every signal. */
+  suppression_decisions: SuppressionRecord[];
+  /** Map from signal_id → 'primary' | 'derived' | 'independent'. */
+  primary_vs_derived_map: Record<string, 'primary' | 'derived' | 'independent'>;
+  /** Per-dimension suppression summary. */
+  effective_dimension_inputs: Record<string, {
+    suppressed: boolean;
+    cluster_ids: string[];
+    primary_causes: string[];
+    derived_causes: string[];
+  }>;
 }
 
 export interface DimensionScoringTrace {
@@ -49,6 +88,12 @@ export interface DimensionScoringTrace {
   };
   /** Signal snapshot used for scoring — enables full replay */
   signal_snapshot: Record<string, unknown>;
+  /**
+   * Causal clustering audit record (Sprint 16+).
+   * Always present from calculation_version 3.0.0 onward.
+   * Enables full inspection of: what was clustered, why, and what was suppressed.
+   */
+  causal_clustering: CausalClusteringTrace;
 }
 
 // ─── traceDimensionScoring ────────────────────────────────────────────────────
@@ -103,6 +148,72 @@ export function traceDimensionScoring(output: ScoreDimensionsOutput): DimensionS
     graph:     traceDimension(output.dimensions.graph),
   };
 
+  // ── Causal clustering trace ────────────────────────────────────────────────
+  const clusterResult = output.causal_cluster_result;
+
+  // Build primary_vs_derived_map
+  const primary_vs_derived_map: Record<string, 'primary' | 'derived' | 'independent'> = {};
+  for (const [signalId, record] of Object.entries(clusterResult.suppression_index)) {
+    primary_vs_derived_map[signalId] =
+      record.status === 'suppressed_by_cluster' ? 'derived' :
+      record.status === 'primary'               ? 'primary' :
+      'independent';
+  }
+
+  // Build effective_dimension_inputs summary per dimension
+  const effective_dimension_inputs: Record<string, {
+    suppressed: boolean;
+    cluster_ids: string[];
+    primary_causes: string[];
+    derived_causes: string[];
+  }> = {};
+
+  const dimNames: Array<keyof typeof output.dimensions> = ['coverage', 'freshness', 'mapping', 'conflict', 'graph'];
+  for (const dimName of dimNames) {
+    const dim = output.dimensions[dimName];
+    if (dim.causal) {
+      effective_dimension_inputs[dimName] = {
+        suppressed:     dim.causal.suppressed_signals.length > 0 && dim.causal.primary_causes.length === 0,
+        cluster_ids:    dim.causal.cluster_ids,
+        primary_causes: dim.causal.primary_causes,
+        derived_causes: dim.causal.derived_causes,
+      };
+    } else {
+      effective_dimension_inputs[dimName] = {
+        suppressed:     false,
+        cluster_ids:    [],
+        primary_causes: [],
+        derived_causes: [],
+      };
+    }
+  }
+
+  const causal_clustering: CausalClusteringTrace = {
+    raw_signals: clusterResult.all_signals.map(s => ({
+      signal_id:          s.signal_id,
+      dimension:          s.dimension,
+      signal_type:        s.signal_type,
+      severity_candidate: s.severity_candidate,
+      cause_hints:        s.cause_hints,
+      fingerprint:        s.fingerprint,
+      scope_refs:         s.scope_refs,
+    })),
+    clusters: clusterResult.clusters.map(c => ({
+      cluster_id:         c.cluster_id,
+      root_cause_type:    c.root_cause_type,
+      fingerprint:        c.fingerprint,
+      primary_signal_id:  c.primary_signal_id,
+      member_signal_ids:  c.member_signal_ids,
+      affected_dimensions: c.affected_dimensions,
+      severity_ceiling:   c.severity_ceiling,
+      suppression_rule:   c.suppression_rule,
+      explanation:        c.explanation,
+    })),
+    suppression_decisions: Object.values(clusterResult.suppression_index),
+    primary_vs_derived_map,
+    effective_dimension_inputs,
+  };
+
   return {
     timestamp:                     new Date().toISOString(),
     calculation_version:           output.calculation_version,
@@ -112,5 +223,6 @@ export function traceDimensionScoring(output: ScoreDimensionsOutput): DimensionS
     // Nested access for structured iteration
     dimensions: dimEntries,
     signal_snapshot,
+    causal_clustering,
   };
 }

@@ -13,6 +13,7 @@
 
 import type { ConflictRecord } from '../conflict/types.js';
 import type { FreshnessImpact } from '../freshness/types.js';
+import type { CausalClusterResult, FingerprintFamily } from '../causal-clustering/types.js';
 
 // ─── Dimension severity ───────────────────────────────────────────────────────
 
@@ -36,6 +37,34 @@ export interface DimensionResult {
   };
   /** Raw numeric inputs used to derive the result (for calibration/replay). */
   metrics: Record<string, number | string | boolean>;
+  /**
+   * Causal clustering provenance (Sprint 16).
+   * Present when causal clustering ran and this dimension has related signals.
+   * Undefined when no signals were emitted for this dimension (e.g., fully passing dimension).
+   */
+  causal?: {
+    /** IDs of RawCausalSignals emitted by this dimension. */
+    raw_signal_ids: string[];
+    /** IDs of clusters this dimension participates in. */
+    cluster_ids: string[];
+    /** Root cause families for which this dimension is the PRIMARY signal. */
+    primary_causes: FingerprintFamily[];
+    /** Root cause families for which this dimension is a DERIVED signal (suppressed). */
+    derived_causes: FingerprintFamily[];
+    /** Signal IDs from this dimension that are suppressed by a cluster. */
+    suppressed_signals: string[];
+    /**
+     * Effective severity after suppression is applied.
+     * For derived-only dimensions: softened to at most the cluster ceiling.
+     * For primary or independent dimensions: equals status.
+     */
+    effective_severity: DimensionSeverity;
+    /**
+     * The true computed severity before any suppression was applied.
+     * Always equals status. Preserved for audit/traceability.
+     */
+    unsuppressed_severity_basis: DimensionSeverity;
+  };
 }
 
 // ─── Normalized signal input layer ───────────────────────────────────────────
@@ -157,6 +186,12 @@ export interface ScoreDimensionsOutput {
   trace_inputs: DimensionSignals;
   /** Semver string identifying the scoring algorithm version. Enables future calibration. */
   calculation_version: string;
+  /**
+   * Causal clustering result (Sprint 16).
+   * Always present after scoring; contains the clusters, suppression index,
+   * and raw signals used for deduplication. Never null after v3.0.0.
+   */
+  causal_cluster_result: CausalClusterResult;
 }
 
 // ─── Threshold band ───────────────────────────────────────────────────────────

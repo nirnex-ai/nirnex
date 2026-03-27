@@ -552,10 +552,13 @@ buildECO()
   ├── detectConflicts()         → eco.conflicts (Sprint 8)
   ├── computeFreshnessImpact()  → eco.freshness (Sprint 9)
   │
-  ├── scoreDimensions()         → eco.eco_dimensions (Sprint 11, v2.0.0)
+  ├── scoreDimensions()         → eco.eco_dimensions (Sprint 11+, v3.0.0)
   │     │
   │     ├── buildDimensionSignals()   — single normalization boundary
   │     ├── getThresholds(intent)     — centralized threshold policy
+  │     │
+  │     ├── buildRawCausalSignals()  — emit causal signals per dimension (Sprint 16)
+  │     ├── clusterCausalSignals()   — group by root cause, assign primary/derived (Sprint 16)
   │     │
   │     ├── computeCoverageDimension()
   │     ├── computeFreshnessDimension()
@@ -563,7 +566,8 @@ buildECO()
   │     ├── computeConflictDimension()
   │     └── computeGraphCompletenessDimension()
   │           │
-  │           └── composite_internal_confidence  (weighted, severity-capped)
+  │           ├── attachCausalProvenance()        (annotate DimensionResult.causal)
+  │           └── composite_internal_confidence  (suppression-aware weighted, severity-capped)
   │
   └── scoreMappingQuality()     → eco.mapping_quality (Sprint 14)
         │
@@ -1249,6 +1253,159 @@ packages/core/src/pipeline/
 packages/core/src/config/
   stageTimeouts.ts     — DEFAULT_STAGE_TIMEOUTS, STAGE_TIMEOUT_POLICY,
                          STAGE_IS_CRITICAL, getStageTimeoutConfig()
+```
+
+---
+
+### Knowledge Layer — Causal Clustering (Sprint 16)
+
+A single root cause — such as a stale index affecting a required scope — can simultaneously degrade freshness, mapping quality, and graph completeness. Without deduplication, this inflates the composite confidence penalty by 3× even though only one remediation action (reindex) would fix all three signals.
+
+Sprint 16 adds a **causal clustering layer** that sits between raw signal collection and ECO dimension severity finalization. It groups signals by shared probable root cause and marks which signal is the authoritative (primary) contributor. Derived signals remain fully visible in outputs and traces — they are not hidden — but they do not fully compound the composite confidence penalty.
+
+#### Problem it solves
+
+Without causal clustering:
+- Stale index → freshness `escalate`, mapping `escalate`, graph `escalate`
+- Three full severity weights applied to composite confidence
+- User sees a severity far worse than the single remediation required
+
+With causal clustering:
+- The shared root cause is identified: `STALE_INDEX_SCOPE_MISMATCH`
+- One dimension is selected as primary (freshness, by priority)
+- Mapping and graph are derived — their penalty weight is halved
+- Composite is softer, accurately reflecting a single reindex as the fix
+- All three dimensions remain visible; suppression is explicit in the trace
+
+#### Clustering pipeline
+
+```
+DimensionSignals
+  │
+  ├─ buildRawCausalSignals()     → RawCausalSignal[]
+  │   (one signal per condition per dimension)
+  │
+  ├─ clusterCausalSignals()      → CausalClusterResult
+  │   (group by fingerprint → primary + derived)
+  │
+  ├─ 5 independent evaluators    (unchanged)
+  │
+  ├─ attachCausalProvenance()    → DimensionResult.causal
+  │   (annotate each dimension with cluster membership)
+  │
+  └─ computeComposite()          (suppression-aware weighted sum)
+```
+
+#### Fingerprint families (release)
+
+Only deterministic, structurally observable families ship:
+
+| Family | Trigger |
+|---|---|
+| `STALE_INDEX_SCOPE_MISMATCH` | Stale index intersects a required scope |
+| `MISSING_SYMBOL_GRAPH_FOR_SCOPE` | Symbol graph absent for required scope |
+| `MISSING_REQUIRED_EVIDENCE` | Required evidence class absent for intent |
+| `UNRESOLVED_MAPPING_CHAIN` | Mapping chain cannot resolve to a primary target |
+| `STRUCTURAL_GRAPH_BREAK` | Structural graph node/edge failure (not staleness) |
+| `CONFLICTING_EVIDENCE_SET` | Conflicting evidence across sources for same claim |
+
+Fingerprint = `<family>::<sorted_scope_refs>`. Same fingerprint → same cluster.
+
+#### Primary signal selection
+
+When a cluster has multiple signals, the primary is selected by:
+1. **Dimension priority**: freshness > graph_completeness > mapping > coverage > conflict
+2. **Severity**: highest severity_candidate wins (block > escalate > warn > pass)
+3. **Tiebreak**: lexicographic sort of signal_id (deterministic)
+
+#### Suppression behavior
+
+| Signal status | Composite weight | Visible in trace? | Drives dimension status? |
+|---|---|---|---|
+| `primary` | Full (1.0×) | Yes | Yes |
+| `suppressed_by_cluster` | Half (0.5×) | Yes | Yes (unsuppressed) |
+| `independent` | Full (1.0×) | Yes | Yes |
+
+Derived dimensions still surface their true computed status in `DimensionResult.status`. Only the composite weight and `effective_severity` field are softened. Independent failures across different root causes are never merged — no over-suppression.
+
+#### DimensionResult — causal provenance fields (Sprint 16)
+
+Each dimension result now carries an optional `causal` block:
+
+```typescript
+dim.causal = {
+  raw_signal_ids:             ['freshness::stale::src/auth/login.ts'],
+  cluster_ids:                ['cluster_1'],
+  primary_causes:             ['STALE_INDEX_SCOPE_MISMATCH'],   // if primary
+  derived_causes:             [],                               // if derived
+  suppressed_signals:         [],
+  effective_severity:         'warn',    // softened for derived-only dims
+  unsuppressed_severity_basis: 'escalate', // true computed severity
+}
+```
+
+The `causal` block is undefined for dimensions that emitted no signals (fully passing, no conditions met).
+
+#### ScoreDimensionsOutput — new field
+
+```typescript
+result.causal_cluster_result  // CausalClusterResult — always present (v3.0.0+)
+result.causal_cluster_result.clusters
+result.causal_cluster_result.suppression_index
+result.causal_cluster_result.cluster_summary
+result.causal_cluster_result.all_signals
+```
+
+#### Trace audit — causal_clustering section
+
+Every `DimensionScoringTrace` now includes a `causal_clustering` section:
+
+```
+trace.causal_clustering.raw_signals          — all signals emitted before clustering
+trace.causal_clustering.clusters             — all clusters formed
+trace.causal_clustering.suppression_decisions — per-signal suppression records
+trace.causal_clustering.primary_vs_derived_map — signal_id → 'primary'|'derived'|'independent'
+trace.causal_clustering.effective_dimension_inputs — per-dimension suppression summary
+```
+
+This makes the system fully auditable: users can inspect exactly what was clustered, why, and what was suppressed.
+
+#### What is intentionally NOT in the release
+
+- Probabilistic clustering
+- LLM-based cause inference
+- Semantic similarity matching
+- User-tunable suppression weights
+- Cross-run historical clustering
+
+These are future enhancements. The release version stays deterministic and narrow.
+
+#### Policy boundary preserved
+
+Causal clustering is a **signal hygiene layer**, not a new policy layer. It influences how dimension severity contributes to the composite, but the existing precedence model is unchanged:
+
+```
+hard constraints (P1) > dimension severity (P2) > warning accumulation (P3) > composite intent (P4)
+```
+
+BLOCK on any dimension still caps composite at 40. ESCALATE still caps at 70.
+
+#### Module structure
+
+```
+packages/core/src/knowledge/causal-clustering/
+  types.ts        — RawCausalSignal, CausalCluster, CausalClusterResult, SuppressionRecord
+  fingerprints.ts — buildFingerprint(), assignFingerprints()
+  rules.ts        — suppression policy table, DIMENSION_PRIORITY_ORDER, selectPrimarySignalId()
+  cluster.ts      — clusterCausalSignals(), buildRawCausalSignals()
+  index.ts        — public API
+
+packages/core/src/knowledge/dimensions/
+  scoreDimensions.ts  — now runs causal clustering before composite computation (v3.0.0)
+  types.ts            — DimensionResult.causal, ScoreDimensionsOutput.causal_cluster_result
+
+packages/core/src/knowledge/ledger/
+  traceDimensionScoring.ts — now includes causal_clustering audit section
 ```
 
 ---
