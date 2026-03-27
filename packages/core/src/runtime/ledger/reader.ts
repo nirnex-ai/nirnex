@@ -17,30 +17,34 @@ import type { LedgerEntry, LedgerStage } from './types.js';
 // ─── Row → LedgerEntry deserialization ────────────────────────────────────────
 
 interface LedgerRow {
-  ledger_id:      string;
-  request_id:     string;
-  trace_id:       string;
-  tee_id:         string | null;
-  stage:          string;
-  record_type:    string;
-  actor:          string;
-  timestamp:      string;
-  schema_version: string;
-  payload_json:   string;
+  ledger_id:           string;
+  request_id:          string;
+  trace_id:            string;
+  parent_ledger_id:    string | null;
+  tee_id:              string | null;
+  stage:               string;
+  record_type:         string;
+  actor:               string;
+  timestamp:           string;
+  schema_version:      string;
+  payload_json:        string;
+  supersedes_entry_id: string | null;
 }
 
 function deserializeRow(row: LedgerRow): LedgerEntry {
   return {
-    schema_version: row.schema_version as LedgerEntry['schema_version'],
-    ledger_id:      row.ledger_id,
-    trace_id:       row.trace_id,
-    request_id:     row.request_id,
-    tee_id:         row.tee_id ?? undefined,
-    stage:          row.stage as LedgerStage,
-    record_type:    row.record_type as LedgerEntry['record_type'],
-    actor:          row.actor as LedgerEntry['actor'],
-    timestamp:      row.timestamp,
-    payload:        JSON.parse(row.payload_json),
+    schema_version:      row.schema_version as LedgerEntry['schema_version'],
+    ledger_id:           row.ledger_id,
+    trace_id:            row.trace_id,
+    request_id:          row.request_id,
+    parent_ledger_id:    row.parent_ledger_id ?? undefined,
+    tee_id:              row.tee_id ?? undefined,
+    stage:               row.stage as LedgerStage,
+    record_type:         row.record_type as LedgerEntry['record_type'],
+    actor:               row.actor as LedgerEntry['actor'],
+    timestamp:           row.timestamp,
+    payload:             JSON.parse(row.payload_json),
+    supersedes_entry_id: row.supersedes_entry_id ?? undefined,
   };
 }
 

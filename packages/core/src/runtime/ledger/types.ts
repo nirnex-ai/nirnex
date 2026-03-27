@@ -54,7 +54,8 @@ export type LedgerRecordType =
   | 'refusal'
   | 'deviation'
   | 'stage_replay'
-  | 'stage_rejection';
+  | 'stage_rejection'
+  | 'correction';
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -172,6 +173,27 @@ export type TraceAdapterRecord = {
   raw: unknown;
 };
 
+// ─── Correction record ────────────────────────────────────────────────────────
+
+/**
+ * Represents a governance correction: a new entry that acknowledges a prior
+ * entry while recording a revised interpretation or updated state.
+ *
+ * The original entry is NEVER modified — it stands as historical fact.
+ * The correction entry references it and records why interpretation changed.
+ */
+export type CorrectionRecord = {
+  kind: 'correction';
+  /** ledger_id of the entry being superseded */
+  supersedes_entry_id: string;
+  /** Why this correction was necessary */
+  supersession_reason: string;
+  /** Class of correction */
+  correction_type: 'data_error' | 'policy_update' | 'supersession';
+  /** Human-readable summary of which fields/conclusions changed */
+  corrected_fields_summary: string;
+};
+
 export type LedgerPayload =
   | DecisionRecord
   | OverrideRecord
@@ -180,7 +202,8 @@ export type LedgerPayload =
   | DeviationRecord
   | TraceAdapterRecord
   | StageReplayRecord
-  | StageRejectionRecord;
+  | StageRejectionRecord
+  | CorrectionRecord;
 
 // ─── Canonical ledger envelope ────────────────────────────────────────────────
 
@@ -207,6 +230,13 @@ export interface LedgerEntry {
    * Parent record linkage — see parent semantics in module header comment.
    */
   parent_ledger_id?: string;
+
+  /**
+   * For correction records: the ledger_id of the entry being superseded.
+   * Stored as a column for easy querying by the chain verifier.
+   * Must match CorrectionRecord.supersedes_entry_id when payload.kind = 'correction'.
+   */
+  supersedes_entry_id?: string;
 
   /**
    * ISO 8601. Mapper-supplied event timestamp; writer fills only if absent.

@@ -616,7 +616,8 @@ describe('appendLedgerEntryAsync', () => {
     const dbPath = getLedgerDbPath(TEST_ROOT);
     const db = initLedgerDb(dbPath);
     const entry = makeLedgerEntry();
-    await expect(appendLedgerEntryAsync(db, entry)).resolves.toBeUndefined();
+    // Sprint 20: appendLedgerEntryAsync now resolves to AppendReceipt (not void)
+    await expect(appendLedgerEntryAsync(db, entry)).resolves.toBeDefined();
     db.close();
   });
 });

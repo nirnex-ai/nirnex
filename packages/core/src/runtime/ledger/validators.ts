@@ -36,7 +36,7 @@ const VALID_STAGES: Set<string> = new Set<LedgerStage>([
 
 const VALID_RECORD_TYPES: Set<string> = new Set<LedgerRecordType>([
   'decision', 'trace', 'override', 'outcome', 'refusal', 'deviation',
-  'stage_replay', 'stage_rejection',
+  'stage_replay', 'stage_rejection', 'correction',
 ]);
 
 const VALID_ACTORS = new Set(['system', 'analyst', 'human']);
@@ -134,6 +134,7 @@ export function validatePayload(recordType: string, payload: unknown): Validatio
     case 'trace':           return validateTraceAdapterRecord(payload);
     case 'stage_replay':    return validateStageReplayRecord(payload);
     case 'stage_rejection': return validateStageRejectionRecord(payload);
+    case 'correction':      return validateCorrectionRecord(payload);
     default:
       return { valid: false, errors: [`unknown record_type for payload validation: '${recordType}'`] };
   }
@@ -264,6 +265,29 @@ export function validateStageReplayRecord(p: unknown): ValidationResult {
   }
   if (!r.original_trace_id || typeof r.original_trace_id !== 'string') {
     errors.push('missing or invalid: original_trace_id');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+const VALID_CORRECTION_TYPES = new Set(['data_error', 'policy_update', 'supersession']);
+
+export function validateCorrectionRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.supersedes_entry_id || typeof r.supersedes_entry_id !== 'string') {
+    errors.push('missing or invalid: supersedes_entry_id');
+  }
+  if (!r.supersession_reason || typeof r.supersession_reason !== 'string') {
+    errors.push('missing or invalid: supersession_reason');
+  }
+  if (!r.correction_type || !VALID_CORRECTION_TYPES.has(r.correction_type as string)) {
+    errors.push(`invalid correction_type: '${r.correction_type}'. Valid: ${[...VALID_CORRECTION_TYPES].join(', ')}`);
+  }
+  if (!r.corrected_fields_summary || typeof r.corrected_fields_summary !== 'string') {
+    errors.push('missing or invalid: corrected_fields_summary');
   }
 
   return { valid: errors.length === 0, errors };

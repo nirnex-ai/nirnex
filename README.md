@@ -1734,6 +1734,146 @@ packages/core/src/runtime/ledger/types.ts
 
 ---
 
+### Decision Ledger — Tamper-Evident Append-Only Chain (Sprint 20)
+
+Sprint 20 makes the Decision Ledger **tamper-evident and operationally append-only**. Once a ledger entry is committed, it cannot be silently changed or removed without detection.
+
+#### What this is (and is not)
+
+| Guarantee | Provided |
+|---|---|
+| Runtime append-only enforcement | Yes — no update/delete path in application code |
+| DB-level mutation protection | Yes — BEFORE UPDATE / BEFORE DELETE triggers |
+| Tamper evidence | Yes — recomputing hashes detects any post-write mutation |
+| Audit reconstruction from immutable events | Yes |
+| Legal-grade non-repudiation | No — not this release |
+| Protection against filesystem-level DB rewrite | No — hash chain makes it detectable but not preventable |
+
+**Correct name: tamper-evident append-only ledger**, not absolute immutability.
+
+#### Hash chain structure
+
+Every ledger entry now stores five integrity fields:
+
+| Field | Content | Purpose |
+|---|---|---|
+| `payload_hash` | SHA-256 of canonical payload JSON | Detects payload mutation |
+| `written_at` | Exact write timestamp | Committed to entry_hash |
+| `sequence_no` | Monotonically increasing integer | Detects row deletion (gap) |
+| `prev_entry_hash` | `entry_hash` of the prior row | Binds entries into a chain |
+| `entry_hash` | SHA-256 of (ledger_id, seq, prev_hash, payload_hash, schema_version, written_at) | Chain integrity proof |
+
+The first entry in any ledger has `prev_entry_hash = GENESIS_HASH` (`'0'.repeat(64)`).
+
+```
+entry 1: prev='000...0' → entry_hash=H1
+entry 2: prev=H1       → entry_hash=H2
+entry 3: prev=H2       → entry_hash=H3
+```
+
+Mutating any field in entry 2 breaks both `payload_hash` (if payload changed) and `entry_hash`. It also breaks entry 3's chain link since `prev_entry_hash=H2` no longer matches the recomputed hash.
+
+#### DB-level enforcement
+
+Two SQLite triggers prevent mutation through any SQL path:
+
+```sql
+CREATE TRIGGER ledger_no_update
+  BEFORE UPDATE ON ledger_entries
+  BEGIN SELECT RAISE(ABORT, 'ledger is append-only: UPDATE is not permitted'); END;
+
+CREATE TRIGGER ledger_no_delete
+  BEFORE DELETE ON ledger_entries
+  BEGIN SELECT RAISE(ABORT, 'ledger is append-only: DELETE is not permitted'); END;
+```
+
+Additional UNIQUE constraints on `sequence_no` and `entry_hash` prevent duplicate insertion.
+
+#### Corrections without mutation
+
+When governance later requires revising an earlier record, a new **correction entry** is appended — the original entry is never modified:
+
+```typescript
+// Original entry stays exactly as written
+// Correction entry links to it:
+{
+  payload: {
+    kind: 'correction',
+    supersedes_entry_id: 'original-ledger-id',
+    supersession_reason: 'policy change requires revised interpretation',
+    correction_type: 'policy_update',
+    corrected_fields_summary: 'lane classification no longer valid under new rule',
+  },
+  supersedes_entry_id: 'original-ledger-id',  // envelope-level for easy querying
+}
+```
+
+The timeline contains both entries in insertion order. Readers reconstruct state by projecting over all entries — not by reading mutable "current state".
+
+#### Chain verification
+
+```typescript
+import { verifyLedgerChain, verifyLedgerRange, verifyLedgerEntry } from './immutability/index.js';
+
+const result = verifyLedgerChain(db);
+// { valid: true, errors: [], verified_count: 42, first_sequence: 1, last_sequence: 42 }
+
+// After tampering:
+// { valid: false, errors: ['payload tampered at sequence_no=7 (ledger_id=...)'], ... }
+```
+
+Verification checks:
+1. Sequence continuity (no gaps)
+2. `prev_entry_hash` chain continuity
+3. Recomputed `payload_hash` === stored `payload_hash`
+4. Recomputed `entry_hash` === stored `entry_hash`
+5. Orphan correction references (`supersedes_entry_id` must exist in the ledger)
+
+#### AppendReceipt
+
+Every `appendLedgerEntry()` call returns an `AppendReceipt` for cross-linking:
+
+```typescript
+const receipt = appendLedgerEntry(db, entry);
+// {
+//   ledger_entry_id: 'uuid...',
+//   sequence_no: 42,
+//   entry_hash: 'a3f9...',
+//   prev_entry_hash: 'b7c1...',
+// }
+```
+
+Receipts can be attached to trace context for observability without making traces authoritative on governance state.
+
+#### Module structure
+
+```
+packages/core/src/runtime/ledger/immutability/
+  types.ts       — AppendReceipt, ChainVerificationResult, EntryHashParams, GENESIS_HASH
+  canonicalize.ts — canonicalizePayload() — deterministic key-sorted JSON
+  hash.ts        — computePayloadHash(), computeEntryHash()
+  verify.ts      — verifyLedgerChain(), verifyLedgerRange(), verifyLedgerEntry()
+  guards.ts      — assertLedgerIntact(), getLedgerIntegrityStatus(), LedgerIntegrityError
+  index.ts       — public API
+
+packages/core/src/runtime/ledger/schema.ts
+  — LEDGER_TABLE_BASE_SQL (table + indexes, no triggers — for adversarial testing)
+  — LEDGER_TABLE_SQL (full schema: table + indexes + triggers)
+  — New columns: parent_ledger_id, written_at, sequence_no, payload_hash,
+                 prev_entry_hash, entry_hash, supersedes_entry_id
+
+packages/core/src/runtime/ledger/writer.ts
+  — appendLedgerEntry() now returns AppendReceipt (backward compatible)
+  — All chain fields computed in a transaction for atomic sequence assignment
+
+packages/core/src/runtime/ledger/types.ts
+  — New: CorrectionRecord payload type (kind: 'correction')
+  — New: supersedes_entry_id on LedgerEntry envelope
+  — New: 'correction' added to LedgerRecordType
+```
+
+---
+
 ### Stage Machine (Determinism + Enforcement)
 
 Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.

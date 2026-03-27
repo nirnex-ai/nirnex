@@ -17,6 +17,7 @@ export {
   type TraceAdapterRecord,
   type StageReplayRecord,
   type StageRejectionRecord,
+  type CorrectionRecord,
 } from './types.js';
 
 export {
