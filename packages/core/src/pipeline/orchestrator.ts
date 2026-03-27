@@ -283,11 +283,10 @@ export async function runOrchestrator(
       executionWarnings.push(`Stage ${stage} timed out after ${timeoutConfig.timeoutMs}ms`);
 
       // Annotate the BoundTrace with timeout metadata
-      const traceMut = result.trace as Record<string, unknown>;
-      traceMut['timedOut']        = true;
-      traceMut['timeoutMs']       = timeoutConfig.timeoutMs;
-      traceMut['failureClass']    = 'timeout';
-      traceMut['fallbackApplied'] = pendingTimeoutEvent.fallback_applied;
+      result.trace.timedOut        = true;
+      result.trace.timeoutMs       = timeoutConfig.timeoutMs;
+      result.trace.failureClass    = 'timeout';
+      result.trace.fallbackApplied = pendingTimeoutEvent.fallback_applied;
 
       if (!timeoutConfig.isCritical) {
         // Non-critical timeout → degrade (regardless of the stage's normal failure mode)
