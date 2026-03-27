@@ -1506,6 +1506,127 @@ packages/core/src/eco.ts
 
 ---
 
+### Knowledge Layer — Evidence State: Absence vs Conflict (Sprint 18)
+
+Sprint 18 introduces a **first-class epistemic distinction** between two failure modes that the system previously conflated:
+
+| Failure mode | Meaning | Previous treatment | New treatment |
+|---|---|---|---|
+| **Absence of evidence** | Knowledge Layer is incomplete, weak, stale, or out of scope | Coverage dimension penalty | `EvidenceState.kind = 'absent'`, separate `evidence_absence:*` escalation |
+| **Conflicting evidence** | Knowledge Layer is populated but internally inconsistent | Conflict dimension penalty | `EvidenceState.kind = 'conflicted'`, separate `evidence_conflict:*` escalation |
+
+These are orthogonal epistemic conditions. Keeping them merged would make the system unable to distinguish **blindness** from **disagreement** — two operationally different failures.
+
+#### The classification step
+
+Evidence state is classified **before confidence scoring** starts, as an explicit deterministic stage:
+
+```
+1. retrieve evidence     (all I/O complete before this point)
+2. detectAbsence()       — which required targets have no qualifying evidence?
+3. detectIntraEvidenceConflict() — which evidence items contradict each other on the same target?
+4. classifyEvidenceState() → EvidenceState discriminated union
+5. buildEvidenceAssessment() → structured availability + conflict summary on ECO
+6. applyEvidenceStatePolicy() → distinct escalation paths per kind
+7. scoreDimensions()     — confidence scoring receives pre-classified state
+```
+
+Neither absence detection nor conflict detection modifies the other's output — they are independent sub-stages.
+
+#### EvidenceState discriminated union
+
+```typescript
+type EvidenceState =
+  | { kind: 'sufficient'; supporting_count: number; conflicting_count: number }
+  | { kind: 'absent';     missing_required_targets: string[]; searched_sources: string[];
+                          reason: 'not_found' | 'out_of_scope' | 'stale' | 'unindexed' }
+  | { kind: 'conflicted'; conflict_groups: ConflictGroup[]; severity: 'low' | 'medium' | 'high' }
+  | { kind: 'mixed';      missing_required_targets: string[];
+                          conflict_groups: ConflictGroup[]; severity: 'low' | 'medium' | 'high' }
+```
+
+#### Decision-target grouping
+
+Evidence items are grouped by their `ref` field. Items with the same `ref` (same file path or identifier) are treated as claims about the same decision target. Contradictions are only detected within a target group — different targets never conflict with each other.
+
+#### Supported contradiction classes (v1)
+
+| Type | Pattern |
+|------|---------|
+| `state` | present/enabled/active vs absent/disabled/removed |
+| `constraint` | must/required/mandatory vs optional/allowed/not required |
+| `behavior` | synchronous/blocking vs asynchronous/async/deferred |
+| `location` | (reserved for future release) |
+
+Broad semantic contradiction is explicitly out of scope for v1. Narrow structural classes are sufficient and reliably detectable without LLM inference.
+
+#### Policy divergence (the core guarantee)
+
+The same composite confidence score can produce **different policy outcomes** depending on evidence state:
+
+```
+absent + bug_fix intent   → escalation_reasons: ['evidence_absence:source:code']
+                           → forced_lane_minimum escalated to ≥ B
+
+conflicted low severity   → escalation_reasons: ['evidence_conflict:state']
+                           → forced_lane_minimum escalated to ≥ B
+
+conflicted high severity  → escalation_reasons: ['evidence_conflict:state']
+                           → forced_lane_minimum escalated to ≥ C
+
+sufficient                → no evidence_* escalation reasons added
+```
+
+The `evidence_absence:*` and `evidence_conflict:*` prefixes are never mixed — each path produces a uniquely labeled reason that is independently queryable in the ledger.
+
+#### ECO output additions
+
+```typescript
+eco.evidence_assessment = {
+  state: EvidenceState;                    // primary classified state
+  availability: {
+    status: 'sufficient' | 'partial' | 'absent';
+    missing_targets: string[];
+  };
+  conflict: {
+    status: 'none' | 'present';
+    groups: ConflictGroup[];
+    severity: 'low' | 'medium' | 'high' | null;
+  };
+};
+
+eco.evidence_state_events = EvidenceStateEvent[];
+// Events: evidence_absence_detected, evidence_conflict_detected, evidence_state_classified
+// Always includes evidence_state_classified even for 'sufficient' — fully auditable
+```
+
+#### What is intentionally NOT in this release
+
+- Semantic contradiction detection (requires LLM or embedding similarity)
+- Location conflict detection (requires scope graph)
+- Trust-weighted evidence filtering (future: freshness/trust threshold per item)
+- Cross-run historical conflict tracking
+
+#### Module structure
+
+```
+packages/core/src/knowledge/evidence-state/
+  types.ts     — EvidenceState, ConflictGroup, EvidenceAssessment, EvidenceStateEvent
+  absence.ts   — detectAbsence() — checks required targets against available evidence
+  conflict.ts  — detectIntraEvidenceConflict() — intra-evidence contradiction detection
+  classify.ts  — classifyEvidenceState(), buildEvidenceAssessment()
+  policy.ts    — applyEvidenceStatePolicy() — distinct branches for absent/conflicted/mixed
+  audit.ts     — buildEvidenceStateEvents() — audit trail for each epistemic outcome
+  index.ts     — public API
+
+packages/core/src/eco.ts
+  — now runs evidence-state classification before scoreDimensions;
+    exposes eco.evidence_assessment and eco.evidence_state_events;
+    applies distinct escalation_reasons prefixes for absence vs conflict
+```
+
+---
+
 ### Stage Machine (Determinism + Enforcement)
 
 Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.

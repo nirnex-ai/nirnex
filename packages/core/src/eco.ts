@@ -25,6 +25,24 @@ import {
   EcoCache,
 } from './knowledge/reproducibility/index.js';
 import type { ECOProvenance, FrozenSourceRecord } from './knowledge/reproducibility/types.js';
+import {
+  classifyEvidenceState,
+  buildEvidenceAssessment,
+  applyEvidenceStatePolicy,
+  buildEvidenceStateEvents,
+} from './knowledge/evidence-state/index.js';
+import type { EvidenceAssessment, EvidenceStateEvent } from './knowledge/evidence-state/types.js';
+
+// Intent → mandatory evidence source types (mirrors signals.ts REQUIRED_EVIDENCE_CLASSES)
+const INTENT_MANDATORY_SOURCES: Record<string, string[]> = {
+  bug_fix:      ['code'],
+  new_feature:  ['spec', 'code'],
+  refactor:     ['code'],
+  dep_update:   ['code'],
+  config_infra: ['code'],
+  quick_fix:    ['code'],
+  unknown:      [],
+};
 
 export function buildECO(specPath: string | null, targetRoot: string, opts?: { query?: string }) {
   const intent = detectIntent(specPath, opts);
@@ -85,6 +103,8 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
     suggested_next: { action: "Proceed" },
     mapping: { pattern: "1:1", roots_ranked: [{rank: "primary"}] },
     mapping_quality: null as MappingQualityResult | null,
+    evidence_assessment: null as EvidenceAssessment | null,
+    evidence_state_events: [] as EvidenceStateEvent[],
   };
 
   // Mocking adjustments to satisfy tests dynamically
@@ -183,6 +203,30 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
       detail: "Conflict detection unavailable — degraded mode",
       conflict_payload: null,
     };
+  }
+
+  // ── Evidence state classification ─────────────────────────────────────────
+  // Runs BEFORE confidence scoring. Classifies epistemic state from evidence.
+  // Absence (no qualifying evidence for a required target) and intra-evidence
+  // conflict (two items making incompatible claims about the same target) are
+  // detected independently and never collapsed into one penalty path.
+  try {
+    const intentPrimaryForState: string = (eco.intent as any)?.primary ?? 'unknown';
+    const mandatorySources = INTENT_MANDATORY_SOURCES[intentPrimaryForState] ?? [];
+    const requiredTargets  = mandatorySources.map(s => `source:${s}`);
+
+    const evidenceState   = classifyEvidenceState({ evidenceItems: evidence, requiredTargets, intent: intentPrimaryForState });
+    const assessment      = buildEvidenceAssessment(evidenceState);
+    eco.evidence_assessment = assessment;
+
+    // Apply distinct policy branches — absence and conflict never share escalation prefix
+    applyEvidenceStatePolicy({ assessment, intent: intentPrimaryForState, eco });
+
+    // Build audit events (both absence and conflict get separate event kinds)
+    eco.evidence_state_events = buildEvidenceStateEvents(assessment);
+  } catch {
+    // Evidence state classification failure must not crash ECO construction
+    eco.evidence_state_events = [];
   }
 
   // ── Scope-aware freshness impact ───────────────────────────────────────────
