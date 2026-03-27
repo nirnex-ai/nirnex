@@ -55,5 +55,6 @@ export {
   fromStageReplay,
   fromStageRejection,
   fromConfidenceSnapshot,
+  fromReplayMaterial,
   fromTraceJson,
 } from './mappers.js';

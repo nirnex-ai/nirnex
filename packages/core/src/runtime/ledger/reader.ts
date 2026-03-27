@@ -155,4 +155,20 @@ export class LedgerReader {
       .get(traceId) as LedgerRow | undefined;
     return row ? deserializeRow(row) : null;
   }
+
+  /**
+   * All replay_material entries for a trace, ordered by timestamp ASC.
+   *
+   * Returns only 'replay_material' record_type entries.
+   * Use this to load the captured stage materials needed for run reconstruction.
+   */
+  fetchReplayMaterials(traceId: string): LedgerEntry[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM ledger_entries WHERE trace_id = ? AND record_type = 'replay_material'
+         ORDER BY timestamp ASC`
+      )
+      .all(traceId) as LedgerRow[];
+    return rows.map(deserializeRow);
+  }
 }

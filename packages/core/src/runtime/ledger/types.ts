@@ -43,7 +43,8 @@ export type LedgerStage =
   | 'override'   // synthetic — marks an override event, not a pipeline position
   | 'outcome'    // synthetic — marks terminal state, not a pipeline position
   | 'execution'  // synthetic — marks idempotency replay/rejection events
-  | 'confidence'; // synthetic — marks confidence evolution snapshots
+  | 'confidence' // synthetic — marks confidence evolution snapshots
+  | 'replay';    // synthetic — marks replay engine records (materials, attempts, results)
 
 // ─── Record type ──────────────────────────────────────────────────────────────
 
@@ -57,7 +58,11 @@ export type LedgerRecordType =
   | 'stage_replay'
   | 'stage_rejection'
   | 'correction'
-  | 'confidence_snapshot';
+  | 'confidence_snapshot'
+  | 'replay_material'
+  | 'replay_attempted'
+  | 'replay_verified'
+  | 'replay_failed';
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -215,7 +220,11 @@ export type LedgerPayload =
   | StageReplayRecord
   | StageRejectionRecord
   | CorrectionRecord
-  | import('../confidence/types.js').ConfidenceSnapshotRecord;
+  | import('../confidence/types.js').ConfidenceSnapshotRecord
+  | import('../replay/types.js').ReplayMaterialRecord
+  | import('../replay/types.js').ReplayAttemptedRecord
+  | import('../replay/types.js').ReplayVerifiedRecord
+  | import('../replay/types.js').ReplayFailedRecord;
 
 // ─── Canonical ledger envelope ────────────────────────────────────────────────
 

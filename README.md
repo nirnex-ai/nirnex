@@ -1874,6 +1874,152 @@ packages/core/src/runtime/ledger/types.ts
 
 ---
 
+### Deterministic Replay Engine (Sprint 22)
+
+Sprint 22 implements **ledger-backed deterministic replay** — the ability to reconstruct a completed pipeline run from the Decision Ledger without invoking any live dependencies.
+
+#### Replay ≠ Re-run ≠ Diff
+
+These are explicitly distinct modes with different guarantees:
+
+| Mode | Description | Deterministic? |
+|---|---|---|
+| `live` | Original execution against live dependencies | No (LLM/world may differ) |
+| `replay` | Reconstruction from recorded materials only | **Yes** — same materials → same outputs |
+| `re_run` | Fresh execution against current live world | No — may produce different results |
+
+Conflating these concepts produces unreliable guarantees. The replay engine enforces this distinction in its type system and API.
+
+#### How deterministic replay works
+
+During the original run (with `enableReplayCapture: true`), the orchestrator emits a `replay_material` ledger entry after each stage completes. This entry records:
+- normalized stage input
+- normalized stage output
+- SHA-256 output hash for tamper detection
+- stage-level replayability classification
+
+During reconstruction, `reconstructRun(traceId, db)` reads these materials from the ledger and verifies that `SHA-256(recorded_normalized_output) === stored_output_hash`. No live handlers are called — ever.
+
+#### What replay guarantees
+
+Given:
+- intact ledger
+- recorded stage inputs + outputs for all stages
+- no tampered materials
+
+The engine reconstructs the same stage outputs and verifies reconstruction integrity.
+
+#### What replay does not guarantee (non-goals)
+
+- Proving the current code still produces those outputs (that is a regression test)
+- Reproducing external side effects
+- Re-running live LLM calls — recorded response is the replay guarantee, not seeds
+- Replaying stages with missing materials
+
+#### Capturing replay materials
+
+```typescript
+const db = initLedgerDb('./my-project/.aidos-ledger.db');
+const ledgerEntries: LedgerEntry[] = [];
+
+const result = await runOrchestrator(
+  {
+    specPath: './my-repo',
+    query: 'refactor auth module',
+    enableReplayCapture: true,
+    onLedgerEntry: (entry) => {
+      appendLedgerEntry(db, entry);
+      ledgerEntries.push(entry);
+    },
+  },
+  handlers,
+);
+// 5 replay_material entries written to DB — one per stage
+```
+
+#### Reconstructing a run
+
+```typescript
+import { reconstructRun } from '@nirnex/core/replay';
+
+const report = reconstructRun(traceId, db);
+// {
+//   mode: 'replay',
+//   overall_replayable: true,
+//   verified: true,
+//   stage_results: [
+//     { stage_id: 'INTENT_DETECT', verified: true, recorded_output_hash: 'a3f9...', ... },
+//     { stage_id: 'ECO_BUILD',     verified: true, ... },
+//     ...
+//   ]
+// }
+```
+
+If any material is missing or tampered:
+```typescript
+// Missing stages:
+// { overall_replayable: false, missing_stages: ['TEE_BUILD', 'CLASSIFY_LANE'] }
+
+// Tampered output:
+// { verified: false, divergence_point: 'ECO_BUILD',
+//   stage_results: [{ stage_id: 'ECO_BUILD', verified: false, failure_reason: 'output hash mismatch...' }] }
+```
+
+#### Replay audit trail
+
+`reconstructRun` writes three types of ledger entries under the original `traceId`:
+
+| Entry | Written when |
+|---|---|
+| `replay_attempted` | Always — at the start of every reconstruction |
+| `replay_verified` | All stages reconstructed and hashes matched |
+| `replay_failed` | Any stage missing or hash mismatch |
+
+These entries appear in `buildTimeline(traceId)` — the replay history is part of the run's permanent audit record.
+
+#### Replayability policy
+
+```typescript
+import { checkRunReplayability } from '@nirnex/core/replay';
+
+const materials = reader.fetchReplayMaterials(traceId).map(e => e.payload as ReplayMaterialRecord);
+const result = checkRunReplayability(materials, [...STAGES]);
+// { status: 'replayable' | 'conditionally_replayable' | 'non_replayable',
+//   missing_stages: [], non_replayable_stages: [] }
+```
+
+| Status | Meaning |
+|---|---|
+| `replayable` | All stages have recorded materials; full reconstruction possible |
+| `conditionally_replayable` | Some stages covered; partial reconstruction only |
+| `non_replayable` | No materials recorded; reconstruction impossible |
+
+#### Module structure
+
+```
+packages/core/src/runtime/replay/
+  types.ts      — ReplayMaterialRecord, ReplayAttemptedRecord, ReplayVerifiedRecord,
+                  ReplayFailedRecord, StageReplayResult, ReplayReport,
+                  ExecutionMode, ReplayabilityStatus
+  capture.ts    — normalizeForRecord(), hashRecordedOutput(),
+                  buildReplayMaterial(), classifyStageReplayability()
+  policy.ts     — checkRunReplayability()
+  reconstruct.ts — reconstructRun() — handler-free, ledger-backed reconstruction
+  validators.ts — validateReplayMaterial(), validateReplayAttempted(), etc.
+  index.ts      — public API
+
+packages/core/src/runtime/ledger/
+  types.ts    — 'replay' LedgerStage; 4 new LedgerRecordTypes
+  mappers.ts  — fromReplayMaterial()
+  reader.ts   — fetchReplayMaterials(traceId)
+  validators.ts — validators for all 4 replay record types
+
+packages/core/src/replay.ts
+  — replaced stub (replayTrace/replayAll mock) with real reconstruction exports
+```
+
+---
+
 ### Confidence Evolution Tracking (Sprint 21)
 
 Sprint 21 adds **confidence evolution tracking** — the pipeline now records how its confidence changes across the lifecycle of every run as an immutable time series in the Decision Ledger.

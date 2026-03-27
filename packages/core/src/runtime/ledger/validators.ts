@@ -31,12 +31,13 @@ export interface ValidationResult {
 const VALID_STAGES: Set<string> = new Set<LedgerStage>([
   'knowledge', 'eco', 'classification', 'strategy',
   'pre_tool_guard', 'implementation', 'validation',
-  'post_tool_trace', 'stop', 'override', 'outcome', 'execution', 'confidence',
+  'post_tool_trace', 'stop', 'override', 'outcome', 'execution', 'confidence', 'replay',
 ]);
 
 const VALID_RECORD_TYPES: Set<string> = new Set<LedgerRecordType>([
   'decision', 'trace', 'override', 'outcome', 'refusal', 'deviation',
   'stage_replay', 'stage_rejection', 'correction', 'confidence_snapshot',
+  'replay_material', 'replay_attempted', 'replay_verified', 'replay_failed',
 ]);
 
 const VALID_ACTORS = new Set(['system', 'analyst', 'human']);
@@ -136,6 +137,10 @@ export function validatePayload(recordType: string, payload: unknown): Validatio
     case 'stage_rejection': return validateStageRejectionRecord(payload);
     case 'correction':          return validateCorrectionRecord(payload);
     case 'confidence_snapshot': return validateConfidenceSnapshotRecord(payload);
+    case 'replay_material':     return validateReplayMaterialRecord(payload);
+    case 'replay_attempted':    return validateReplayAttemptedRecord(payload);
+    case 'replay_verified':     return validateReplayVerifiedRecord(payload);
+    case 'replay_failed':       return validateReplayFailedRecord(payload);
     default:
       return { valid: false, errors: [`unknown record_type for payload validation: '${recordType}'`] };
   }
@@ -349,6 +354,72 @@ export function validateConfidenceSnapshotRecord(p: unknown): ValidationResult {
   if (!r.dimensions || typeof r.dimensions !== 'object') {
     errors.push('missing or invalid: dimensions (must be an object)');
   }
+
+  return { valid: errors.length === 0, errors };
+}
+
+// ─── Replay record validators ─────────────────────────────────────────────────
+
+const VALID_REPLAYABILITY_STATUSES = new Set([
+  'replayable', 'conditionally_replayable', 'non_replayable',
+]);
+
+const VALID_EXECUTION_MODES = new Set(['live', 'replay', 're_run']);
+
+function validateReplayMaterialRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.stage_id || typeof r.stage_id !== 'string') errors.push('missing or invalid: stage_id');
+  if (!r.execution_mode || !VALID_EXECUTION_MODES.has(r.execution_mode as string)) {
+    errors.push(`invalid execution_mode: '${r.execution_mode}'. Valid: ${[...VALID_EXECUTION_MODES].join(', ')}`);
+  }
+  if (!r.input_hash || typeof r.input_hash !== 'string') errors.push('missing or invalid: input_hash');
+  if (!r.output_hash || typeof r.output_hash !== 'string') errors.push('missing or invalid: output_hash');
+  if (r.normalized_input === undefined) errors.push('missing: normalized_input');
+  if (r.normalized_output === undefined) errors.push('missing: normalized_output');
+  if (!r.replayability_status || !VALID_REPLAYABILITY_STATUSES.has(r.replayability_status as string)) {
+    errors.push(`invalid replayability_status: '${r.replayability_status}'. Valid: ${[...VALID_REPLAYABILITY_STATUSES].join(', ')}`);
+  }
+  if (typeof r.dependency_sequence_index !== 'number') {
+    errors.push('missing or invalid: dependency_sequence_index (must be a number)');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+function validateReplayAttemptedRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.run_trace_id || typeof r.run_trace_id !== 'string') errors.push('missing or invalid: run_trace_id');
+  if (r.execution_mode !== 'replay') errors.push(`execution_mode must be 'replay', got '${r.execution_mode}'`);
+  if (!Array.isArray(r.stages_requested)) errors.push('missing or invalid: stages_requested (must be an array)');
+
+  return { valid: errors.length === 0, errors };
+}
+
+function validateReplayVerifiedRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.run_trace_id || typeof r.run_trace_id !== 'string') errors.push('missing or invalid: run_trace_id');
+  if (!Array.isArray(r.stages_verified)) errors.push('missing or invalid: stages_verified (must be an array)');
+  if (typeof r.verified_count !== 'number') errors.push('missing or invalid: verified_count (must be a number)');
+
+  return { valid: errors.length === 0, errors };
+}
+
+function validateReplayFailedRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.run_trace_id || typeof r.run_trace_id !== 'string') errors.push('missing or invalid: run_trace_id');
+  if (!r.failure_reason || typeof r.failure_reason !== 'string') errors.push('missing or invalid: failure_reason');
 
   return { valid: errors.length === 0, errors };
 }

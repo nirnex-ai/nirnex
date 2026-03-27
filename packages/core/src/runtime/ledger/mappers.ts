@@ -30,6 +30,12 @@ import type {
   StageRejectionRecord,
 } from './types.js';
 import type { ConfidenceSnapshotRecord } from '../confidence/types.js';
+import type {
+  ReplayMaterialRecord,
+  ReplayAttemptedRecord,
+  ReplayVerifiedRecord,
+  ReplayFailedRecord,
+} from '../replay/types.js';
 import type { BoundTrace } from '../../pipeline/types.js';
 import type { ConflictLedgerEvent } from '../../knowledge/conflict/types.js';
 import type { DimensionScoringTrace } from '../../knowledge/ledger/traceDimensionScoring.js';
@@ -596,6 +602,28 @@ export function fromConfidenceSnapshot(
     record_type:      'confidence_snapshot',
     actor:            'system',
     payload:          snapshot as unknown as LedgerEntry['payload'],
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromReplayMaterial ───────────────────────────────────────────────────────
+
+/**
+ * Create a replay_material ledger entry from a captured ReplayMaterialRecord.
+ * Written by the orchestrator after each stage completes (when enableReplayCapture=true).
+ */
+export function fromReplayMaterial(
+  material: ReplayMaterialRecord,
+  opts: { trace_id: string; request_id: string; parent_ledger_id?: string },
+): LedgerEntry {
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'replay',
+    record_type:      'replay_material',
+    actor:            'system',
+    payload:          material as unknown as LedgerEntry['payload'],
     parent_ledger_id: opts.parent_ledger_id,
   });
 }

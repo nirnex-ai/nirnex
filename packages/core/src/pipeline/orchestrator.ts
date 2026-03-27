@@ -70,6 +70,10 @@ import {
   ecoDimensionsToConfidence,
   type ConfidenceSnapshotRecord,
 } from "../runtime/confidence/index.js";
+import {
+  buildReplayMaterial,
+} from "../runtime/replay/capture.js";
+import { fromReplayMaterial } from "../runtime/ledger/mappers.js";
 import { randomUUID, createHash } from "crypto";
 import { runStageWithTimeout, type StageTimeoutEvent } from "./timeout.js";
 import { getStageTimeoutConfig } from "../config/stageTimeouts.js";
@@ -119,6 +123,16 @@ export interface OrchestratorInput {
    * Backward compatible: false/undefined → no confidence snapshots emitted.
    */
   enableConfidenceTracking?: boolean;
+  /**
+   * Sprint 22: opt-in replay material capture.
+   * When true, emits replay_material ledger entries after each stage completes.
+   * These materials are the foundation for deterministic run reconstruction.
+   * Backward compatible: false/undefined → no replay materials emitted.
+   *
+   * NOTE: replay ≠ re_run. Materials captured here enable ledger-backed replay
+   * (deterministic reconstruction), not fresh re-execution against live dependencies.
+   */
+  enableReplayCapture?: boolean;
 }
 
 export interface OrchestratorResult {
@@ -611,6 +625,18 @@ export async function runOrchestrator(
       } catch {
         // Ledger emission failure must never crash the pipeline
       }
+    }
+
+    // ── Sprint 22: Replay material capture ─────────────────────────────────
+    if (input.enableReplayCapture && input.onLedgerEntry && !isRejected && !isReplayed) {
+      try {
+        const material = buildReplayMaterial(result.trace);
+        const materialEntry = fromReplayMaterial(material, {
+          trace_id: traceId,
+          request_id: requestId,
+        });
+        input.onLedgerEntry(materialEntry);
+      } catch { /* replay capture must not crash the pipeline */ }
     }
 
     // ── Sprint 21: Confidence snapshot checkpoints ─────────────────────────
