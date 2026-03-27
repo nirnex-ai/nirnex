@@ -45,7 +45,8 @@ export type LedgerStage =
   | 'execution'  // synthetic — marks idempotency replay/rejection events
   | 'confidence' // synthetic — marks confidence evolution snapshots
   | 'replay'     // synthetic — marks replay engine records (materials, attempts, results)
-  | 'analysis';  // synthetic — marks regression analysis records (outcome summaries, reports)
+  | 'analysis'   // synthetic — marks regression analysis records (outcome summaries, reports)
+  | 'steering';  // synthetic — marks mid-execution steering decisions
 
 // ─── Record type ──────────────────────────────────────────────────────────────
 
@@ -65,7 +66,10 @@ export type LedgerRecordType =
   | 'replay_verified'
   | 'replay_failed'
   | 'run_outcome_summary'
-  | 'regression_report';
+  | 'regression_report'
+  | 'steering_evaluated'
+  | 'steering_applied'
+  | 'steering_rejected';
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -229,7 +233,10 @@ export type LedgerPayload =
   | import('../replay/types.js').ReplayVerifiedRecord
   | import('../replay/types.js').ReplayFailedRecord
   | import('../regression/types.js').RunOutcomeSummaryRecord
-  | import('../regression/types.js').RegressionReportRecord;
+  | import('../regression/types.js').RegressionReportRecord
+  | import('../steering/types.js').SteeringEvaluatedRecord
+  | import('../steering/types.js').SteeringAppliedRecord
+  | import('../steering/types.js').SteeringRejectedRecord;
 
 // ─── Canonical ledger envelope ────────────────────────────────────────────────
 

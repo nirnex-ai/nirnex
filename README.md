@@ -2315,6 +2315,183 @@ packages/core/src/pipeline/orchestrator.ts
 
 ---
 
+### Mid-Execution Steering Layer (Sprint 24)
+
+Sprint 24 adds **checkpoint-based steering** — a deterministic, policy-driven layer that intervenes between planned execution steps and actual stage invocation to redirect, modify, skip, or abort execution paths.
+
+#### Design philosophy
+
+Steering is bounded checkpoint control — not arbitrary mid-execution interruption.
+
+Two key distinctions:
+- **Guard** = "may this happen?" (block or allow) — existing SUFFICIENCY_GATE behavior
+- **Steer** = "should this be shaped differently?" (modify, redirect, skip, reclassify) — new Sprint 24 layer
+
+Steering is evaluated at two checkpoint types only:
+- `before_stage_transition` — before a stage executes
+- `after_stage_result` — after a stage completes
+
+#### Typed action set
+
+```
+continue            — proceed as planned (default)
+modify_parameters   — narrow or adjust stage input parameters
+redirect_action     — replace next step with an alternate
+insert_step         — inject an additional step before next
+skip_step           — omit this stage from execution
+reclassify_lane     — override the lane assignment
+pause_for_clarification — suspend and await human input
+abort_execution     — halt the pipeline (blocked=true)
+```
+
+#### Stage steering contracts
+
+Every stage declares what steering is permitted:
+
+```typescript
+STAGE_STEERING_CONTRACTS = {
+  INTENT_DETECT:    { steering_modes: ['continue', 'pause_for_clarification', 'abort_execution'], can_be_skipped: false },
+  ECO_BUILD:        { steering_modes: ['continue', 'pause_for_clarification', 'abort_execution'], can_be_skipped: false },
+  SUFFICIENCY_GATE: { steering_modes: ['continue', 'skip_step', 'reclassify_lane', 'pause_for_clarification', 'abort_execution'], can_be_skipped: true },
+  TEE_BUILD:        { steering_modes: ['continue', 'skip_step', 'modify_parameters', 'redirect_action', 'pause_for_clarification', 'abort_execution'], can_be_skipped: true },
+  CLASSIFY_LANE:    { steering_modes: ['continue', 'skip_step', 'reclassify_lane', 'pause_for_clarification', 'abort_execution'], can_be_skipped: true },
+};
+```
+
+Unknown stages fall back to `DEFAULT_STEERING_CONTRACT` (only `continue` and `abort_execution` allowed).
+
+#### Usage
+
+```typescript
+import { runOrchestrator } from './packages/core/src/pipeline/orchestrator.js';
+import { evaluateWithPolicy } from './packages/core/src/steering.js';
+import type { PolicyRule, SteeringContext, SteeringDecision } from './packages/core/src/steering.js';
+
+// Define policy rules
+const rules: PolicyRule[] = [
+  {
+    id: 'low-confidence-escalate',
+    description: 'Escalate to lane C when confidence drops below 50',
+    condition: (ctx: SteeringContext) => (ctx.current_confidence ?? 100) < 50,
+    decision: () => ({
+      action: 'reclassify_lane',
+      reason_code: 'confidence_drop',
+      rationale: 'Confidence too low — escalating to lane C',
+      new_lane: 'C',
+      policy_refs: ['rule:low-confidence-escalate'],
+      affects_lane: true,
+    }),
+  },
+];
+
+// Inject evaluator
+const steeringEvaluator = (ctx: SteeringContext): SteeringDecision =>
+  evaluateWithPolicy(ctx, rules);
+
+const result = await runOrchestrator(
+  {
+    specPath: null,
+    query: 'my query',
+    enableSteering: true,
+    steeringEvaluator,
+    onLedgerEntry: entry => console.log(entry.record_type), // logs 'steering_evaluated', etc.
+  },
+  handlers,
+);
+```
+
+#### Loop protection
+
+- `maxSteeringInterventions` caps total evaluator calls per run (default: 10)
+- `ExecutionQueue.maxInsertions` caps `insert_step` insertions (default: 10)
+- Both return false/noop when the cap is exceeded — never throws
+
+#### Ledger records
+
+Every steering checkpoint emits a `steering_evaluated` record. Non-continue actions additionally emit `steering_applied`. Contract violations emit `steering_rejected` instead.
+
+```typescript
+// steering_evaluated — emitted at every checkpoint
+{
+  kind: 'steering_evaluated',
+  run_trace_id: string,
+  stage_name: string,
+  checkpoint: 'before_stage_transition' | 'after_stage_result',
+  action_selected: SteeringAction,
+  reason_code: SteeringTrigger,
+  rationale: string,
+  policy_refs: string[],
+  steering_count: number,
+}
+
+// steering_applied — emitted when action != 'continue' and validation passes
+{
+  kind: 'steering_applied',
+  run_trace_id: string,
+  stage_name: string,
+  checkpoint: CheckpointType,
+  action: SteeringAction,
+  reason_code: SteeringTrigger,
+}
+
+// steering_rejected — emitted when action fails contract validation
+{
+  kind: 'steering_rejected',
+  run_trace_id: string,
+  stage_name: string,
+  checkpoint: CheckpointType,
+  attempted_action: SteeringAction,
+  rejection_reason: string,
+}
+```
+
+#### Files added/modified
+
+```
+packages/core/src/runtime/steering/
+  types.ts      — SteeringAction, SteeringTrigger, CheckpointType, StepSpec,
+                  StepHistoryEntry, StageSteeringContract, SteeringContext,
+                  SteeringDecision, SteeringEvaluator,
+                  SteeringEvaluatedRecord, SteeringAppliedRecord, SteeringRejectedRecord
+  contracts.ts  — DEFAULT_STEERING_CONTRACT, STAGE_STEERING_CONTRACTS
+  context.ts    — buildSteeringContext()
+  policy.ts     — PolicyRule interface, evaluateWithPolicy()
+  actions.ts    — validateSteeringAction()
+  queue.ts      — ExecutionQueue class (insertNext, skipNext, replaceNext, peek, next)
+  evaluator.ts  — MAX_STEERING_INTERVENTIONS constant, evaluateSteering()
+  index.ts      — re-exports all of the above
+
+packages/core/src/steering.ts
+  — Public entry point (re-exports runtime/steering/index)
+
+packages/core/src/runtime/ledger/types.ts
+  — New: 'steering' in LedgerStage
+  — New: 'steering_evaluated', 'steering_applied', 'steering_rejected' in LedgerRecordType
+  — New: SteeringEvaluatedRecord, SteeringAppliedRecord, SteeringRejectedRecord in LedgerPayload
+
+packages/core/src/runtime/ledger/validators.ts
+  — New: validateSteeringEvaluatedRecord()
+  — New: validateSteeringAppliedRecord()
+  — New: validateSteeringRejectedRecord()
+
+packages/core/src/runtime/ledger/mappers.ts
+  — New: fromSteeringEvaluated()
+  — New: fromSteeringApplied()
+  — New: fromSteeringRejected()
+
+packages/core/src/runtime/ledger/index.ts
+  — New exports: fromSteeringEvaluated, fromSteeringApplied, fromSteeringRejected
+
+packages/core/src/pipeline/orchestrator.ts
+  — New: OrchestratorInput.enableSteering
+  — New: OrchestratorInput.steeringEvaluator
+  — New: OrchestratorInput.maxSteeringInterventions
+  — Steering checkpoints at before_stage_transition and after_stage_result
+  — skip_step and abort_execution handled per-stage
+```
+
+---
+
 ### Stage Machine (Determinism + Enforcement)
 
 Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.

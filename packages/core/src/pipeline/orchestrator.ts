@@ -73,8 +73,20 @@ import {
 import {
   buildReplayMaterial,
 } from "../runtime/replay/capture.js";
-import { fromReplayMaterial, fromRunOutcomeSummary } from "../runtime/ledger/mappers.js";
+import { fromReplayMaterial, fromRunOutcomeSummary, fromSteeringEvaluated, fromSteeringApplied, fromSteeringRejected } from "../runtime/ledger/mappers.js";
 import { buildRunOutcomeSummary } from "../runtime/regression/summary.js";
+import {
+  buildSteeringContext,
+  MAX_STEERING_INTERVENTIONS,
+  STAGE_STEERING_CONTRACTS,
+  DEFAULT_STEERING_CONTRACT,
+  type SteeringEvaluator,
+  type SteeringDecision,
+  type SteeringEvaluatedRecord,
+  type SteeringAppliedRecord,
+  type SteeringRejectedRecord,
+} from "../runtime/steering/index.js";
+import { validateSteeringAction } from "../runtime/steering/actions.js";
 import { randomUUID, createHash } from "crypto";
 import { runStageWithTimeout, type StageTimeoutEvent } from "./timeout.js";
 import { getStageTimeoutConfig } from "../config/stageTimeouts.js";
@@ -141,6 +153,25 @@ export interface OrchestratorInput {
    * Backward compatible: false/undefined → no outcome summary emitted.
    */
   enableOutcomeSummary?: boolean;
+  /**
+   * Sprint 24: opt-in mid-execution steering.
+   * When true, steeringEvaluator is called at before_stage_transition and
+   * after_stage_result checkpoints for each stage.
+   * Backward compatible: false/undefined → no steering, same behavior as before.
+   */
+  enableSteering?: boolean;
+  /**
+   * Sprint 24: injected steering evaluator function.
+   * Pure function: (context: SteeringContext) => SteeringDecision.
+   * Only used when enableSteering=true.
+   */
+  steeringEvaluator?: SteeringEvaluator;
+  /**
+   * Sprint 24: override maximum steering interventions per run.
+   * Defaults to MAX_STEERING_INTERVENTIONS (10).
+   * Allows tests to set a small cap to verify loop protection.
+   */
+  maxSteeringInterventions?: number;
 }
 
 export interface OrchestratorResult {
@@ -195,6 +226,85 @@ export async function runOrchestrator(
   // Sprint 19: idempotency tracking
   const replayedStages: StageId[] = [];
   const rejectedDuplicateStages: StageId[] = [];
+
+  // Sprint 24: steering state
+  let steeringInterventionCount = 0;
+  const effectiveMaxSteeringInterventions =
+    input.maxSteeringInterventions ?? MAX_STEERING_INTERVENTIONS;
+
+  /**
+   * Evaluate steering at a checkpoint and return the decision.
+   * Returns a continue decision when steering is disabled, cap reached, or evaluator absent.
+   * Emits steering_evaluated + steering_applied/steering_rejected ledger entries.
+   */
+  async function evaluateSteeringCheckpoint(
+    stage: StageId,
+    checkpoint: 'before_stage_transition' | 'after_stage_result',
+    extraContext?: { stage_result?: unknown; current_confidence?: number; current_lane?: string },
+  ): Promise<SteeringDecision> {
+    const noop: SteeringDecision = { action: 'continue', reason_code: 'no_trigger', rationale: 'Steering not active', policy_refs: [] };
+    if (!input.enableSteering || !input.steeringEvaluator) return noop;
+    if (steeringInterventionCount >= effectiveMaxSteeringInterventions) return noop;
+
+    steeringInterventionCount++;
+    const ctx = buildSteeringContext({
+      checkpoint,
+      stage,
+      run_trace_id: traceId,
+      current_confidence: extraContext?.current_confidence ?? (ecoOutput ? (ecoOutput as EcoBuildOutput).confidence_score : undefined),
+      current_lane: extraContext?.current_lane ?? laneOutput?.lane,
+      stage_result: extraContext?.stage_result,
+      steering_count: steeringInterventionCount,
+    });
+
+    const decision = input.steeringEvaluator(ctx);
+    const contract = STAGE_STEERING_CONTRACTS[stage] ?? DEFAULT_STEERING_CONTRACT;
+    const validation = validateSteeringAction(decision, stage, contract);
+
+    if (input.onLedgerEntry) {
+      try {
+        const evalRecord: SteeringEvaluatedRecord = {
+          kind: 'steering_evaluated',
+          run_trace_id: traceId,
+          stage_name: stage,
+          checkpoint,
+          action_selected: validation.valid ? decision.action : 'continue',
+          reason_code: decision.reason_code,
+          rationale: decision.rationale,
+          policy_refs: decision.policy_refs,
+          steering_count: steeringInterventionCount,
+        };
+        input.onLedgerEntry(fromSteeringEvaluated(evalRecord, { trace_id: traceId, request_id: requestId }));
+
+        if (!validation.valid) {
+          const rejRecord: SteeringRejectedRecord = {
+            kind: 'steering_rejected',
+            run_trace_id: traceId,
+            stage_name: stage,
+            checkpoint,
+            attempted_action: decision.action,
+            rejection_reason: validation.rejection_reason ?? 'Action rejected by stage contract',
+          };
+          input.onLedgerEntry(fromSteeringRejected(rejRecord, { trace_id: traceId, request_id: requestId }));
+        } else if (decision.action !== 'continue') {
+          const appliedRecord: SteeringAppliedRecord = {
+            kind: 'steering_applied',
+            run_trace_id: traceId,
+            stage_name: stage,
+            checkpoint,
+            action: decision.action,
+            reason_code: decision.reason_code,
+            affects_confidence: decision.affects_confidence,
+            affects_lane: decision.affects_lane,
+          };
+          input.onLedgerEntry(fromSteeringApplied(appliedRecord, { trace_id: traceId, request_id: requestId }));
+        }
+      } catch { /* ledger emission must not crash pipeline */ }
+    }
+
+    if (!validation.valid) return noop;
+    return decision;
+  }
 
   // Sprint 21: confidence evolution tracking
   let confidenceSnapshotIndex = 0;
@@ -287,6 +397,19 @@ export async function runOrchestrator(
     let isReplayed = false;
     let isRejected = false;
     let currentExecutionKey: string | undefined;
+
+    // ── Sprint 24: before_stage_transition checkpoint ──────────────────────
+    const beforeDecision = await evaluateSteeringCheckpoint(stage, 'before_stage_transition');
+    if (beforeDecision.action === 'skip_step') {
+      // Skip this stage entirely — do not push to stageResults
+      continue;
+    }
+    if (beforeDecision.action === 'abort_execution') {
+      return buildBlockedResult(
+        stage, stageResults, escalated, degraded, stageTimeouts, degradedStages,
+        executionWarnings, replayedStages, rejectedDuplicateStages, input, traceId, requestId, prevLedgerId,
+      );
+    }
 
     // Build stage-specific input from accumulated context
     switch (stage) {
@@ -602,6 +725,21 @@ export async function runOrchestrator(
     }
 
     stageResults.push(result as StageResult & { stage: StageId });
+
+    // ── Sprint 24: after_stage_result checkpoint ───────────────────────────
+    if (!isRejected) {
+      const afterDecision = await evaluateSteeringCheckpoint(stage, 'after_stage_result', {
+        stage_result: result.output,
+        current_confidence: ecoOutput ? (ecoOutput as EcoBuildOutput).confidence_score : undefined,
+        current_lane: laneOutput?.lane,
+      });
+      if (afterDecision.action === 'abort_execution') {
+        return buildBlockedResult(
+          stage, stageResults, escalated, degraded, stageTimeouts, degradedStages,
+          executionWarnings, replayedStages, rejectedDuplicateStages, input, traceId, requestId, prevLedgerId,
+        );
+      }
+    }
 
     // ── Emit ledger entry for this stage ───────────────────────────────────
     if (input.onLedgerEntry) {

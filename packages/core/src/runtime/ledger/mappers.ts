@@ -40,6 +40,11 @@ import type {
   RunOutcomeSummaryRecord,
   RegressionReportRecord,
 } from '../regression/types.js';
+import type {
+  SteeringEvaluatedRecord,
+  SteeringAppliedRecord,
+  SteeringRejectedRecord,
+} from '../steering/types.js';
 import type { BoundTrace } from '../../pipeline/types.js';
 import type { ConflictLedgerEvent } from '../../knowledge/conflict/types.js';
 import type { DimensionScoringTrace } from '../../knowledge/ledger/traceDimensionScoring.js';
@@ -672,6 +677,72 @@ export function fromRegressionReport(
     record_type:      'regression_report',
     actor:            'system',
     payload:          report as unknown as LedgerEntry['payload'],
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromSteeringEvaluated ────────────────────────────────────────────────────
+
+/**
+ * Create a steering_evaluated ledger entry from a SteeringEvaluatedRecord.
+ * Written at every steering checkpoint regardless of action selected.
+ */
+export function fromSteeringEvaluated(
+  record: SteeringEvaluatedRecord,
+  opts: { trace_id: string; request_id: string; parent_ledger_id?: string },
+): LedgerEntry {
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'steering',
+    record_type:      'steering_evaluated',
+    actor:            'system',
+    payload:          record as unknown as LedgerEntry['payload'],
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromSteeringApplied ──────────────────────────────────────────────────────
+
+/**
+ * Create a steering_applied ledger entry when action != 'continue'.
+ * Written when a non-trivial steering decision modifies execution.
+ */
+export function fromSteeringApplied(
+  record: SteeringAppliedRecord,
+  opts: { trace_id: string; request_id: string; parent_ledger_id?: string },
+): LedgerEntry {
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'steering',
+    record_type:      'steering_applied',
+    actor:            'system',
+    payload:          record as unknown as LedgerEntry['payload'],
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromSteeringRejected ─────────────────────────────────────────────────────
+
+/**
+ * Create a steering_rejected ledger entry when action validation fails.
+ * Written when the evaluator returns an action not permitted by the stage contract.
+ */
+export function fromSteeringRejected(
+  record: SteeringRejectedRecord,
+  opts: { trace_id: string; request_id: string; parent_ledger_id?: string },
+): LedgerEntry {
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'steering',
+    record_type:      'steering_rejected',
+    actor:            'system',
+    payload:          record as unknown as LedgerEntry['payload'],
     parent_ledger_id: opts.parent_ledger_id,
   });
 }

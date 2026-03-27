@@ -31,7 +31,7 @@ export interface ValidationResult {
 const VALID_STAGES: Set<string> = new Set<LedgerStage>([
   'knowledge', 'eco', 'classification', 'strategy',
   'pre_tool_guard', 'implementation', 'validation',
-  'post_tool_trace', 'stop', 'override', 'outcome', 'execution', 'confidence', 'replay', 'analysis',
+  'post_tool_trace', 'stop', 'override', 'outcome', 'execution', 'confidence', 'replay', 'analysis', 'steering',
 ]);
 
 const VALID_RECORD_TYPES: Set<string> = new Set<LedgerRecordType>([
@@ -39,6 +39,7 @@ const VALID_RECORD_TYPES: Set<string> = new Set<LedgerRecordType>([
   'stage_replay', 'stage_rejection', 'correction', 'confidence_snapshot',
   'replay_material', 'replay_attempted', 'replay_verified', 'replay_failed',
   'run_outcome_summary', 'regression_report',
+  'steering_evaluated', 'steering_applied', 'steering_rejected',
 ]);
 
 const VALID_ACTORS = new Set(['system', 'analyst', 'human']);
@@ -144,6 +145,9 @@ export function validatePayload(recordType: string, payload: unknown): Validatio
     case 'replay_failed':         return validateReplayFailedRecord(payload);
     case 'run_outcome_summary':   return validateRunOutcomeSummaryRecord(payload);
     case 'regression_report':     return validateRegressionReportRecord(payload);
+    case 'steering_evaluated':    return validateSteeringEvaluatedRecord(payload);
+    case 'steering_applied':      return validateSteeringAppliedRecord(payload);
+    case 'steering_rejected':     return validateSteeringRejectedRecord(payload);
     default:
       return { valid: false, errors: [`unknown record_type for payload validation: '${recordType}'`] };
   }
@@ -488,6 +492,98 @@ export function validateRegressionReportRecord(p: unknown): ValidationResult {
   }
   if (!r.generated_at || typeof r.generated_at !== 'string') {
     errors.push('missing or invalid: generated_at');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+// ─── Steering record validators ───────────────────────────────────────────────
+
+const VALID_STEERING_ACTIONS = new Set([
+  'continue', 'modify_parameters', 'redirect_action', 'insert_step',
+  'skip_step', 'reclassify_lane', 'pause_for_clarification', 'abort_execution',
+]);
+
+const VALID_STEERING_CHECKPOINTS = new Set([
+  'before_stage_transition', 'after_stage_result', 'before_tool_call', 'after_tool_call',
+]);
+
+export function validateSteeringEvaluatedRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.run_trace_id || typeof r.run_trace_id !== 'string') {
+    errors.push('missing or invalid: run_trace_id');
+  }
+  if (!r.stage_name || typeof r.stage_name !== 'string') {
+    errors.push('missing or invalid: stage_name');
+  }
+  if (!r.checkpoint || !VALID_STEERING_CHECKPOINTS.has(r.checkpoint as string)) {
+    errors.push(`invalid checkpoint: '${r.checkpoint}'. Valid: ${[...VALID_STEERING_CHECKPOINTS].join(', ')}`);
+  }
+  if (!r.action_selected || !VALID_STEERING_ACTIONS.has(r.action_selected as string)) {
+    errors.push(`invalid action_selected: '${r.action_selected}'. Valid: ${[...VALID_STEERING_ACTIONS].join(', ')}`);
+  }
+  if (!r.reason_code || typeof r.reason_code !== 'string') {
+    errors.push('missing or invalid: reason_code');
+  }
+  if (typeof r.rationale !== 'string') {
+    errors.push('missing or invalid: rationale');
+  }
+  if (!Array.isArray(r.policy_refs)) {
+    errors.push('missing or invalid: policy_refs (must be an array)');
+  }
+  if (typeof r.steering_count !== 'number') {
+    errors.push('missing or invalid: steering_count (must be a number)');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export function validateSteeringAppliedRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.run_trace_id || typeof r.run_trace_id !== 'string') {
+    errors.push('missing or invalid: run_trace_id');
+  }
+  if (!r.stage_name || typeof r.stage_name !== 'string') {
+    errors.push('missing or invalid: stage_name');
+  }
+  if (!r.checkpoint || !VALID_STEERING_CHECKPOINTS.has(r.checkpoint as string)) {
+    errors.push(`invalid checkpoint: '${r.checkpoint}'. Valid: ${[...VALID_STEERING_CHECKPOINTS].join(', ')}`);
+  }
+  if (!r.action || !VALID_STEERING_ACTIONS.has(r.action as string)) {
+    errors.push(`invalid action: '${r.action}'. Valid: ${[...VALID_STEERING_ACTIONS].join(', ')}`);
+  }
+  if (!r.reason_code || typeof r.reason_code !== 'string') {
+    errors.push('missing or invalid: reason_code');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export function validateSteeringRejectedRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.run_trace_id || typeof r.run_trace_id !== 'string') {
+    errors.push('missing or invalid: run_trace_id');
+  }
+  if (!r.stage_name || typeof r.stage_name !== 'string') {
+    errors.push('missing or invalid: stage_name');
+  }
+  if (!r.checkpoint || !VALID_STEERING_CHECKPOINTS.has(r.checkpoint as string)) {
+    errors.push(`invalid checkpoint: '${r.checkpoint}'. Valid: ${[...VALID_STEERING_CHECKPOINTS].join(', ')}`);
+  }
+  if (!r.attempted_action || !VALID_STEERING_ACTIONS.has(r.attempted_action as string)) {
+    errors.push(`invalid attempted_action: '${r.attempted_action}'. Valid: ${[...VALID_STEERING_ACTIONS].join(', ')}`);
+  }
+  if (!r.rejection_reason || typeof r.rejection_reason !== 'string') {
+    errors.push('missing or invalid: rejection_reason');
   }
 
   return { valid: errors.length === 0, errors };

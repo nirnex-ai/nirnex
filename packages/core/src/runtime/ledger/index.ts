@@ -58,5 +58,8 @@ export {
   fromReplayMaterial,
   fromRunOutcomeSummary,
   fromRegressionReport,
+  fromSteeringEvaluated,
+  fromSteeringApplied,
+  fromSteeringRejected,
   fromTraceJson,
 } from './mappers.js';
