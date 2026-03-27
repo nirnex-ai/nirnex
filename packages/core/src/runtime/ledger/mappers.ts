@@ -26,6 +26,8 @@ import type {
   RefusalRecord,
   OutcomeRecord,
   TraceAdapterRecord,
+  StageReplayRecord,
+  StageRejectionRecord,
 } from './types.js';
 import type { BoundTrace } from '../../pipeline/types.js';
 import type { ConflictLedgerEvent } from '../../knowledge/conflict/types.js';
@@ -492,6 +494,82 @@ export function fromMappingQualityScored(
     actor:            'system',
     payload,
     tee_id:           opts.tee_id,
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromStageReplay ──────────────────────────────────────────────────────────
+
+/**
+ * Create a stage_replay ledger entry for a stage that was replayed from the
+ * idempotency store instead of re-executing.
+ */
+export function fromStageReplay(
+  params: {
+    stageId: string;
+    replayOfExecutionKey: string;
+    originalTraceId: string;
+    resultHash?: string;
+  },
+  opts: {
+    trace_id: string;
+    request_id: string;
+    parent_ledger_id?: string;
+  },
+): LedgerEntry {
+  const payload: StageReplayRecord = {
+    kind:                    'stage_replay',
+    stage_id:                params.stageId,
+    replay_of_execution_key: params.replayOfExecutionKey,
+    original_trace_id:       params.originalTraceId,
+    result_hash:             params.resultHash,
+  };
+
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'execution',
+    record_type:      'stage_replay',
+    actor:            'system',
+    payload,
+    parent_ledger_id: opts.parent_ledger_id,
+  });
+}
+
+// ─── fromStageRejection ───────────────────────────────────────────────────────
+
+/**
+ * Create a stage_rejection ledger entry for a stage that was rejected because
+ * another orchestrator instance already claimed the execution key (in_progress).
+ */
+export function fromStageRejection(
+  params: {
+    stageId: string;
+    executionKey: string;
+    rejectionReason: string;
+  },
+  opts: {
+    trace_id: string;
+    request_id: string;
+    parent_ledger_id?: string;
+  },
+): LedgerEntry {
+  const payload: StageRejectionRecord = {
+    kind:             'stage_rejection',
+    stage_id:         params.stageId,
+    execution_key:    params.executionKey,
+    rejection_reason: params.rejectionReason,
+  };
+
+  return buildEnvelope({
+    trace_id:         opts.trace_id,
+    request_id:       opts.request_id,
+    timestamp:        new Date().toISOString(),
+    stage:            'execution',
+    record_type:      'stage_rejection',
+    actor:            'system',
+    payload,
     parent_ledger_id: opts.parent_ledger_id,
   });
 }

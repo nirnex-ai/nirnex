@@ -1627,6 +1627,113 @@ packages/core/src/eco.ts
 
 ---
 
+### Pipeline — Stage Idempotency (Sprint 19)
+
+Sprint 19 adds **stage-level idempotency** to the planning pipeline. Given the same deterministic input, a stage will never execute its handler a second time — it replays the stored result instead.
+
+This solves two distinct problems:
+
+| Problem | Without idempotency | With idempotency |
+|---|---|---|
+| **Redundant work** | Same ECO build reruns on every orchestrator call | Second call replays result from store — zero handler invocations |
+| **Concurrent duplicates** | Two orchestrators race on same input — both execute | One claims the key; the other gets `reject_duplicate_inflight` |
+
+#### StageExecutionKey
+
+Every stage execution is identified by a **SHA-256 key** derived from five components:
+
+```
+orchestrator_version   — bumped when orchestrator logic changes
+stage_id               — which stage (INTENT_DETECT, ECO_BUILD, …)
+contract_version       — per-stage I/O schema version
+normalized_input_hash  — SHA-256 of the deep-sorted, non-semantic-stripped input
+upstream_keys          — sorted execution keys of all upstream stages
+```
+
+Changing any component produces a different key → fresh execution, not replay.
+
+#### Input normalization
+
+Before hashing, stage inputs are **normalized** to strip invocation-specific variance:
+
+- Object keys are recursively sorted alphabetically
+- Non-semantic fields are removed: `timestamp`, `frozen_at`, `created_at`, `cache_hit`
+- Array element order is preserved (semantic ordering)
+- Primitives pass through unchanged
+
+Two inputs that are semantically identical but differ only in key insertion order or non-semantic fields produce the same hash — and therefore the same execution key.
+
+#### Policy rules
+
+```
+mode = 'none'        → always execute (idempotency disabled for this stage)
+mode = 'required':
+  no existing record → execute
+  status = 'completed' → replay stored output (handler not called)
+  status = 'failed'    → execute (re-run after failure — failures are never replayed)
+  status = 'in_progress' → reject_duplicate_inflight
+```
+
+#### SQLite execution store
+
+The idempotency store is backed by SQLite at `{targetRoot}/.aidos-idempotency.db`:
+
+- WAL mode for concurrent read access
+- `claim()` uses `INSERT INTO ... PRIMARY KEY` — atomic; fails on duplicate
+- `complete(key, output, resultHash)` — marks as completed and stores result JSON
+- `fail(key)` — marks as failed; eligible for re-execution
+- `get(key)` / `getCompleted(key)` — read-only lookups
+
+The `claim()` atomicity guarantee is the core of the concurrent duplicate protection: in a single-threaded event loop, the first caller to reach `claim()` succeeds synchronously before any `await` yields control, leaving all subsequent callers to detect the in-progress record.
+
+#### Orchestrator integration
+
+```typescript
+const r1 = await runOrchestrator({ ..., enableIdempotency: true });
+const r2 = await runOrchestrator({ ..., enableIdempotency: true }); // same input
+
+r2.replayedStages           // ['INTENT_DETECT', 'ECO_BUILD', ...]  — all replayed
+r2.rejectedDuplicateStages  // []  — no concurrent duplicates in sequential case
+// handler functions were NOT called on r2
+```
+
+#### Ledger governance
+
+Every idempotency event is recorded as an `execution`-stage ledger entry:
+
+| Event | record_type | Key payload fields |
+|---|---|---|
+| Stage replayed | `stage_replay` | `replay_of_execution_key`, `original_trace_id`, `result_hash` |
+| Duplicate rejected | `stage_rejection` | `execution_key`, `rejection_reason` |
+
+These are independently queryable from decision/outcome records and never merged with them.
+
+#### Backward compatibility
+
+`enableIdempotency` defaults to `false` (absent). Without it, `replayedStages` and `rejectedDuplicateStages` are always empty and the pipeline behaves identically to pre-Sprint-19 behavior.
+
+#### Module structure
+
+```
+packages/core/src/pipeline/idempotency/
+  types.ts     — StageExecutionRecord, StageExecutionStatus, IdempotencyDecision, StageIdempotencyMeta
+  normalize.ts — normalizeStageInput() — deterministic canonical input form
+  keys.ts      — computeStageExecutionKey(), hashNormalizedInput()
+  store.ts     — StageExecutionStore — SQLite-backed claim/complete/fail/get
+  policy.ts    — resolveIdempotencyAction() — pure decision function
+  index.ts     — public API
+
+packages/core/src/pipeline/types.ts
+  — adds ORCHESTRATOR_VERSION, STAGE_CONTRACT_VERSIONS, StageIdempotencyMeta, STAGE_IDEMPOTENCY
+
+packages/core/src/runtime/ledger/types.ts
+  — adds 'execution' to LedgerStage
+  — adds 'stage_replay', 'stage_rejection' to LedgerRecordType
+  — adds StageReplayRecord, StageRejectionRecord payload types
+```
+
+---
+
 ### Stage Machine (Determinism + Enforcement)
 
 Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.

@@ -12,15 +12,25 @@
  *   - OrchestratorResult.degradedStages — stages degraded due to timeout
  *   - OrchestratorResult.executionWarnings — human-readable timeout warnings
  *
+ * Sprint 19 additions:
+ *   - OrchestratorInput.enableIdempotency — opt-in idempotency per run
+ *   - OrchestratorInput.contractVersionOverrides — override per-stage contract versions
+ *   - OrchestratorResult.replayedStages — stages whose results were replayed from store
+ *   - OrchestratorResult.rejectedDuplicateStages — stages rejected as in-flight duplicates
+ *   - StageExecutionStore backed by SQLite at {targetRoot}/.aidos-idempotency.db
+ *
  * Design constraints:
  *   - STAGES order is authoritative — no handler may reorder stages
  *   - Each stage receives the output of previous stages as its input context
  *   - OrchestratorResult includes per-stage StageResults and a final lane
- *   - No filesystem I/O — pure orchestration logic
+ *   - No filesystem I/O outside of idempotency store (when enabled)
  */
 
 import {
   STAGES,
+  ORCHESTRATOR_VERSION,
+  STAGE_CONTRACT_VERSIONS,
+  STAGE_IDEMPOTENCY,
   type StageId,
   type StageResult,
   type IntentDetectInput,
@@ -47,10 +57,24 @@ import {
 import { StageExecutor } from "./stage-executor.js";
 import { FAILURE_POLICY, applyFailureMode } from "./failure-policy.js";
 import type { LedgerEntry } from "../runtime/ledger/types.js";
-import { fromBoundTrace, fromOrchestratorResult, fromRefusal } from "../runtime/ledger/mappers.js";
-import { randomUUID } from "crypto";
+import {
+  fromBoundTrace,
+  fromOrchestratorResult,
+  fromRefusal,
+  fromStageReplay,
+  fromStageRejection,
+} from "../runtime/ledger/mappers.js";
+import { randomUUID, createHash } from "crypto";
 import { runStageWithTimeout, type StageTimeoutEvent } from "./timeout.js";
 import { getStageTimeoutConfig } from "../config/stageTimeouts.js";
+import {
+  StageExecutionStore,
+  normalizeStageInput,
+  computeStageExecutionKey,
+  resolveIdempotencyAction,
+  type StageExecutionRecord,
+} from "./idempotency/index.js";
+import path from "path";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +96,17 @@ export interface OrchestratorInput {
    * Backward compatible: if absent, all stages use their default budgets.
    */
   stageTimeoutOverrides?: Partial<Record<StageId, number>>;
+  /**
+   * Sprint 19: opt-in stage idempotency.
+   * Requires targetRoot to be set (store is file-based).
+   * Backward compatible: false/undefined → no idempotency, same behavior as before.
+   */
+  enableIdempotency?: boolean;
+  /**
+   * Sprint 19: override contract versions for specific stages.
+   * Bumping a stage's contract version forces re-execution even if input is unchanged.
+   */
+  contractVersionOverrides?: Partial<Record<StageId, string>>;
 }
 
 export interface OrchestratorResult {
@@ -95,6 +130,10 @@ export interface OrchestratorResult {
   degradedStages: StageId[];
   /** human-readable warnings for each timeout event */
   executionWarnings: string[];
+  /** Sprint 19: stages whose output was replayed from the idempotency store */
+  replayedStages: StageId[];
+  /** Sprint 19: stages rejected because another in-flight execution holds the key */
+  rejectedDuplicateStages: StageId[];
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -119,6 +158,31 @@ export async function runOrchestrator(
   const degradedStages: StageId[] = [];
   const executionWarnings: string[] = [];
 
+  // Sprint 19: idempotency tracking
+  const replayedStages: StageId[] = [];
+  const rejectedDuplicateStages: StageId[] = [];
+
+  // Sprint 19: idempotency store (file-based when targetRoot is available)
+  let store: StageExecutionStore | null = null;
+  if (input.enableIdempotency && input.targetRoot) {
+    const Database = (await import('better-sqlite3')).default;
+    const dbPath = path.join(input.targetRoot, '.aidos-idempotency.db');
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    store = new StageExecutionStore(db);
+    store.ensureSchema();
+  }
+
+  // Effective contract versions (base + overrides)
+  const effectiveContractVersions: Record<StageId, string> = { ...STAGE_CONTRACT_VERSIONS };
+  if (input.contractVersionOverrides) {
+    for (const [stageId, version] of Object.entries(input.contractVersionOverrides)) {
+      if (version !== undefined) {
+        effectiveContractVersions[stageId as StageId] = version;
+      }
+    }
+  }
+
   // Ledger correlation IDs — stable for this orchestrator invocation
   const traceId   = `tr_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
   const requestId = `req_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
@@ -132,6 +196,9 @@ export async function runOrchestrator(
   let teeOutput: TeeBuildOutput | undefined;
   let laneOutput: ClassifyLaneOutput | undefined;
 
+  // Sprint 19: execution keys accumulated per stage for upstream chaining
+  const stageExecutionKeys: Partial<Record<StageId, string>> = {};
+
   for (const stage of STAGES) {
     const handler = handlers[stage];
     if (!handler) {
@@ -140,10 +207,7 @@ export async function runOrchestrator(
       const result = applyFailureMode(FAILURE_POLICY[stage], stage, error);
       stageResults.push(result as StageResult & { stage: StageId });
       if (result.status === "blocked") {
-        return {
-          completed: false, blocked: true, blockedAt: stage, escalated, degraded, stageResults,
-          stageTimeouts, degradedStages, executionWarnings,
-        };
+        return buildBlockedResult(stage, stageResults, escalated, degraded, stageTimeouts, degradedStages, executionWarnings, replayedStages, rejectedDuplicateStages, input, traceId, requestId, prevLedgerId);
       }
       if (result.status === "escalated") escalated = true;
       if (result.status === "degraded") degraded = true;
@@ -170,19 +234,67 @@ export async function runOrchestrator(
     };
 
     let result: StageResult;
+    let isReplayed = false;
+    let isRejected = false;
+    let currentExecutionKey: string | undefined;
 
     // Build stage-specific input from accumulated context
     switch (stage) {
       case "INTENT_DETECT": {
         const stageInput: IntentDetectInput = { specPath: input.specPath, query: input.query };
-        result = await executor.execute(
-          stage,
-          wrappedHandler as (i: IntentDetectInput) => Promise<IntentDetectOutput>,
-          stageInput,
-          validateIntentDetectInput,
-          validateIntentDetectOutput,
-        );
-        if (result.status === "ok") intentOutput = result.output as IntentDetectOutput;
+
+        // Sprint 19: check idempotency before executing
+        if (store) {
+          const upstreamKeys: string[] = [];
+          const normalized = normalizeStageInput(stageInput);
+          currentExecutionKey = computeStageExecutionKey({
+            orchestratorVersion: ORCHESTRATOR_VERSION,
+            stageId: stage,
+            contractVersion: effectiveContractVersions[stage],
+            normalizedInput: normalized,
+            upstreamKeys,
+          });
+
+          const decision = resolveIdempotencyAction(store, currentExecutionKey, STAGE_IDEMPOTENCY[stage]);
+
+          if (decision.action === 'replay' && decision.record?.output_json) {
+            const storedOutput = JSON.parse(decision.record.output_json) as IntentDetectOutput;
+            result = makeReplayResult(stage, storedOutput, decision.record);
+            intentOutput = storedOutput;
+            replayedStages.push(stage);
+            isReplayed = true;
+          } else if (decision.action === 'reject_duplicate_inflight') {
+            result = makeRejectedResult(stage);
+            rejectedDuplicateStages.push(stage);
+            isRejected = true;
+            emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+          } else {
+            // Execute — claim first
+            const claimRecord = makeClaimRecord(stage, currentExecutionKey, effectiveContractVersions[stage], normalized, traceId, requestId);
+            const claimed = store.claim(currentExecutionKey, claimRecord);
+            if (!claimed) {
+              result = makeRejectedResult(stage);
+              rejectedDuplicateStages.push(stage);
+              isRejected = true;
+              emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+            } else {
+              result = await executor.execute(
+                stage,
+                wrappedHandler as (i: IntentDetectInput) => Promise<IntentDetectOutput>,
+                stageInput, validateIntentDetectInput, validateIntentDetectOutput,
+              );
+              finalizeStore(store, currentExecutionKey, result);
+              if (result.status === "ok") intentOutput = result.output as IntentDetectOutput;
+            }
+          }
+        } else {
+          result = await executor.execute(
+            stage,
+            wrappedHandler as (i: IntentDetectInput) => Promise<IntentDetectOutput>,
+            stageInput, validateIntentDetectInput, validateIntentDetectOutput,
+          );
+          if (result.status === "ok") intentOutput = result.output as IntentDetectOutput;
+        }
         break;
       }
 
@@ -192,28 +304,115 @@ export async function runOrchestrator(
           specPath: input.specPath,
           targetRoot: input.targetRoot,
         };
-        result = await executor.execute(
-          stage,
-          wrappedHandler as (i: typeof stageInput) => Promise<EcoBuildOutput>,
-          stageInput,
-          validateEcoBuildInput,
-          validateEcoBuildOutput,
-        );
-        if (result.status === "ok") ecoOutput = result.output as EcoBuildOutput;
-        else if (result.output) ecoOutput = result.output as EcoBuildOutput; // use fallback
+
+        if (store) {
+          const upstreamKeys = filterKeys([stageExecutionKeys['INTENT_DETECT']]);
+          const normalized = normalizeStageInput(stageInput);
+          currentExecutionKey = computeStageExecutionKey({
+            orchestratorVersion: ORCHESTRATOR_VERSION,
+            stageId: stage,
+            contractVersion: effectiveContractVersions[stage],
+            normalizedInput: normalized,
+            upstreamKeys,
+          });
+
+          const decision = resolveIdempotencyAction(store, currentExecutionKey, STAGE_IDEMPOTENCY[stage]);
+
+          if (decision.action === 'replay' && decision.record?.output_json) {
+            const storedOutput = JSON.parse(decision.record.output_json) as EcoBuildOutput;
+            result = makeReplayResult(stage, storedOutput, decision.record);
+            ecoOutput = storedOutput;
+            replayedStages.push(stage);
+            isReplayed = true;
+          } else if (decision.action === 'reject_duplicate_inflight') {
+            result = makeRejectedResult(stage);
+            rejectedDuplicateStages.push(stage);
+            isRejected = true;
+            emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+          } else {
+            const claimRecord = makeClaimRecord(stage, currentExecutionKey, effectiveContractVersions[stage], normalized, traceId, requestId);
+            const claimed = store.claim(currentExecutionKey, claimRecord);
+            if (!claimed) {
+              result = makeRejectedResult(stage);
+              rejectedDuplicateStages.push(stage);
+              isRejected = true;
+              emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+            } else {
+              result = await executor.execute(
+                stage,
+                wrappedHandler as (i: typeof stageInput) => Promise<EcoBuildOutput>,
+                stageInput, validateEcoBuildInput, validateEcoBuildOutput,
+              );
+              finalizeStore(store, currentExecutionKey, result);
+              if (result.status === "ok") ecoOutput = result.output as EcoBuildOutput;
+              else if (result.output) ecoOutput = result.output as EcoBuildOutput;
+            }
+          }
+        } else {
+          result = await executor.execute(
+            stage,
+            wrappedHandler as (i: typeof stageInput) => Promise<EcoBuildOutput>,
+            stageInput, validateEcoBuildInput, validateEcoBuildOutput,
+          );
+          if (result.status === "ok") ecoOutput = result.output as EcoBuildOutput;
+          else if (result.output) ecoOutput = result.output as EcoBuildOutput;
+        }
         break;
       }
 
       case "SUFFICIENCY_GATE": {
         const stageInput = ecoOutput ?? { confidence_score: 0, eco_dimensions: makePassDimensions(), intent: { primary: "unknown", composite: false } };
-        result = await executor.execute(
-          stage,
-          wrappedHandler as (i: typeof stageInput) => Promise<SufficiencyGateOutput>,
-          stageInput,
-          validateSufficiencyGateInput,
-          validateSufficiencyGateOutput,
-        );
-        if (result.status === "ok") gateOutput = result.output as SufficiencyGateOutput;
+
+        if (store) {
+          const upstreamKeys = filterKeys([stageExecutionKeys['ECO_BUILD']]);
+          const normalized = normalizeStageInput(stageInput);
+          currentExecutionKey = computeStageExecutionKey({
+            orchestratorVersion: ORCHESTRATOR_VERSION,
+            stageId: stage,
+            contractVersion: effectiveContractVersions[stage],
+            normalizedInput: normalized,
+            upstreamKeys,
+          });
+
+          const decision = resolveIdempotencyAction(store, currentExecutionKey, STAGE_IDEMPOTENCY[stage]);
+
+          if (decision.action === 'replay' && decision.record?.output_json) {
+            const storedOutput = JSON.parse(decision.record.output_json) as SufficiencyGateOutput;
+            result = makeReplayResult(stage, storedOutput, decision.record);
+            gateOutput = storedOutput;
+            replayedStages.push(stage);
+            isReplayed = true;
+          } else if (decision.action === 'reject_duplicate_inflight') {
+            result = makeRejectedResult(stage);
+            rejectedDuplicateStages.push(stage);
+            isRejected = true;
+            emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+          } else {
+            const claimRecord = makeClaimRecord(stage, currentExecutionKey, effectiveContractVersions[stage], normalized, traceId, requestId);
+            const claimed = store.claim(currentExecutionKey, claimRecord);
+            if (!claimed) {
+              result = makeRejectedResult(stage);
+              rejectedDuplicateStages.push(stage);
+              isRejected = true;
+              emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+            } else {
+              result = await executor.execute(
+                stage,
+                wrappedHandler as (i: typeof stageInput) => Promise<SufficiencyGateOutput>,
+                stageInput, validateSufficiencyGateInput, validateSufficiencyGateOutput,
+              );
+              finalizeStore(store, currentExecutionKey, result);
+              if (result.status === "ok") gateOutput = result.output as SufficiencyGateOutput;
+            }
+          }
+        } else {
+          result = await executor.execute(
+            stage,
+            wrappedHandler as (i: typeof stageInput) => Promise<SufficiencyGateOutput>,
+            stageInput, validateSufficiencyGateInput, validateSufficiencyGateOutput,
+          );
+          if (result.status === "ok") gateOutput = result.output as SufficiencyGateOutput;
+        }
         break;
       }
 
@@ -222,15 +421,59 @@ export async function runOrchestrator(
           eco: ecoOutput ?? { intent: { primary: "unknown", composite: false }, eco_dimensions: makePassDimensions(), confidence_score: 0 },
           gate: gateOutput ?? { behavior: "pass" as const, lane: "A", reason: "fallback" },
         };
-        result = await executor.execute(
-          stage,
-          wrappedHandler as (i: typeof stageInput) => Promise<TeeBuildOutput>,
-          stageInput,
-          validateTeeBuildInput,
-          validateTeeBuildOutput,
-        );
-        if (result.status === "ok") teeOutput = result.output as TeeBuildOutput;
-        else if (result.output) teeOutput = result.output as TeeBuildOutput; // degraded fallback
+
+        if (store) {
+          const upstreamKeys = filterKeys([stageExecutionKeys['ECO_BUILD'], stageExecutionKeys['SUFFICIENCY_GATE']]);
+          const normalized = normalizeStageInput(stageInput);
+          currentExecutionKey = computeStageExecutionKey({
+            orchestratorVersion: ORCHESTRATOR_VERSION,
+            stageId: stage,
+            contractVersion: effectiveContractVersions[stage],
+            normalizedInput: normalized,
+            upstreamKeys,
+          });
+
+          const decision = resolveIdempotencyAction(store, currentExecutionKey, STAGE_IDEMPOTENCY[stage]);
+
+          if (decision.action === 'replay' && decision.record?.output_json) {
+            const storedOutput = JSON.parse(decision.record.output_json) as TeeBuildOutput;
+            result = makeReplayResult(stage, storedOutput, decision.record);
+            teeOutput = storedOutput;
+            replayedStages.push(stage);
+            isReplayed = true;
+          } else if (decision.action === 'reject_duplicate_inflight') {
+            result = makeRejectedResult(stage);
+            rejectedDuplicateStages.push(stage);
+            isRejected = true;
+            emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+          } else {
+            const claimRecord = makeClaimRecord(stage, currentExecutionKey, effectiveContractVersions[stage], normalized, traceId, requestId);
+            const claimed = store.claim(currentExecutionKey, claimRecord);
+            if (!claimed) {
+              result = makeRejectedResult(stage);
+              rejectedDuplicateStages.push(stage);
+              isRejected = true;
+              emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+            } else {
+              result = await executor.execute(
+                stage,
+                wrappedHandler as (i: typeof stageInput) => Promise<TeeBuildOutput>,
+                stageInput, validateTeeBuildInput, validateTeeBuildOutput,
+              );
+              finalizeStore(store, currentExecutionKey, result);
+              if (result.status === "ok") teeOutput = result.output as TeeBuildOutput;
+              else if (result.output) teeOutput = result.output as TeeBuildOutput;
+            }
+          }
+        } else {
+          result = await executor.execute(
+            stage,
+            wrappedHandler as (i: typeof stageInput) => Promise<TeeBuildOutput>,
+            stageInput, validateTeeBuildInput, validateTeeBuildOutput,
+          );
+          if (result.status === "ok") teeOutput = result.output as TeeBuildOutput;
+          else if (result.output) teeOutput = result.output as TeeBuildOutput;
+        }
         break;
       }
 
@@ -239,15 +482,59 @@ export async function runOrchestrator(
           eco: ecoOutput ?? { intent: { primary: "unknown", composite: false }, eco_dimensions: makePassDimensions(), confidence_score: 0 },
           tee: teeOutput ?? { blocked_paths: [], blocked_symbols: [], clarification_questions: [], proceed_warnings: [] },
         };
-        result = await executor.execute(
-          stage,
-          wrappedHandler as (i: typeof stageInput) => Promise<ClassifyLaneOutput>,
-          stageInput,
-          validateClassifyLaneInput,
-          validateClassifyLaneOutput,
-        );
-        if (result.status === "ok") laneOutput = result.output as ClassifyLaneOutput;
-        else if (result.output) laneOutput = result.output as ClassifyLaneOutput;
+
+        if (store) {
+          const upstreamKeys = filterKeys([stageExecutionKeys['ECO_BUILD'], stageExecutionKeys['TEE_BUILD']]);
+          const normalized = normalizeStageInput(stageInput);
+          currentExecutionKey = computeStageExecutionKey({
+            orchestratorVersion: ORCHESTRATOR_VERSION,
+            stageId: stage,
+            contractVersion: effectiveContractVersions[stage],
+            normalizedInput: normalized,
+            upstreamKeys,
+          });
+
+          const decision = resolveIdempotencyAction(store, currentExecutionKey, STAGE_IDEMPOTENCY[stage]);
+
+          if (decision.action === 'replay' && decision.record?.output_json) {
+            const storedOutput = JSON.parse(decision.record.output_json) as ClassifyLaneOutput;
+            result = makeReplayResult(stage, storedOutput, decision.record);
+            laneOutput = storedOutput;
+            replayedStages.push(stage);
+            isReplayed = true;
+          } else if (decision.action === 'reject_duplicate_inflight') {
+            result = makeRejectedResult(stage);
+            rejectedDuplicateStages.push(stage);
+            isRejected = true;
+            emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+          } else {
+            const claimRecord = makeClaimRecord(stage, currentExecutionKey, effectiveContractVersions[stage], normalized, traceId, requestId);
+            const claimed = store.claim(currentExecutionKey, claimRecord);
+            if (!claimed) {
+              result = makeRejectedResult(stage);
+              rejectedDuplicateStages.push(stage);
+              isRejected = true;
+              emitRejectionLedger(stage, currentExecutionKey, traceId, requestId, prevLedgerId, input.onLedgerEntry);
+            } else {
+              result = await executor.execute(
+                stage,
+                wrappedHandler as (i: typeof stageInput) => Promise<ClassifyLaneOutput>,
+                stageInput, validateClassifyLaneInput, validateClassifyLaneOutput,
+              );
+              finalizeStore(store, currentExecutionKey, result);
+              if (result.status === "ok") laneOutput = result.output as ClassifyLaneOutput;
+              else if (result.output) laneOutput = result.output as ClassifyLaneOutput;
+            }
+          }
+        } else {
+          result = await executor.execute(
+            stage,
+            wrappedHandler as (i: typeof stageInput) => Promise<ClassifyLaneOutput>,
+            stageInput, validateClassifyLaneInput, validateClassifyLaneOutput,
+          );
+          if (result.status === "ok") laneOutput = result.output as ClassifyLaneOutput;
+          else if (result.output) laneOutput = result.output as ClassifyLaneOutput;
+        }
         break;
       }
 
@@ -259,37 +546,56 @@ export async function runOrchestrator(
       }
     }
 
+    // Track execution key for downstream upstream-chaining
+    if (currentExecutionKey) {
+      stageExecutionKeys[stage] = currentExecutionKey;
+    }
+
     stageResults.push(result as StageResult & { stage: StageId });
 
     // ── Emit ledger entry for this stage ───────────────────────────────────
     if (input.onLedgerEntry) {
       try {
-        const stageEntry = fromBoundTrace(
-          result.trace,
-          { trace_id: traceId, request_id: requestId, stage: 'knowledge', parent_ledger_id: prevLedgerId },
-        );
-        prevLedgerId = stageEntry.ledger_id;
-        input.onLedgerEntry(stageEntry);
+        if (isReplayed && currentExecutionKey) {
+          // Emit stage_replay ledger entry
+          const completedRecord = store?.getCompleted(currentExecutionKey);
+          const replayEntry = fromStageReplay(
+            {
+              stageId:               stage,
+              replayOfExecutionKey:  currentExecutionKey,
+              originalTraceId:       completedRecord?.trace_id ?? traceId,
+              resultHash:            completedRecord?.result_hash,
+            },
+            { trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId },
+          );
+          prevLedgerId = replayEntry.ledger_id;
+          input.onLedgerEntry(replayEntry);
+        } else if (!isRejected) {
+          // Normal execution — emit decision record
+          const stageEntry = fromBoundTrace(
+            result.trace,
+            { trace_id: traceId, request_id: requestId, stage: 'knowledge', parent_ledger_id: prevLedgerId },
+          );
+          prevLedgerId = stageEntry.ledger_id;
+          input.onLedgerEntry(stageEntry);
+        }
+        // Rejected stages emit their ledger entry inline (in emitRejectionLedger)
       } catch {
         // Ledger emission failure must never crash the pipeline
       }
     }
 
     // ── Sprint 15: Timeout post-processing ────────────────────────────────
-    // Runs BEFORE the BLOCK check so timeout events are captured even when
-    // a critical stage (SUFFICIENCY_GATE) times out and blocks the pipeline.
-    if (pendingTimeoutEvent?.timed_out) {
+    if (!isReplayed && !isRejected && pendingTimeoutEvent?.timed_out) {
       stageTimeouts.push(pendingTimeoutEvent);
       executionWarnings.push(`Stage ${stage} timed out after ${timeoutConfig.timeoutMs}ms`);
 
-      // Annotate the BoundTrace with timeout metadata
       result.trace.timedOut        = true;
       result.trace.timeoutMs       = timeoutConfig.timeoutMs;
       result.trace.failureClass    = 'timeout';
       result.trace.fallbackApplied = pendingTimeoutEvent.fallback_applied;
 
       if (!timeoutConfig.isCritical) {
-        // Non-critical timeout → degrade (regardless of the stage's normal failure mode)
         degradedStages.push(stage);
         degraded = true;
       }
@@ -297,27 +603,10 @@ export async function runOrchestrator(
 
     // ── Check for BLOCK ────────────────────────────────────────────────────
     if (result.status === "blocked") {
-      const blockedResult: OrchestratorResult = {
-        completed: false,
-        blocked: true,
-        blockedAt: stage,
-        escalated,
-        degraded,
-        stageResults,
-        finalLane: undefined,
-        stageTimeouts,
-        degradedStages,
-        executionWarnings,
-      };
-      // Emit terminal outcome for blocked pipeline
-      if (input.onLedgerEntry) {
-        try {
-          const outcomeEntry = fromOrchestratorResult(blockedResult, {
-            trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId,
-          });
-          input.onLedgerEntry(outcomeEntry);
-        } catch { /* ledger failure must not crash pipeline */ }
-      }
+      const blockedResult = buildBlockedResult(
+        stage, stageResults, escalated, degraded, stageTimeouts, degradedStages, executionWarnings,
+        replayedStages, rejectedDuplicateStages, input, traceId, requestId, prevLedgerId,
+      );
       return blockedResult;
     }
 
@@ -325,10 +614,7 @@ export async function runOrchestrator(
     if (result.status === "degraded") degraded = true;
 
     // ── SUFFICIENCY_GATE special: block/ask behavior from output ──────────
-    // When SUFFICIENCY_GATE succeeds but its output says behavior="block"
-    // (refuse) or behavior="ask" (clarify), we treat it as a pipeline block.
-    // Both verdicts stop execution — advisory continuation is not permitted.
-    if (stage === "SUFFICIENCY_GATE" && result.status === "ok") {
+    if (stage === "SUFFICIENCY_GATE" && result.status === "ok" && !isReplayed && !isRejected) {
       const gate = result.output as SufficiencyGateOutput;
       if (gate.behavior === "block" || gate.behavior === "ask") {
         const gateBlockResult: OrchestratorResult = {
@@ -342,15 +628,14 @@ export async function runOrchestrator(
           stageTimeouts,
           degradedStages,
           executionWarnings,
+          replayedStages,
+          rejectedDuplicateStages,
         };
         if (input.onLedgerEntry) {
           try {
-            // Emit a dedicated RefusalRecord for the gate verdict
             const refusalCode = gate.behavior === "block" ? "EVIDENCE_GATE_REFUSED" : "EVIDENCE_GATE_CLARIFY";
             const refusalEntry = fromRefusal(
-              'classification',
-              refusalCode,
-              gate.reason,
+              'classification', refusalCode, gate.reason,
               { trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId },
             );
             prevLedgerId = refusalEntry.ledger_id;
@@ -377,6 +662,8 @@ export async function runOrchestrator(
     stageTimeouts,
     degradedStages,
     executionWarnings,
+    replayedStages,
+    rejectedDuplicateStages,
   };
 
   // Emit terminal outcome for completed pipeline
@@ -402,4 +689,146 @@ function makePassDimensions() {
     conflict:  { severity: "pass", detail: "", conflict_payload: null },
     graph:     { severity: "pass", detail: "" },
   };
+}
+
+function filterKeys(keys: Array<string | undefined>): string[] {
+  return keys.filter((k): k is string => k !== undefined);
+}
+
+function hashOutput(output: unknown): string {
+  return createHash('sha256').update(JSON.stringify(output)).digest('hex');
+}
+
+function makeClaimRecord(
+  stage: StageId,
+  executionKey: string,
+  contractVersion: string,
+  normalizedInput: unknown,
+  traceId: string,
+  requestId: string,
+): StageExecutionRecord {
+  return {
+    execution_key:    executionKey,
+    stage_id:         stage,
+    contract_version: contractVersion,
+    input_hash:       createHash('sha256').update(JSON.stringify(normalizedInput)).digest('hex'),
+    status:           'in_progress',
+    trace_id:         traceId,
+    request_id:       requestId,
+    started_at:       new Date().toISOString(),
+  };
+}
+
+function finalizeStore(
+  store: StageExecutionStore,
+  executionKey: string,
+  result: StageResult,
+): void {
+  if (result.status === 'ok' || result.status === 'degraded') {
+    store.complete(executionKey, result.output, hashOutput(result.output));
+  } else {
+    store.fail(executionKey);
+  }
+}
+
+function makeReplayResult(
+  stage: StageId,
+  output: unknown,
+  record: StageExecutionRecord,
+): StageResult {
+  return {
+    stage,
+    status: 'ok',
+    output,
+    trace: {
+      stage,
+      status:     'ok',
+      inputHash:  record.input_hash,
+      timestamp:  new Date().toISOString(),
+      durationMs: 0,
+      input:      null,
+      output,
+    },
+  };
+}
+
+function makeRejectedResult(stage: StageId): StageResult {
+  return {
+    stage,
+    status: 'degraded',
+    output: undefined,
+    trace: {
+      stage,
+      status:     'degraded',
+      inputHash:  '',
+      timestamp:  new Date().toISOString(),
+      durationMs: 0,
+      input:      null,
+      output:     undefined,
+      errorMessage: 'Stage rejected: duplicate in-flight execution',
+      failureClass: 'error',
+    },
+  };
+}
+
+function emitRejectionLedger(
+  stage: StageId,
+  executionKey: string,
+  traceId: string,
+  requestId: string,
+  prevLedgerId: string | undefined,
+  onLedgerEntry: ((entry: LedgerEntry) => void) | undefined,
+): void {
+  if (!onLedgerEntry) return;
+  try {
+    const rejectionEntry = fromStageRejection(
+      {
+        stageId:         stage,
+        executionKey,
+        rejectionReason: 'duplicate_inflight: another orchestrator instance is executing this stage',
+      },
+      { trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId },
+    );
+    onLedgerEntry(rejectionEntry);
+  } catch { /* ledger failure must not crash pipeline */ }
+}
+
+function buildBlockedResult(
+  stage: StageId,
+  stageResults: Array<StageResult & { stage: StageId }>,
+  escalated: boolean,
+  degraded: boolean,
+  stageTimeouts: StageTimeoutEvent[],
+  degradedStages: StageId[],
+  executionWarnings: string[],
+  replayedStages: StageId[],
+  rejectedDuplicateStages: StageId[],
+  input: OrchestratorInput,
+  traceId: string,
+  requestId: string,
+  prevLedgerId: string | undefined,
+): OrchestratorResult {
+  const blockedResult: OrchestratorResult = {
+    completed: false,
+    blocked: true,
+    blockedAt: stage,
+    escalated,
+    degraded,
+    stageResults,
+    finalLane: undefined,
+    stageTimeouts,
+    degradedStages,
+    executionWarnings,
+    replayedStages,
+    rejectedDuplicateStages,
+  };
+  if (input.onLedgerEntry) {
+    try {
+      const outcomeEntry = fromOrchestratorResult(blockedResult, {
+        trace_id: traceId, request_id: requestId, parent_ledger_id: prevLedgerId,
+      });
+      input.onLedgerEntry(outcomeEntry);
+    } catch { /* ledger failure must not crash pipeline */ }
+  }
+  return blockedResult;
 }

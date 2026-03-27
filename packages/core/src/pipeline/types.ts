@@ -147,6 +147,48 @@ export interface ClassifyLaneOutput {
   reason: string;
 }
 
+// ─── Orchestrator version ─────────────────────────────────────────────────────
+
+/**
+ * Increment when orchestrator logic changes in a way that could affect outputs.
+ * Changing this version invalidates all cached stage executions.
+ */
+export const ORCHESTRATOR_VERSION = '1.0.0' as const;
+
+// ─── Stage contract versions ──────────────────────────────────────────────────
+
+/**
+ * Per-stage I/O contract versions. Increment a stage's version when its
+ * input or output schema changes in a semantically significant way.
+ * A version bump forces re-execution even for previously cached inputs.
+ */
+export const STAGE_CONTRACT_VERSIONS: Record<StageId, string> = {
+  INTENT_DETECT:    '1.0.0',
+  ECO_BUILD:        '1.0.0',
+  SUFFICIENCY_GATE: '1.0.0',
+  TEE_BUILD:        '1.0.0',
+  CLASSIFY_LANE:    '1.0.0',
+} as const;
+
+// ─── Stage idempotency metadata ───────────────────────────────────────────────
+
+export interface StageIdempotencyMeta {
+  mode: 'required' | 'none';
+  side_effect_class: 'pure' | 'external_mutation';
+}
+
+/**
+ * Idempotency configuration for each pipeline stage.
+ * All current stages are pure — they produce no external side effects.
+ */
+export const STAGE_IDEMPOTENCY: Record<StageId, StageIdempotencyMeta> = {
+  INTENT_DETECT:    { mode: 'required', side_effect_class: 'pure' },
+  ECO_BUILD:        { mode: 'required', side_effect_class: 'pure' },
+  SUFFICIENCY_GATE: { mode: 'required', side_effect_class: 'pure' },
+  TEE_BUILD:        { mode: 'required', side_effect_class: 'pure' },
+  CLASSIFY_LANE:    { mode: 'required', side_effect_class: 'pure' },
+} as const;
+
 // ─── StageIOMap — associates each StageId with its I/O types ─────────────────
 
 export interface StageIOMap {

@@ -41,7 +41,8 @@ export type LedgerStage =
   | 'post_tool_trace'
   | 'stop'
   | 'override'   // synthetic — marks an override event, not a pipeline position
-  | 'outcome';   // synthetic — marks terminal state, not a pipeline position
+  | 'outcome'    // synthetic — marks terminal state, not a pipeline position
+  | 'execution'; // synthetic — marks idempotency replay/rejection events
 
 // ─── Record type ──────────────────────────────────────────────────────────────
 
@@ -51,7 +52,9 @@ export type LedgerRecordType =
   | 'override'
   | 'outcome'
   | 'refusal'
-  | 'deviation';
+  | 'deviation'
+  | 'stage_replay'
+  | 'stage_rejection';
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -134,6 +137,28 @@ export type DeviationRecord = {
   disposition: 'logged' | 'escalated' | 'overridden' | 'abandoned';
 };
 
+// ─── Stage replay record ──────────────────────────────────────────────────────
+
+export type StageReplayRecord = {
+  kind: 'stage_replay';
+  stage_id: string;
+  /** The execution key whose stored output is being replayed */
+  replay_of_execution_key: string;
+  /** trace_id of the original execution that produced the stored output */
+  original_trace_id: string;
+  result_hash?: string;
+};
+
+// ─── Stage rejection record ───────────────────────────────────────────────────
+
+export type StageRejectionRecord = {
+  kind: 'stage_rejection';
+  stage_id: string;
+  /** The execution key that was found to be in_progress by another caller */
+  execution_key: string;
+  rejection_reason: string;
+};
+
 /**
  * LEGACY IMPORT ONLY.
  *
@@ -153,7 +178,9 @@ export type LedgerPayload =
   | OutcomeRecord
   | RefusalRecord
   | DeviationRecord
-  | TraceAdapterRecord;
+  | TraceAdapterRecord
+  | StageReplayRecord
+  | StageRejectionRecord;
 
 // ─── Canonical ledger envelope ────────────────────────────────────────────────
 

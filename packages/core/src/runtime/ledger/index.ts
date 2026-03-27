@@ -15,6 +15,8 @@ export {
   type RefusalRecord,
   type DeviationRecord,
   type TraceAdapterRecord,
+  type StageReplayRecord,
+  type StageRejectionRecord,
 } from './types.js';
 
 export {
@@ -48,5 +50,7 @@ export {
   fromConflictEvents,
   fromRefusal,
   fromOrchestratorResult,
+  fromStageReplay,
+  fromStageRejection,
   fromTraceJson,
 } from './mappers.js';

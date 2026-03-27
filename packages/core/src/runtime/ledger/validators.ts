@@ -31,11 +31,12 @@ export interface ValidationResult {
 const VALID_STAGES: Set<string> = new Set<LedgerStage>([
   'knowledge', 'eco', 'classification', 'strategy',
   'pre_tool_guard', 'implementation', 'validation',
-  'post_tool_trace', 'stop', 'override', 'outcome',
+  'post_tool_trace', 'stop', 'override', 'outcome', 'execution',
 ]);
 
 const VALID_RECORD_TYPES: Set<string> = new Set<LedgerRecordType>([
   'decision', 'trace', 'override', 'outcome', 'refusal', 'deviation',
+  'stage_replay', 'stage_rejection',
 ]);
 
 const VALID_ACTORS = new Set(['system', 'analyst', 'human']);
@@ -130,7 +131,9 @@ export function validatePayload(recordType: string, payload: unknown): Validatio
     case 'outcome':   return validateOutcomeRecord(payload);
     case 'refusal':   return validateRefusalRecord(payload);
     case 'deviation': return validateDeviationRecord(payload);
-    case 'trace':     return validateTraceAdapterRecord(payload);
+    case 'trace':           return validateTraceAdapterRecord(payload);
+    case 'stage_replay':    return validateStageReplayRecord(payload);
+    case 'stage_rejection': return validateStageRejectionRecord(payload);
     default:
       return { valid: false, errors: [`unknown record_type for payload validation: '${recordType}'`] };
   }
@@ -248,4 +251,32 @@ function validateTraceAdapterRecord(p: unknown): ValidationResult {
   const r = p as Record<string, unknown>;
   if (r.raw === undefined) return { valid: false, errors: ['trace adapter record must have a raw field'] };
   return { valid: true, errors: [] };
+}
+
+export function validateStageReplayRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.stage_id || typeof r.stage_id !== 'string') errors.push('missing or invalid: stage_id');
+  if (!r.replay_of_execution_key || typeof r.replay_of_execution_key !== 'string') {
+    errors.push('missing or invalid: replay_of_execution_key');
+  }
+  if (!r.original_trace_id || typeof r.original_trace_id !== 'string') {
+    errors.push('missing or invalid: original_trace_id');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export function validateStageRejectionRecord(p: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!p || typeof p !== 'object') return { valid: false, errors: ['payload must be an object'] };
+  const r = p as Record<string, unknown>;
+
+  if (!r.stage_id || typeof r.stage_id !== 'string') errors.push('missing or invalid: stage_id');
+  if (!r.execution_key || typeof r.execution_key !== 'string') errors.push('missing or invalid: execution_key');
+  if (!r.rejection_reason || typeof r.rejection_reason !== 'string') errors.push('missing or invalid: rejection_reason');
+
+  return { valid: errors.length === 0, errors };
 }
