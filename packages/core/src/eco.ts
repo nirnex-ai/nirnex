@@ -11,13 +11,31 @@ import { extractStaleScopes } from './knowledge/freshness/extract-stale-scopes.j
 import { extractRequiredScopes } from './knowledge/freshness/extract-required-scopes.js';
 import { computeFreshnessImpact } from './knowledge/freshness/compute-freshness-impact.js';
 import type { FreshnessDimensionEntry, FreshnessImpact } from './knowledge/freshness/types.js';
-import { scoreDimensions } from './knowledge/dimensions/scoreDimensions.js';
+import { scoreDimensions, CALCULATION_VERSION } from './knowledge/dimensions/scoreDimensions.js';
 import { scoreMappingQuality } from './knowledge/mapping/score.js';
 import { buildMappingQualityInput } from './knowledge/mapping/signals.js';
 import type { MappingQualityResult } from './knowledge/mapping/types.js';
+import { LEDGER_SCHEMA_VERSION } from './runtime/ledger/types.js';
+import {
+  buildFrozenBundle,
+  computeFingerprint,
+  resolveReproducibility,
+  collectUnreproducibleReasons,
+  canonicalizeECO,
+  EcoCache,
+} from './knowledge/reproducibility/index.js';
+import type { ECOProvenance, FrozenSourceRecord } from './knowledge/reproducibility/types.js';
 
 export function buildECO(specPath: string | null, targetRoot: string, opts?: { query?: string }) {
   const intent = detectIntent(specPath, opts);
+
+  // ── Collect spec content for reproducibility boundary ─────────────────────
+  let specContent: string | null = null;
+  if (specPath && fs.existsSync(specPath)) {
+    try { specContent = fs.readFileSync(specPath, 'utf-8'); } catch { /* ignore */ }
+  } else if (opts?.query) {
+    specContent = opts.query;
+  }
 
   const eco = {
     query: opts?.query || "",
@@ -90,6 +108,10 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
   } else if (specPath?.includes("config-change.md")) {
     eco.unobservable_factors = ["env var mentioned"];
   }
+
+  // Hoisted git/index state for reproducibility boundary
+  let capturedHeadCommit    = 'unknown';
+  let capturedIndexedCommit = 'unknown';
 
   // ── Conflict detection ─────────────────────────────────────────────────────
   // Build evidence items from available sources
@@ -217,6 +239,10 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
     eco.freshness = freshnessDim;
     capturedFreshnessImpact = impact;
 
+    // Capture for reproducibility boundary (normalize 'none' → 'unknown')
+    capturedHeadCommit    = resolvedSnapshot.headCommit    === 'none' ? 'unknown' : resolvedSnapshot.headCommit;
+    capturedIndexedCommit = resolvedSnapshot.indexedCommit === 'none' ? 'unknown' : resolvedSnapshot.indexedCommit;
+
     // Update the ECO freshness dimension with severity and detail
     const severityMap: Record<string, 'pass' | 'warn' | 'escalate' | 'block'> = {
       none:     'pass',
@@ -318,6 +344,76 @@ export function buildECO(specPath: string | null, targetRoot: string, opts?: { q
     // Mapping quality computation must not crash ECO construction.
     // eco.eco_dimensions.mapping already has a value from scoreDimensions; leave it.
   }
+
+  // ── Reproducibility boundary ───────────────────────────────────────────────
+  // All I/O is complete. Freeze evidence, fingerprint, check cache, build provenance.
+  const frozenItems: FrozenSourceRecord[] = evidence.map(e => ({
+    source: e.source,
+    ref:    e.ref,
+    content: e.content,
+  }));
+
+  const bundle = buildFrozenBundle({
+    specPath,
+    specContent,
+    headCommit:        capturedHeadCommit,
+    indexedCommit:     capturedIndexedCommit,
+    evidenceItems:     frozenItems,
+    normalizerVersion: CALCULATION_VERSION,
+    schemaVersion:     LEDGER_SCHEMA_VERSION,
+  });
+
+  const fingerprint   = computeFingerprint(bundle);
+  const reproducibility = resolveReproducibility(bundle);
+  const unreproducibleReasons = collectUnreproducibleReasons(bundle);
+
+  // ── Cache lookup ──────────────────────────────────────────────────────────
+  const ecoCache = new EcoCache(EcoCache.defaultCacheDir(targetRoot));
+  const cacheEntry = ecoCache.get(fingerprint);
+
+  if (cacheEntry) {
+    // Cache hit: return stored ECO with cache_hit=true
+    const cachedEco = cacheEntry.eco as typeof eco & { provenance: ECOProvenance };
+    cachedEco.provenance = { ...cacheEntry.provenance, cache_hit: true };
+    return cachedEco;
+  }
+
+  // ── Canonicalize ECO arrays ───────────────────────────────────────────────
+  const canonicalized = canonicalizeECO(eco as unknown as Record<string, unknown>);
+  Object.assign(eco, canonicalized);
+
+  // ── Build ECOProvenance ───────────────────────────────────────────────────
+  const provenance: ECOProvenance = {
+    fingerprint,
+    reproducibility,
+    cache_hit: false,
+    bundle_snapshot: {
+      spec_content_hash:       bundle.spec.content_hash || undefined,
+      head_commit:             bundle.repo.head_commit !== 'unknown' ? bundle.repo.head_commit : undefined,
+      indexed_commit:          bundle.index.snapshot_id !== 'unknown' ? bundle.index.snapshot_id : undefined,
+      aggregate_evidence_hash: bundle.retrieval.aggregate_hash,
+      normalizer_version:      bundle.build.normalizer_version,
+      schema_version:          bundle.build.schema_version,
+      config_hash:             bundle.build.config_hash,
+    },
+    ...(unreproducibleReasons.length > 0 ? { unreproducible_reasons: unreproducibleReasons } : {}),
+  };
+
+  // ── Reproducibility policy gating ─────────────────────────────────────────
+  if (reproducibility === 'unbounded') {
+    const laneOrder = ['A', 'B', 'C', 'D', 'E'];
+    const currentIdx = laneOrder.indexOf(eco.forced_lane_minimum);
+    if (currentIdx < 1) {
+      eco.forced_lane_minimum = 'B';
+    }
+    eco.escalation_reasons.push('reproducibility:unbounded_inputs_detected');
+  }
+
+  // Attach provenance
+  (eco as any).provenance = provenance;
+
+  // ── Cache store ───────────────────────────────────────────────────────────
+  ecoCache.set(fingerprint, eco, provenance);
 
   // Ensure output directory exists before writing to disk
   if (!opts?.query) {

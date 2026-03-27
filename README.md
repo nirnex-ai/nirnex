@@ -1410,6 +1410,102 @@ packages/core/src/knowledge/ledger/
 
 ---
 
+### Knowledge Layer — Reproducibility Boundary (Sprint 17)
+
+Sprint 17 adds a **reproducibility boundary** that guarantees the same normalized ECO inputs always produce the same ECO output. This is both a performance optimization (content-addressed cache) and a governance feature (fingerprint = proof of identity).
+
+#### The freeze boundary
+
+All I/O (spec reads, git state, database queries, evidence collection) must complete **before** the freeze. After `buildFrozenBundle()` is called, no live source may be accessed by the scoring pipeline.
+
+```
+[spec read] [git HEAD] [DB snapshot] [evidence items]
+                          │
+                          ▼
+               buildFrozenBundle()  ← pure function, no I/O
+                          │
+                     computeFingerprint()  ← SHA-256 of all deterministic fields
+                          │
+                    ┌─────┴─────┐
+                    │           │
+               cache hit    cache miss
+                    │           │
+             return cached   score dimensions → canonicalize → cache.set()
+```
+
+#### FrozenEvidenceBundle fields
+
+| Section | Fields | Purpose |
+|---------|--------|---------|
+| `spec` | `content_hash`, `normalized_hash`, `path?` | Spec identity |
+| `repo` | `head_commit`, `dirty`, `dirty_scope_hash?` | Git state |
+| `index` | `snapshot_id`, `content_hash`, `built_from_commit?` | DB snapshot |
+| `retrieval` | `sources[]`, `aggregate_hash` | All evidence |
+| `build` | `config_hash`, `normalizer_version`, `schema_version` | Scoring config |
+
+`frozen_at` is captured but **never included in the fingerprint** — it is a volatile timestamp.
+
+#### Reproducibility status
+
+| Status | Meaning | Policy effect |
+|--------|---------|---------------|
+| `strict` | All inputs frozen and deterministically fingerprinted | No escalation |
+| `bounded` | Frozen, but includes provider-dependent artifacts | No escalation |
+| `unbounded` | Live/unfrozen source used | `forced_lane_minimum` escalated to ≥ 'B'; `escalation_reasons` includes `reproducibility:unbounded_inputs_detected` |
+
+Unbounded triggers when `head_commit = 'unknown'` or `snapshot_id = 'unknown'`.
+
+#### Content-addressed ECO cache
+
+Cache files are stored at: `.ai-index/eco-cache/{fingerprint}.json`
+
+- Cache reads and writes are synchronous
+- Write failures are silent (cache is best-effort)
+- Corrupt or unreadable files degrade gracefully (return null → recompute)
+- No TTL or eviction — content-addressed entries are stable forever
+
+#### ECOProvenance
+
+Every ECO output now carries:
+
+```typescript
+eco.provenance = {
+  fingerprint:      string;          // SHA-256 of FrozenEvidenceBundle
+  reproducibility:  'strict' | 'bounded' | 'unbounded';
+  cache_hit:        boolean;
+  bundle_snapshot:  { normalizer_version, schema_version, config_hash, ... };
+  unreproducible_reasons?: string[]; // non-empty when unbounded
+}
+```
+
+#### Canonicalization
+
+All non-deterministic arrays in ECO output are sorted before cache storage and output:
+- `boundary_warnings`, `escalation_reasons`, `hub_nodes_in_path`, `cross_module_edges`, `unobservable_factors` → alphabetical
+- `conflicts` → by `id`
+- `conflict_ledger_events` → by `kind:id`
+- `penalties` → by `type:source`
+
+`stableJsonStringify` sorts object keys at every nesting level for fingerprinting.
+
+#### Module structure
+
+```
+packages/core/src/knowledge/reproducibility/
+  types.ts        — FrozenEvidenceBundle, ECOProvenance, CachedEcoEntry, ReproducibilityStatus
+  fingerprint.ts  — hashContent(), hashSources(), computeFingerprint(), extractFingerprintInputs()
+  freeze.ts       — buildFrozenBundle(), resolveReproducibility(), collectUnreproducibleReasons()
+  canonicalize.ts — canonicalizeECO(), stableJsonStringify(), sortStrings(), sortBy()
+  cache.ts        — EcoCache class (get, set, entryPath, defaultCacheDir)
+  index.ts        — public API
+
+packages/core/src/eco.ts
+  — now freezes inputs after all I/O, fingerprints, checks cache, applies policy gating,
+    canonicalizes, attaches ECOProvenance, stores in cache
+```
+
+---
+
 ### Stage Machine (Determinism + Enforcement)
 
 Nirnex enforces a deterministic **planning pipeline** for every request. The pipeline is not advisory — it validates I/O at every stage boundary and applies typed failure semantics when a stage goes wrong.
