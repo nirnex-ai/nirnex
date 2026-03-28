@@ -199,15 +199,16 @@ export function assembleReport(
     const lastEvent   = stageEvents[stageEvents.length - 1];
 
     // Determine status from the most severe decision result
-    let stageStatus: StageRecord['status'] = 'ok';
-    for (const event of stageEvents) {
-      const status = (event.payload as any).result?.status as string | undefined;
-      if (!status) continue;
-      const mapped = mapDecisionStatusToStageStatus(status);
-      // Priority: blocked > escalated > ok
-      if (mapped === 'blocked') { stageStatus = 'blocked'; break; }
-      if (mapped === 'escalated' && stageStatus !== 'blocked') stageStatus = 'escalated';
-    }
+    // Collect all mapped statuses first, then pick the worst.
+    const mappedStatuses = stageEvents
+      .map(ev => mapDecisionStatusToStageStatus((ev.payload as Record<string, any>)?.result?.status))
+      .filter((s): s is StageRecord['status'] => s !== 'ok' || true);
+    const stageStatus: StageRecord['status'] =
+      mappedStatuses.includes('blocked')   ? 'blocked'   :
+      mappedStatuses.includes('timeout')   ? 'timeout'   :
+      mappedStatuses.includes('degraded')  ? 'degraded'  :
+      mappedStatuses.includes('escalated') ? 'escalated' :
+      'ok';
 
     const stageFailures: FailureRecord[] = [];
     const stageWarnings: FailureRecord[] = [];
