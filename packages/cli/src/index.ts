@@ -13,6 +13,7 @@ import { setupCommand }   from './commands/setup.js';
 import { removeCommand }  from './commands/remove.js';
 import { updateCommand }  from './commands/update.js';
 import { runtimeCommand } from './commands/runtime.js';
+import { reportCommand }  from './commands/report.js';
 
 const [, , command = '', ...rest] = process.argv;
 
@@ -27,6 +28,7 @@ Usage:
   nirnex query    [options]   Query the knowledge graph
   nirnex status   [options]   Show index and project health
   nirnex trace    [options]   View execution traces
+  nirnex report   [options]   Generate a static HTML report from a run
   nirnex replay   [options]   Replay a past analysis run
   nirnex runtime  <sub>       Claude hook pipeline commands (machine-facing)
   nirnex version              Print the installed version
@@ -64,6 +66,9 @@ switch (command) {
     break;
   case 'status':
     statusCommand(rest);
+    break;
+  case 'report':
+    reportCommand(rest);
     break;
   case 'replay':
     replayCommand(rest);

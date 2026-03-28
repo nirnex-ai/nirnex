@@ -391,6 +391,62 @@ nirnex trace --list
 nirnex trace --id tr_xxx
 ```
 
+---
+
+### `nirnex report`
+
+Generate a static HTML report and JSON evidence bundle from a run. Reports are written to `.ai-index/reports/`.
+
+```sh
+# Report for the most recent run
+nirnex report --last
+
+# Report for a specific run by trace ID
+nirnex report --id tr_abc123
+
+# Comparison report — tr_new relative to tr_old as baseline
+nirnex report --compare tr_old tr_new
+
+# List all runs available for reporting
+nirnex report --list
+
+# Write to a custom directory
+nirnex report --last --out /tmp/reports
+```
+
+Each report produces two files:
+
+| File | Purpose |
+|---|---|
+| `<trace_id>.html` | Self-contained static HTML report (open in any browser) |
+| `<trace_id>.json` | Canonical JSON evidence bundle (JSON-first source of truth) |
+
+The comparison report is named `<current_id>-vs-<baseline_id>.html`.
+
+**Output example:**
+
+```
+  ✔ Report generated for tr_abc123
+
+  · HTML  .ai-index/reports/tr_abc123.html
+  · JSON  .ai-index/reports/tr_abc123.json
+
+  Open: file:///path/to/project/.ai-index/reports/tr_abc123.html
+```
+
+**`nirnex report --list` output:**
+
+```
+Nirnex Runs
+
+  Trace ID                           Timestamp                  Records
+  ────────────────────────────────────────────────────────────────────
+  tr_abc123...                       2026-03-29T10:00:00Z       12
+  tr_def456...                       2026-03-28T14:30:00Z       9
+
+  Run nirnex report --last or nirnex report --id <trace_id> to generate a report.
+```
+
 
 
 ### `nirnex override`
@@ -402,6 +458,19 @@ nirnex override --reason "Hotfix" plan .ai/specs/file.md
 ```
 
 
+
+### `nirnex report`
+
+Generate a static HTML report from a run. See the [Report System](#report-system-sprint-25) section for full details.
+
+```sh
+nirnex report --last
+nirnex report --id tr_xxx
+nirnex report --compare tr_old tr_new
+nirnex report --list
+```
+
+---
 
 ### `nirnex replay`
 
