@@ -2608,6 +2608,133 @@ selectStrategy('refactor', 'surgical');
 
 ---
 
+### Report System (Sprint 25)
+
+The Report System produces **static HTML reports** and **canonical JSON evidence bundles** from end-to-end runs. It is non-blocking, read-only relative to execution, and schema-driven.
+
+#### Design principles
+
+- **JSON-first**: the HTML is derived from the JSON bundle, never the reverse
+- **Non-blocking**: report generation never runs on the hot path — execution emits events; reporting consumes them after the terminal state is reached
+- **Truthful over pretty**: integrity issues are surfaced in the report, never silently suppressed
+- **Deterministic rules**: optimisation hints are rule-based inferences, not LLM outputs or root-cause claims
+
+#### What a report answers
+
+A Nirnex report answers five questions in order:
+
+1. **What happened?** — run ID, lane, timestamp, duration, final status, stop condition
+2. **Where did the path diverge?** — stage timeline with status, duration, per-stage failures and warnings
+3. **Why did it happen?** — causal chain tree built from ledger event linkage, not post-hoc inference
+4. **What was weak?** — confidence evolution, dimension breakdown, absent vs conflicting vs stale evidence (distinguished separately)
+5. **What should be optimised?** — deterministic rule-based hints with evidence basis and subsystem reference
+
+#### Failure taxonomy
+
+Every failure in a report maps to a stable code in one of nine top-level classes:
+
+| Class | Example codes |
+|---|---|
+| `input` | `INPUT_INVALID`, `INPUT_AMBIGUOUS` |
+| `intent_scope` | `INTENT_CONFLICT`, `SCOPE_UNBOUND` |
+| `evidence` | `EVIDENCE_ABSENT`, `EVIDENCE_CONFLICT`, `EVIDENCE_STALE_RELEVANT` |
+| `policy` | `POLICY_CONFIDENCE_BLOCK`, `POLICY_EVIDENCE_BLOCK` |
+| `orchestration` | `ORCH_STAGE_TIMEOUT`, `ORCH_INVALID_OUTPUT` |
+| `tooling` | `TOOL_PARSER_FAIL`, `TOOL_FS_ERROR` |
+| `data_integrity` | `DATA_TRACE_LEDGER_MISMATCH`, `DATA_SNAPSHOT_INCOMPLETE` |
+| `performance` | `PERF_STAGE_SLOW`, `PERF_RETRY_EXCESS` |
+| `outcome_quality` | `QUALITY_LOW_CONFIDENCE_SUCCESS`, `QUALITY_OVERRIDE_DEPENDENT` |
+
+Unknown failures map to `UNCLASSIFIED_FAILURE` and are flagged in the integrity section.
+
+Each failure carries four orthogonal attributes: `severity` (info/warning/error/critical), `blocking` (true/false), `recoverability` (automatic/manual/none), and `determinism` (deterministic/environmental/unknown).
+
+#### Causality model
+
+The report builds a directed causal graph from ledger event linkage:
+
+- **Level 1**: local event causality within a stage (e.g. `stale_scope_detected` → `freshness_penalty_applied`)
+- **Level 2**: cross-stage causality (e.g. `mapping_quality_low` → `confidence_reduced` → `policy_blocked`)
+- **Level 3**: outcome causality — chains reaching the final run outcome
+
+Edges are typed: `triggered`, `contributed_to`, `blocked`, `downgraded`, `escalated`, `masked`, `overridden_by`, `derived_from`. The report shows the top 3–5 causal chains to avoid spaghetti.
+
+#### Non-blocking architecture
+
+```
+execution emits events
+→ append-only ledger (SQLite)
+→ run reaches terminal state
+→ background: assembleReport(entries) → RunEvidenceBundle (JSON)
+→ renderHtml(bundle)                   → static HTML file
+```
+
+If report generation fails, Nirnex execution is unaffected. The assembler and renderer are pure functions — no I/O, no side effects.
+
+#### Usage
+
+```typescript
+import { assembleReport, generateOptimisationHints, renderHtml, compareRuns } from '@nirnex/core/runtime/reporting';
+import { LedgerReader } from '@nirnex/core/runtime/ledger';
+
+// After a run completes:
+const reader = new LedgerReader(db);
+const entries = reader.buildTimeline(traceId);
+
+const bundle = assembleReport(entries, { input_ref: specPath });
+bundle.optimisation_hints = generateOptimisationHints(bundle);
+
+// Write JSON bundle (canonical, JSON-first)
+fs.writeFileSync(`reports/${traceId}.json`, JSON.stringify(bundle, null, 2));
+
+// Write HTML report (derived from JSON)
+fs.writeFileSync(`reports/${traceId}.html`, renderHtml(bundle));
+
+// Compare two runs
+const comparison = compareRuns(bundleA, bundleB);
+bundleB.comparison = comparison;
+fs.writeFileSync(`reports/${traceId}-vs-${baselineId}.html`, renderHtml(bundleB));
+```
+
+#### Report integrity
+
+Every report includes a visible **integrity section**. If validation finds issues, they are listed — the report never pretends to be more complete than it is.
+
+Integrity checks include:
+- Missing terminal outcome event
+- Missing expected pipeline stages
+- Broken causal references (cause IDs pointing to non-existent events)
+- Unclassified failures (codes not in the taxonomy)
+- Confidence checkpoint ordering inconsistencies
+- Empty evidence bundle
+
+#### Module structure
+
+```
+packages/core/src/runtime/reporting/
+  types.ts                 — RunEvidenceBundle, ReportEvent, FailureRecord, CausalGraph,
+                             ConfidenceReportSnapshot, KnowledgeHealthSnapshot,
+                             OptimisationHint, RunComparison, ReportIntegrityResult
+  failure-taxonomy.ts      — FAILURE_TAXONOMY registry, lookupFailureCode(), TaxonomyEntry
+  causality.ts             — buildCausalGraph(), findPrimaryChains(), buildCausalChain()
+  validators.ts            — validateBundle(), computeIntegrityStatus()
+  assembler.ts             — assembleReport() — pure, no I/O
+  optimization-rules.ts    — generateOptimisationHints() — 9 deterministic rules
+  renderer/
+    html.ts                — renderHtml() — produces self-contained static HTML
+    sections/
+      summary.ts           — run header section
+      timeline.ts          — stage timeline section
+      failures.ts          — failure matrix section (grouped by class)
+      causality.ts         — causal chains section
+      confidence.ts        — confidence & evidence section
+      optimization.ts      — optimisation hints section
+      integrity.ts         — report integrity section
+  index.ts                 — public API + compareRuns()
+```
+
+---
+
 ## Troubleshooting
 
 **Index empty**
