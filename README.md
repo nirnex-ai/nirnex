@@ -592,3 +592,23 @@ Spec files improve planning accuracy.
 
 > **Note:** Maximum 2 intents per spec. More than 2 → split the spec. Composite intent increases execution strictness.
 
+## 📚 Following details are in the docs/CORE.MD
+
+### Core Concepts
+- [Execution Context Object (ECO)](CORE.MD#execution-context-object-eco)
+- [Confidence Score](CORE.MD#confidence-score)
+- [Execution Lanes](CORE.MD#execution-lanes)
+- [Constraint Dimensions](CORE.MD#constraint-dimensions)
+
+### Knowledge Layer
+- [Knowledge Layer — ECO Dimension Computation](CORE.MD#knowledge-layer--eco-dimension-computation)
+- [Scope-Aware Freshness](CORE.MD#scope-aware-freshness)
+- [Conflict Detection](CORE.MD#conflict-detection)
+
+### Governance & Observability
+- [Decision Ledger](CORE.MD#decision-ledger)
+- [Hook Audit Trail](CORE.MD#hook-audit-trail)
+- [Evidence Sufficiency Gate](CORE.MD#evidence-sufficiency-gate)
+
+### Execution Control
+- [Stage Timeout Handling (Sprint 15)](CORE.MD#stage-timeout-handling-sprint-15)
