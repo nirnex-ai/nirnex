@@ -14,6 +14,7 @@ import { removeCommand }  from './commands/remove.js';
 import { updateCommand }  from './commands/update.js';
 import { runtimeCommand } from './commands/runtime.js';
 import { reportCommand }  from './commands/report.js';
+import { hookLogCommand } from './commands/hook-log.js';
 
 const [, , command = '', ...rest] = process.argv;
 
@@ -30,6 +31,7 @@ Usage:
   nirnex trace    [options]   View execution traces
   nirnex report   [options]   Generate a static HTML report from a run
   nirnex replay   [options]   Replay a past analysis run
+  nirnex hook-log [options]   Inspect hook lifecycle events and contract violations
   nirnex runtime  <sub>       Claude hook pipeline commands (machine-facing)
   nirnex version              Print the installed version
   nirnex update               Update to the latest version
@@ -75,6 +77,9 @@ switch (command) {
     break;
   case 'trace':
     traceCommand(rest);
+    break;
+  case 'hook-log':
+    hookLogCommand(rest);
     break;
   case 'runtime':
     runtimeCommand(rest).catch(console.error);

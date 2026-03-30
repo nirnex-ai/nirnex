@@ -4,8 +4,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadActiveEnvelope } from './session.js';
-import { HookPreToolUse, GuardDecision, TaskEnvelope } from './types.js';
+import { loadActiveEnvelope, appendHookEvent, generateEventId, generateRunId } from './session.js';
+import { HookPreToolUse, GuardDecision, TaskEnvelope, HookInvocationStartedEvent } from './types.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -90,6 +90,7 @@ function evaluateGuard(envelope: TaskEnvelope, toolName: string, toolInput: Reco
 }
 
 export async function runGuard(): Promise<void> {
+  const runId = generateRunId();
   const raw = await readStdin();
 
   let hookData: HookPreToolUse = {
@@ -109,6 +110,18 @@ export async function runGuard(): Promise<void> {
 
   const repoRoot = process.env.NIRNEX_REPO_ROOT ?? process.cwd();
   const sessionId = hookData.session_id ?? process.env.NIRNEX_SESSION_ID ?? '';
+
+  const invocationEvent: HookInvocationStartedEvent = {
+    event_id: generateEventId(),
+    timestamp: new Date().toISOString(),
+    session_id: sessionId,
+    task_id: 'none',
+    run_id: runId,
+    hook_stage: 'guard',
+    event_type: 'HookInvocationStarted',
+    payload: { stage: 'guard', cwd: process.cwd(), repo_root: repoRoot, pid: process.pid },
+  };
+  appendHookEvent(repoRoot, sessionId, invocationEvent);
 
   // Allow if not in a Nirnex project
   if (!fs.existsSync(path.join(repoRoot, 'nirnex.config.json'))) {

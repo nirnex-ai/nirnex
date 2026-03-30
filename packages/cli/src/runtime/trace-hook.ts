@@ -4,8 +4,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadActiveEnvelope, appendTraceEvent, generateEventId } from './session.js';
-import { HookPostToolUse, TraceEvent, ContextOutput } from './types.js';
+import { loadActiveEnvelope, appendTraceEvent, appendHookEvent, generateEventId, generateRunId } from './session.js';
+import { HookPostToolUse, TraceEvent, ContextOutput, HookInvocationStartedEvent } from './types.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -60,6 +60,7 @@ function detectDeviations(
 }
 
 export async function runTraceHook(): Promise<void> {
+  const runId = generateRunId();
   const raw = await readStdin();
 
   let hookData: HookPostToolUse = {
@@ -78,6 +79,18 @@ export async function runTraceHook(): Promise<void> {
 
   const repoRoot = process.env.NIRNEX_REPO_ROOT ?? process.cwd();
   const sessionId = hookData.session_id ?? process.env.NIRNEX_SESSION_ID ?? '';
+
+  const invocationEvent: HookInvocationStartedEvent = {
+    event_id: generateEventId(),
+    timestamp: new Date().toISOString(),
+    session_id: sessionId,
+    task_id: 'none',
+    run_id: runId,
+    hook_stage: 'trace',
+    event_type: 'HookInvocationStarted',
+    payload: { stage: 'trace', cwd: process.cwd(), repo_root: repoRoot, pid: process.pid },
+  };
+  appendHookEvent(repoRoot, sessionId, invocationEvent);
 
   if (!fs.existsSync(path.join(repoRoot, 'nirnex.config.json'))) {
     process.exit(0);

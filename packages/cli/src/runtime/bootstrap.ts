@@ -6,8 +6,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { createSession, saveSession, loadSession } from './session.js';
-import { HookSessionStart } from './types.js';
+import { createSession, saveSession, loadSession, appendHookEvent, generateEventId, generateRunId } from './session.js';
+import { HookSessionStart, HookInvocationStartedEvent } from './types.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -37,6 +37,7 @@ function getIndexFreshness(repoRoot: string): { freshness: 'fresh' | 'stale' | '
 }
 
 export async function runBootstrap(): Promise<void> {
+  const runId = generateRunId();
   const raw = await readStdin();
   let hookData: HookSessionStart = { session_id: 'unknown' };
 
@@ -48,6 +49,19 @@ export async function runBootstrap(): Promise<void> {
 
   const sessionId = hookData.session_id || `sess_${Date.now().toString(36)}`;
   const repoRoot = process.cwd();
+
+  // Emit invocation evidence as first action — before any early exits
+  const invocationEvent: HookInvocationStartedEvent = {
+    event_id: generateEventId(),
+    timestamp: new Date().toISOString(),
+    session_id: sessionId,
+    task_id: 'none',
+    run_id: runId,
+    hook_stage: 'bootstrap',
+    event_type: 'HookInvocationStarted',
+    payload: { stage: 'bootstrap', cwd: repoRoot, repo_root: repoRoot, pid: process.pid },
+  };
+  appendHookEvent(repoRoot, sessionId, invocationEvent);
 
   // Verify project is Nirnex-enabled
   const configPath = path.join(repoRoot, 'nirnex.config.json');

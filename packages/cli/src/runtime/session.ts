@@ -3,7 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { NirnexSession, TaskEnvelope, TraceEvent } from './types.js';
+import { NirnexSession, TaskEnvelope, TraceEvent, HookEvent } from './types.js';
 
 export const RUNTIME_DIR = '.ai-index/runtime';
 
@@ -124,4 +124,46 @@ export function generateEventId(): string {
   const ts = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 6);
   return `evt_${ts}_${rand}`;
+}
+
+export function generateRunId(): string {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `run_${ts}_${rand}`;
+}
+
+// ─── Hook lifecycle events ─────────────────────────────────────────────────
+// Separate from trace events (tool executions) to avoid breaking loadTraceEvents()
+// readers that cast every line to TraceEvent.
+
+function hookEventsPath(repoRoot: string, sessionId: string): string {
+  return path.join(eventsDir(repoRoot, sessionId), 'hook-events.jsonl');
+}
+
+export function appendHookEvent(repoRoot: string, sessionId: string, event: HookEvent): void {
+  // Validate required universal fields before write
+  if (!event.event_id || !event.timestamp || !event.session_id || !event.hook_stage || !event.event_type) {
+    // Malformed mandatory record: log to debug but never crash execution
+    return;
+  }
+  const dir = eventsDir(repoRoot, sessionId);
+  ensureDir(dir);
+  try {
+    fs.appendFileSync(hookEventsPath(repoRoot, sessionId), JSON.stringify(event) + '\n', 'utf8');
+  } catch {
+    // Best-effort: never crash hook execution on write failure
+  }
+}
+
+export function loadHookEvents(repoRoot: string, sessionId: string): HookEvent[] {
+  const p = hookEventsPath(repoRoot, sessionId);
+  if (!fs.existsSync(p)) return [];
+  return fs
+    .readFileSync(p, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map(line => {
+      try { return JSON.parse(line) as HookEvent; } catch { return null; }
+    })
+    .filter((e): e is HookEvent => e !== null);
 }
