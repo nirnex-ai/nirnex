@@ -55,8 +55,9 @@ function extractExitCode(toolResult: Record<string, unknown> | undefined): numbe
   }
 
   // 4: parse output string for EXIT_CODE:N or "exit code N" patterns
+  // Include stdout — Claude Code's actual output field for Bash results
   const outputStr = String(
-    toolResult.output ?? toolResult.content ?? toolResult.text ?? toolResult.result ?? ''
+    toolResult.output ?? toolResult.content ?? toolResult.text ?? toolResult.result ?? toolResult.stdout ?? ''
   );
   if (outputStr) {
     const m = outputStr.match(/EXIT_CODE[:\s]+(\d+)/i)
@@ -66,6 +67,13 @@ function extractExitCode(toolResult: Record<string, unknown> | undefined): numbe
 
   // 5: boolean error flag
   if (toolResult.is_error === true || toolResult.isError === true) return 1;
+
+  // 6: Claude Code zero-exit signature — stdout present + interrupted === false.
+  // Non-zero exits carry an explicit exit_code caught by probes 1–2 above.
+  // This probe only fires when all error signals are absent, meaning the command
+  // completed without error. An interrupted command has interrupted: true, so
+  // that case is not confused with success.
+  if (typeof toolResult.stdout === 'string' && toolResult.interrupted === false) return 0;
 
   return null;
 }
@@ -255,7 +263,7 @@ export async function runValidate(): Promise<void> {
       // Verification was attempted — check exit code now so we can emit a blocking
       // violation immediately rather than only setting verificationStatus later.
       const bashEvents = events.filter(e => e.tool === 'Bash');
-      const verificationBashEarly = bashEvents.find(e => {
+      const verificationBashEarly = bashEvents.findLast(e => {
         const cmd = String((e.tool_input as any)?.command ?? '');
         if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
         return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
@@ -309,7 +317,7 @@ export async function runValidate(): Promise<void> {
   } else if (mandatoryVerificationRequired) {
     // Verification was attempted — classify by exit code if available, else unknown
     const bashEvents = events.filter(e => e.tool === 'Bash');
-    const verificationBash = bashEvents.find(e => {
+    const verificationBash = bashEvents.findLast(e => {
       const cmd = String((e.tool_input as any)?.command ?? '');
       if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
       return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);

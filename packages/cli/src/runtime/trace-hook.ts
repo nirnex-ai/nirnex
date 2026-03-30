@@ -118,7 +118,7 @@ export async function runTraceHook(): Promise<void> {
     timestamp: new Date().toISOString(),
     tool: hookData.tool_name,
     tool_input: hookData.tool_input,
-    tool_result: hookData.tool_result,
+    tool_result: hookData.tool_response ?? hookData.tool_result,
     affected_files: affectedFiles,
     deviation_flags: deviationFlags,
   };

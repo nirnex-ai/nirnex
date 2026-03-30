@@ -7,10 +7,10 @@
       "@nirnex/parser": ["../parser/src/index.ts"],
       "@nirnex/parser/dist/*.js": ["../parser/src/*.ts"]
     },
-    "target": "ES2022",
+    "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022"],
+    "lib": ["ES2023"],
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,

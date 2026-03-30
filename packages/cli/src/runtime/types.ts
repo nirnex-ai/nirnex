@@ -222,7 +222,8 @@ export interface HookPostToolUse {
   hook_event_name: 'PostToolUse';
   tool_name: string;
   tool_input: Record<string, unknown>;
-  tool_result: Record<string, unknown>;
+  tool_response?: Record<string, unknown>; // Claude Code's actual field name (PostToolUse)
+  tool_result?: Record<string, unknown>;   // fallback / forward-compat alias
 }
 
 export interface HookStop {

@@ -548,7 +548,7 @@ Events are written to `.ai-index/runtime/events/{sessionId}/hook-events.jsonl` a
 | Code | Severity | Stage | Meaning |
 |---|---|---|---|
 | `VERIFICATION_REQUIRED_NOT_RUN` | blocking | validate | Verification was mandatory (explicit instruction, acceptance criteria, or lane policy) but no matching command appeared in the trace |
-| `COMMAND_EXIT_NONZERO` | blocking | validate | Verification command ran but exited with a non-zero code |
+| `COMMAND_EXIT_NONZERO` | blocking | validate | Verification command ran but exited non-zero, **or** exit code could not be determined under mandatory verification (unknown outcome = cannot confirm pass = block) |
 | `BLOCKED_PATH_DEVIATION` | blocking | validate | A file in a blocked path was modified |
 | `FORCED_UNKNOWN_NO_VERIFICATION` | blocking | validate | Lane B/C task had `forced_unknown=true` but no human verification |
 | `LANE_C_EMPTY_TRACE` | blocking | validate | Lane C task completed with no recorded tool events |

@@ -658,7 +658,7 @@ Every `ContractViolationDetected` event carries a `reason_code` from a finite, s
 | `BLOCKED_PATH_DEVIATION` | blocking | A file in a blocked path was modified |
 | `LANE_C_DEADLOCK` | blocking | Lane C task expected scope modules untouched |
 | `VERIFICATION_REQUIRED_NOT_RUN` | blocking | Mandatory verification declared, no verification command found in trace |
-| `COMMAND_EXIT_NONZERO` | blocking | Verification command ran but exited with non-zero code |
+| `COMMAND_EXIT_NONZERO` | blocking | Verification command ran but exited non-zero, **or** exit code could not be determined under mandatory verification — unknown outcome cannot satisfy a mandatory pass requirement |
 | `ACCEPTANCE_NOT_EVALUATED` | advisory | Acceptance criteria exist but no tool events recorded |
 | `VERIFICATION_NOT_REQUESTED` | advisory | Verification was not required (informational) |
 | `SUMMARY_CONTRADICTS_EVIDENCE` | advisory | Summary claims success but evidence shows failure |
@@ -685,7 +685,7 @@ Advisory violations are surfaced — they are never silently dropped. The severi
 | `pass` | Verification command ran and exited with code 0 |
 | `fail` | Verification command ran and exited non-zero |
 | `skipped` | Verification was mandatory but no verification command was found in trace |
-| `unknown` | Verification command ran but exit code could not be determined |
+| `unknown` | Verification command ran but exit code could not be determined. Under mandatory verification this triggers a blocking `COMMAND_EXIT_NONZERO` violation — the burden of proof is on the pass, not the block. |
 | `not_requested` | No verification obligation existed for this task |
 
 #### Non-negotiable invariants
