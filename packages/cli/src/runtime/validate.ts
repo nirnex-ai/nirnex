@@ -40,7 +40,16 @@ function readStdin(): Promise<string> {
  *
  * Returns the exit code as a number, or null if it cannot be determined.
  */
-function extractExitCode(toolResult: Record<string, unknown> | undefined): number | null {
+/**
+ * @param toolResult  The tool_result / tool_response object from the trace event.
+ * @param command     The raw Bash command string (from tool_input.command).
+ *                    Used to gate probe 6 — required to distinguish direct commands
+ *                    from shell compositions.
+ */
+function extractExitCode(
+  toolResult: Record<string, unknown> | undefined,
+  command = '',
+): number | null {
   if (!toolResult) return null;
 
   // 1 & 2: direct numeric fields
@@ -54,8 +63,8 @@ function extractExitCode(toolResult: Record<string, unknown> | undefined): numbe
     if (typeof meta.exitCode  === 'number') return meta.exitCode  as number;
   }
 
-  // 4: parse output string for EXIT_CODE:N or "exit code N" patterns
-  // Include stdout — Claude Code's actual output field for Bash results
+  // 4: parse output string for EXIT_CODE:N or "exit code N" patterns.
+  // Include stdout — Claude Code's actual output field for Bash results.
   const outputStr = String(
     toolResult.output ?? toolResult.content ?? toolResult.text ?? toolResult.result ?? toolResult.stdout ?? ''
   );
@@ -69,11 +78,24 @@ function extractExitCode(toolResult: Record<string, unknown> | undefined): numbe
   if (toolResult.is_error === true || toolResult.isError === true) return 1;
 
   // 6: Claude Code zero-exit signature — stdout present + interrupted === false.
-  // Non-zero exits carry an explicit exit_code caught by probes 1–2 above.
-  // This probe only fires when all error signals are absent, meaning the command
-  // completed without error. An interrupted command has interrupted: true, so
-  // that case is not confused with success.
-  if (typeof toolResult.stdout === 'string' && toolResult.interrupted === false) return 0;
+  //
+  // IMPORTANT: this probe is only safe for *direct* commands.
+  //
+  // When Claude wraps a command in shell composition — e.g.
+  //   `npm run lint 2>&1; echo "EXIT_CODE:$?"`
+  // the overall Bash invocation exits 0 (because `echo` always succeeds),
+  // so Claude Code sees exit 0 and emits no explicit exit_code field.
+  // If the underlying command produces large output (thousands of ESLint errors),
+  // Claude Code's stdout truncation drops the trailing "EXIT_CODE:1" text before
+  // the PostToolUse hook receives it — probe 4 finds nothing, and probe 6 would
+  // then WRONGLY infer exit 0.
+  //
+  // Guard: suppress probe 6 when the command contains shell composition operators
+  // (; && ||). For those commands probe 4 is the only reliable path; if probe 4
+  // found nothing (output was truncated) we return null → mandatory verification
+  // treats null as a blocking failure (cannot confirm pass).
+  const usesShellComposition = command.length > 0 && /;|&&|\|\|/.test(command);
+  if (!usesShellComposition && typeof toolResult.stdout === 'string' && toolResult.interrupted === false) return 0;
 
   return null;
 }
@@ -301,7 +323,8 @@ export async function runValidate(): Promise<void> {
         return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
       });
       if (verificationBashEarly) {
-        const exitCode = extractExitCode(verificationBashEarly.tool_result);
+        const vcmdEarly = String((verificationBashEarly.tool_input as any)?.command ?? '');
+        const exitCode = extractExitCode(verificationBashEarly.tool_result, vcmdEarly);
         if (exitCode !== null && exitCode !== 0) {
           // Proven non-zero exit: blocking violation
           recordViolation(
@@ -354,7 +377,8 @@ export async function runValidate(): Promise<void> {
       return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
     });
     if (verificationBash) {
-      const exitCode = extractExitCode(verificationBash.tool_result);
+      const vcmd = String((verificationBash.tool_input as any)?.command ?? '');
+      const exitCode = extractExitCode(verificationBash.tool_result, vcmd);
       if (exitCode === 0) verificationStatus = 'pass';
       else if (exitCode !== null) verificationStatus = 'fail';
       else verificationStatus = 'unknown';
