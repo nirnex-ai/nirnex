@@ -110,9 +110,34 @@ export async function runValidate(): Promise<void> {
   };
   appendHookEvent(repoRoot, sessionId, invocationEvent);
 
+  // Helper: emit a minimal FinalOutcomeDeclared for early-exit paths so the hook-log
+  // is never left with an orphaned HookInvocationStarted.
+  function emitEarlyAllow(reason: string): void {
+    const ev: FinalOutcomeDeclaredEvent = {
+      event_id: generateEventId(),
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      task_id: 'none',
+      run_id: runId,
+      hook_stage: 'validate',
+      event_type: 'FinalOutcomeDeclared',
+      payload: {
+        decision: 'allow',
+        violation_count: 0,
+        blocking_violation_count: 0,
+        advisory_violation_count: 0,
+        reason_codes: [],
+        verification_status: 'not_requested' as VerificationStatus,
+        acceptance_status: 'not_requested' as VerificationStatus,
+        envelope_status: reason,
+      },
+    };
+    appendHookEvent(repoRoot, sessionId, ev);
+    process.stdout.write(JSON.stringify({ decision: 'allow' } as ValidateDecision));
+  }
+
   if (!fs.existsSync(path.join(repoRoot, 'nirnex.config.json'))) {
-    const out: ValidateDecision = { decision: 'allow' };
-    process.stdout.write(JSON.stringify(out));
+    emitEarlyAllow('nirnex_not_configured');
     process.exit(0);
   }
 
@@ -120,7 +145,7 @@ export async function runValidate(): Promise<void> {
 
   // No active envelope → nothing to validate
   if (!envelope) {
-    process.stdout.write(JSON.stringify({ decision: 'allow' } as ValidateDecision));
+    emitEarlyAllow('no_active_envelope');
     process.exit(0);
   }
 
@@ -168,6 +193,13 @@ export async function runValidate(): Promise<void> {
     violations.push({ event: ev, severity });
     proseReasons.push(`[${reasonCode}] ${violatedContract}: expected ${expected}, got ${actual}`);
   }
+
+  // Status variables declared here so the catch block can assign safe defaults
+  // if anything in the reconciliation or status-derivation section throws.
+  let verificationStatus: VerificationStatus = 'unknown';
+  let acceptanceStatus: VerificationStatus = 'unknown';
+
+  try {
 
   // ── Reconciliation checks ──────────────────────────────────────────────
 
@@ -309,7 +341,6 @@ export async function runValidate(): Promise<void> {
 
   // ── Derive final verification/acceptance status ────────────────────────
 
-  let verificationStatus: VerificationStatus;
   if (!mandatoryVerificationRequired && verificationSource === 'none') {
     verificationStatus = 'not_requested';
   } else if (violations.some(v => v.event.payload.reason_code === ReasonCode.VERIFICATION_REQUIRED_NOT_RUN)) {
@@ -334,7 +365,7 @@ export async function runValidate(): Promise<void> {
     verificationStatus = 'not_requested';
   }
 
-  const acceptanceStatus: VerificationStatus =
+  acceptanceStatus =
     envelope.acceptance_criteria.length === 0
       ? 'not_requested'
       : violations.some(v => v.event.payload.reason_code === ReasonCode.ACCEPTANCE_NOT_EVALUATED)
@@ -342,6 +373,37 @@ export async function runValidate(): Promise<void> {
         : events.length > 0
           ? 'unknown'   // events ran but we cannot auto-verify AC satisfaction without explicit checks
           : 'skipped';
+
+  } catch (reconciliationErr) {
+    // The reconciliation or status-derivation threw an unexpected error.
+    // Record it as an advisory (never crash the validate hook silently),
+    // keep whatever violations were already collected, and leave statuses as
+    // their safe 'unknown' defaults so the decision engine still runs.
+    const errMsg = reconciliationErr instanceof Error
+      ? reconciliationErr.message
+      : String(reconciliationErr);
+    proseReasons.push(`[INTERNAL] Reconciliation error: ${errMsg}`);
+    const internalErrEvent: ContractViolationDetectedEvent = {
+      event_id: generateEventId(),
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      task_id: envelope.task_id,
+      run_id: runId,
+      hook_stage: 'validate',
+      event_type: 'ContractViolationDetected',
+      status: 'violated',
+      payload: {
+        reason_code: ReasonCode.LEDGER_WRITE_FAILED, // re-use nearest advisory code
+        violated_contract: 'Validate reconciliation must not throw an unhandled exception',
+        expected: 'no internal error',
+        actual: errMsg,
+        severity: 'advisory',
+        blocking_action_taken: false,
+      },
+    };
+    appendHookEvent(repoRoot, sessionId, internalErrEvent);
+    violations.push({ event: internalErrEvent, severity: 'advisory' });
+  }
 
   // ── Decision: blocking violations → block; advisory only → allow ──────
 

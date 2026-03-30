@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildEnvelope, formatEnvelopeContext } from './envelope.js';
-import { loadSession, saveSession, saveEnvelope, generateTaskId, appendHookEvent, generateEventId, generateRunId } from './session.js';
+import { loadSession, saveSession, createSession, saveEnvelope, generateTaskId, appendHookEvent, generateEventId, generateRunId } from './session.js';
 import {
   HookPromptSubmit,
   ContextOutput,
@@ -141,15 +141,15 @@ export async function runEntry(): Promise<void> {
 
   const envelope = buildEnvelope(eco, prompt, sessionId);
 
-  // Persist envelope and link to session
+  // Persist envelope and link to session.
+  // If the session file does not exist (bootstrap hook missed, or session was pruned),
+  // create it here so validate can always resolve the active task via session.active_task_id.
   saveEnvelope(repoRoot, envelope);
 
-  const session = loadSession(repoRoot, sessionId);
-  if (session) {
-    session.active_task_id = envelope.task_id;
-    session.tasks.push(envelope.task_id);
-    saveSession(repoRoot, session);
-  }
+  const session = loadSession(repoRoot, sessionId) ?? createSession(repoRoot, sessionId);
+  session.active_task_id = envelope.task_id;
+  if (!session.tasks.includes(envelope.task_id)) session.tasks.push(envelope.task_id);
+  saveSession(repoRoot, session);
 
   // Emit obligation record — proves the system knew what was required at task start
   const verificationCommands = extractVerificationCommands(prompt);

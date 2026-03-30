@@ -608,7 +608,7 @@ One file per session. Append-only. Never mixed with `events.jsonl` (tool executi
 | `InputEnvelopeCaptured` | `entry` | After TaskEnvelope is built — records what obligations the system knew about |
 | `ContractViolationDetected` | `validate` | Once per failed reconciliation check — structured evidence of each violation |
 | `StageCompleted` | `entry`, `validate` | At the end of a stage — explicit pass/fail boundary marker |
-| `FinalOutcomeDeclared` | `validate` | Before `process.exit` — the reconciled final decision with full evidence summary |
+| `FinalOutcomeDeclared` | `validate` | Emitted on **every** exit path — normal reconciliation, early exits (`nirnex_not_configured`, `no_active_envelope`), and internal reconciliation errors. `envelope_status` in the payload records the exit path for early exits. |
 
 Every event carries these universal fields: `event_id`, `timestamp`, `session_id`, `task_id`, `run_id`, `hook_stage`, `event_type`.
 
@@ -690,11 +690,12 @@ Advisory violations are surfaced — they are never silently dropped. The severi
 
 #### Non-negotiable invariants
 
-1. No run may be treated as completed/allowed without a `FinalOutcomeDeclared` event in the stream
+1. `HookInvocationStarted` is **always** followed by `FinalOutcomeDeclared` in the same session — no validate invocation may be left orphaned. This is enforced by three mechanisms: the `emitEarlyAllow()` helper covers both early-exit paths, and a top-level try-catch around the reconciliation block ensures `FinalOutcomeDeclared` is written even if reconciliation throws. The `envelope_status` payload field carries `nirnex_not_configured` or `no_active_envelope` for early exits, making the reason visible in the hook-log.
 2. `FinalOutcomeDeclared.decision: allow` requires `blocking_violation_count === 0`
 3. Every block condition in `validate` emits `ContractViolationDetected` with a `reason_code` — prose messages are secondary
 4. Missing evidence is `status: 'unknown'` or `'skipped'` — never silently omitted
 5. The `hook-events.jsonl` stream is for runtime lifecycle visibility; the Decision Ledger is for governance records — these two stores serve different purposes and must not be conflated. The `validate` hook intentionally bridges both: it writes lifecycle events to `hook-events.jsonl` **and** writes a `run_outcome_summary` record to `.aidos-ledger.db` so `nirnex report --list` reflects every completed task. If the ledger write fails, a `LEDGER_WRITE_FAILED` advisory is emitted to the hook stream — the failure is never silent.
+6. The `entry` hook always writes `session.active_task_id` before it exits — if the session file does not exist (bootstrap hook missed or session was pruned), `entry` creates it via `createSession()`. This guarantees `validate`'s `loadActiveEnvelope()` never returns `null` due to a missing session file.
 
 #### Module structure
 
