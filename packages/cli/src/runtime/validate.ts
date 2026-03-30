@@ -82,6 +82,8 @@ export async function runValidate(): Promise<void> {
     .at(-1);
   const verificationSource = (obligationEvent as any)?.payload?.verification_requirement_source ?? 'unknown';
   const mandatoryVerificationRequired = (obligationEvent as any)?.payload?.mandatory_verification_required ?? false;
+  // Commands explicitly extracted at entry time (e.g. ["npm run lint"]) — used for precise matching below
+  const storedVerificationCommands: string[] = (obligationEvent as any)?.payload?.verification_commands ?? [];
 
   const violations: ViolationRecord[] = [];
   const proseReasons: string[] = [];
@@ -191,7 +193,10 @@ export async function runValidate(): Promise<void> {
     const bashEvents = events.filter(e => e.tool === 'Bash');
     const verificationAttempted = bashEvents.some(e => {
       const cmd = String((e.tool_input as any)?.command ?? '');
-      return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test)\b/i.test(cmd);
+      // First: match against the explicit commands captured at entry time (highest fidelity)
+      if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
+      // Fallback: broad heuristic covering test and script runner invocations
+      return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
     });
 
     if (!verificationAttempted) {
@@ -229,7 +234,8 @@ export async function runValidate(): Promise<void> {
     const bashEvents = events.filter(e => e.tool === 'Bash');
     const verificationBash = bashEvents.find(e => {
       const cmd = String((e.tool_input as any)?.command ?? '');
-      return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test)\b/i.test(cmd);
+      if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
+      return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
     });
     if (verificationBash) {
       const exitCode = (verificationBash.tool_result as any)?.exit_code;
@@ -316,6 +322,43 @@ export async function runValidate(): Promise<void> {
       // Non-fatal
     }
     process.stdout.write(JSON.stringify({ decision: 'allow' } as ValidateDecision));
+  }
+
+  // Write run outcome to the ledger so `nirnex report --list` records this run.
+  // This is the missing link: hook events go to JSONL, but report reads the SQLite ledger.
+  try {
+    const { initLedgerDb, appendLedgerEntry, getLedgerDbPath } = await import('@nirnex/core/dist/ledger.js');
+    const { randomUUID } = await import('node:crypto');
+    const runTimestamp = new Date().toISOString();
+    const ledgerEntry = {
+      schema_version: '1.0.0' as const,
+      ledger_id: randomUUID(),
+      trace_id: envelope.task_id,
+      request_id: sessionId,
+      session_id: sessionId,
+      timestamp: runTimestamp,
+      stage: 'analysis' as const,
+      record_type: 'run_outcome_summary' as const,
+      actor: 'system' as const,
+      payload: {
+        kind: 'run_outcome_summary' as const,
+        summarized_trace_id: envelope.task_id,
+        completion_state: decision === 'block' ? ('refused' as const) : ('merged' as const),
+        final_lane: envelope.lane as 'A' | 'B' | 'C',
+        final_confidence: null,
+        had_refusal: decision === 'block',
+        had_override: false,
+        forced_unknown_applied: envelope.eco_summary.forced_unknown,
+        evidence_gate_failed: blockingViolations.length > 0,
+        stages_completed: events.length,
+        run_timestamp: runTimestamp,
+      },
+    };
+    const db = initLedgerDb(getLedgerDbPath(repoRoot));
+    appendLedgerEntry(db, ledgerEntry);
+    db.close();
+  } catch {
+    // Non-fatal: ledger write must never block task execution
   }
 
   process.exit(0);

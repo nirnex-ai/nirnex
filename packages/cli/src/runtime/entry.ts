@@ -26,11 +26,16 @@ function readStdin(): Promise<string> {
 }
 
 // Extract explicit verification commands from the user prompt.
-// Looks for patterns like "run npm test", "verify with pytest", etc.
+// Looks for patterns like "run npm test", "run npm run lint", "verify with pytest", etc.
 function extractVerificationCommands(prompt: string): string[] {
   const commands: string[] = [];
   const patterns = [
+    // "run npm test", "run yarn test", etc.
     /run\s+(npm\s+test|yarn\s+test|pnpm\s+test|pytest|cargo\s+test|go\s+test|make\s+test|jest|mocha|vitest)/gi,
+    // "run npm run lint", "run yarn run build", etc.
+    /run\s+((?:npm|yarn|pnpm)\s+run\s+[\w:.-]+)/gi,
+    // Bare "npm run lint", "npm run build", "npm run typecheck" etc. without "run " prefix
+    /\b((?:npm|yarn|pnpm)\s+run\s+(?:lint|build|check|typecheck|type-check|format|prettier|eslint|tsc)[\w:.-]*)\b/gi,
     /verify\s+(?:with\s+|by\s+running\s+)?([a-z][\w\s-]{2,40})/gi,
     /check\s+(?:that\s+)?(?:tests?\s+pass|build\s+succeeds|lint\s+passes)/gi,
     /ensure\s+(?:tests?\s+pass|all\s+tests?\s+green|no\s+lint\s+errors?)/gi,
