@@ -104,6 +104,7 @@ export const ReasonCode = {
   LANE_C_EMPTY_TRACE: 'LANE_C_EMPTY_TRACE',
   LANE_C_DEADLOCK: 'LANE_C_DEADLOCK',
   ECO_BLOCKED: 'ECO_BLOCKED',
+  LEDGER_WRITE_FAILED: 'LEDGER_WRITE_FAILED',
 } as const;
 
 export type ReasonCodeValue = typeof ReasonCode[keyof typeof ReasonCode];

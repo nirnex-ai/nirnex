@@ -326,6 +326,15 @@ export async function runValidate(): Promise<void> {
 
   // Write run outcome to the ledger so `nirnex report --list` records this run.
   // This is the missing link: hook events go to JSONL, but report reads the SQLite ledger.
+  // completion_state mapping:
+  //   block (blocking violations)        → 'refused'
+  //   allow with advisory violations     → 'escalated'  (passed gate but flagged for attention)
+  //   allow with no violations           → 'merged'     (cleanly completed)
+  const completionState: 'refused' | 'escalated' | 'merged' =
+    decision === 'block' ? 'refused' :
+    advisoryViolations.length > 0 ? 'escalated' :
+    'merged';
+
   try {
     const { initLedgerDb, appendLedgerEntry, getLedgerDbPath } = await import('@nirnex/core/dist/ledger.js');
     const { randomUUID } = await import('node:crypto');
@@ -343,7 +352,7 @@ export async function runValidate(): Promise<void> {
       payload: {
         kind: 'run_outcome_summary' as const,
         summarized_trace_id: envelope.task_id,
-        completion_state: decision === 'block' ? ('refused' as const) : ('merged' as const),
+        completion_state: completionState,
         final_lane: envelope.lane as 'A' | 'B' | 'C',
         final_confidence: null,
         had_refusal: decision === 'block',
@@ -357,8 +366,28 @@ export async function runValidate(): Promise<void> {
     const db = initLedgerDb(getLedgerDbPath(repoRoot));
     appendLedgerEntry(db, ledgerEntry);
     db.close();
-  } catch {
-    // Non-fatal: ledger write must never block task execution
+  } catch (ledgerErr) {
+    // Ledger write failure must not block task execution, but must not be silent either.
+    // Emit a structured advisory so the event stream reflects the governance gap.
+    const failEvent: ContractViolationDetectedEvent = {
+      event_id: generateEventId(),
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      task_id: envelope.task_id,
+      run_id: runId,
+      hook_stage: 'validate',
+      event_type: 'ContractViolationDetected',
+      status: 'violated',
+      payload: {
+        reason_code: ReasonCode.LEDGER_WRITE_FAILED,
+        violated_contract: 'Run outcome must be persisted to the ledger for governance continuity',
+        expected: 'ledger entry written for trace_id=' + envelope.task_id,
+        actual: ledgerErr instanceof Error ? ledgerErr.message : String(ledgerErr),
+        severity: 'advisory',
+        blocking_action_taken: false,
+      },
+    };
+    appendHookEvent(repoRoot, sessionId, failEvent);
   }
 
   process.exit(0);
