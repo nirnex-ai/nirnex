@@ -1,6 +1,6 @@
 {
   "name": "@nirnex/parser",
-  "version": "6.5.2",
+  "version": "6.5.3",
   "description": "Nirnex parser — Tree-sitter based source code analysis",
   "type": "module",
   "main": "./dist/index.js",
