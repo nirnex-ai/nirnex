@@ -10,7 +10,58 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadHookEvents } from '../runtime/session.js';
-import { HookEvent, ContractViolationDetectedEvent } from '../runtime/types.js';
+import { HookEvent, ContractViolationDetectedEvent, FinalOutcomeDeclaredEvent, VerificationStatus } from '../runtime/types.js';
+
+// ─── listCompletedRuns ────────────────────────────────────────────────────────
+
+export interface CompletedRunRow {
+  task_id: string;
+  session_id: string;
+  timestamp: string;
+  decision: 'allow' | 'block';
+  blocking_violation_count: number;
+  advisory_violation_count: number;
+  verification_status: VerificationStatus;
+}
+
+/**
+ * Scan all sessions under .ai-index/runtime/events/ and collect FinalOutcomeDeclared events.
+ * Deduplicates by task_id — keeps the most recent event when a task appears multiple times.
+ * Returns rows ordered most-recent first (timestamp DESC).
+ */
+export function listCompletedRuns(repoRoot: string): CompletedRunRow[] {
+  const eventsRoot = path.join(repoRoot, '.ai-index', 'runtime', 'events');
+  if (!fs.existsSync(eventsRoot)) return [];
+
+  const sessionDirs = fs.readdirSync(eventsRoot).filter(entry => {
+    return fs.statSync(path.join(eventsRoot, entry)).isDirectory();
+  });
+
+  // task_id → latest CompletedRunRow
+  const byTask = new Map<string, CompletedRunRow>();
+
+  for (const sessionId of sessionDirs) {
+    const events = loadHookEvents(repoRoot, sessionId);
+    const finals = events.filter(e => e.event_type === 'FinalOutcomeDeclared') as FinalOutcomeDeclaredEvent[];
+
+    for (const ev of finals) {
+      const existing = byTask.get(ev.task_id);
+      if (!existing || ev.timestamp > existing.timestamp) {
+        byTask.set(ev.task_id, {
+          task_id: ev.task_id,
+          session_id: ev.session_id,
+          timestamp: ev.timestamp,
+          decision: ev.payload.decision,
+          blocking_violation_count: ev.payload.blocking_violation_count,
+          advisory_violation_count: ev.payload.advisory_violation_count,
+          verification_status: ev.payload.verification_status,
+        });
+      }
+    }
+  }
+
+  return Array.from(byTask.values()).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+}
 
 const HOOK_LOG_USAGE = `
 nirnex hook-log [options]

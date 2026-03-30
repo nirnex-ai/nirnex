@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadActiveEnvelope, appendTraceEvent, appendHookEvent, generateEventId, generateRunId } from './session.js';
 import { HookPostToolUse, TraceEvent, ContextOutput, HookInvocationStartedEvent } from './types.js';
+import { buildTraceStageCompleted } from './stage-completion.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -127,6 +128,14 @@ export async function runTraceHook(): Promise<void> {
   } catch {
     // Non-fatal
   }
+
+  const sc = buildTraceStageCompleted({
+    sessionId,
+    taskId: envelope?.task_id ?? 'none',
+    runId,
+    deviationFlags,
+  });
+  appendHookEvent(repoRoot, sessionId, sc);
 
   // If deviation detected, inject context back to Claude
   if (deviationFlags.length > 0) {

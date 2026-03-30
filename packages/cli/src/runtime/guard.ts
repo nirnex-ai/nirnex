@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadActiveEnvelope, appendHookEvent, generateEventId, generateRunId } from './session.js';
 import { HookPreToolUse, GuardDecision, TaskEnvelope, HookInvocationStartedEvent } from './types.js';
+import { buildGuardStageCompleted } from './stage-completion.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -125,6 +126,8 @@ export async function runGuard(): Promise<void> {
 
   // Allow if not in a Nirnex project
   if (!fs.existsSync(path.join(repoRoot, 'nirnex.config.json'))) {
+    const sc = buildGuardStageCompleted({ sessionId, taskId: 'none', runId, decision: 'allow' });
+    appendHookEvent(repoRoot, sessionId, sc);
     process.stdout.write(JSON.stringify({ decision: 'allow' }));
     process.exit(0);
   }
@@ -133,11 +136,15 @@ export async function runGuard(): Promise<void> {
 
   // No active envelope → allow (not in a guarded task context)
   if (!envelope) {
+    const sc = buildGuardStageCompleted({ sessionId, taskId: 'none', runId, decision: 'allow' });
+    appendHookEvent(repoRoot, sessionId, sc);
     process.stdout.write(JSON.stringify({ decision: 'allow' }));
     process.exit(0);
   }
 
   const decision = evaluateGuard(envelope, hookData.tool_name, hookData.tool_input);
+  const sc = buildGuardStageCompleted({ sessionId, taskId: envelope.task_id, runId, decision: decision.decision });
+  appendHookEvent(repoRoot, sessionId, sc);
   process.stdout.write(JSON.stringify(decision));
   process.exit(0);
 }
