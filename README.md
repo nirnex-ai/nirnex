@@ -108,7 +108,8 @@ nirnex.config.json
 | `.ai/prompts/` | System prompts for analysis and implementation behavior |
 | `.ai/critical-paths.txt` | Defines high-risk areas triggering stricter execution |
 | `.ai/calibration/` | Stores evaluation data (optional, advanced use) |
-| `.ai-index/` | Local structural graph of your repository |
+| `.ai-index/` | Local structural graph, traces, reports, and runtime session data |
+| `.ai-index/runtime/events/{session}/hook-events.jsonl` | Append-only hook lifecycle event stream (audit trail) |
 | `nirnex.config.json` | Source of truth for project configuration |
 
 ---
@@ -469,6 +470,48 @@ nirnex report --id tr_xxx
 nirnex report --compare tr_old tr_new
 nirnex report --list
 ```
+
+---
+
+### `nirnex hook-log`
+
+Inspect the hook lifecycle event stream to diagnose what happened during any run — whether a hook was invoked, what obligations were extracted, what violations were detected, and why the final outcome was allow or block.
+
+```sh
+# Show the full event timeline for the most recent session
+nirnex hook-log --last
+
+# Show timeline for a specific session
+nirnex hook-log --session sess_abc123
+
+# Show only ContractViolationDetected events across all sessions
+nirnex hook-log --violations
+
+# Filter timeline to a specific stage
+nirnex hook-log --last --stage validate
+```
+
+**Output columns:** `TIME | STAGE | EVENT_TYPE | STATUS | REASON_CODE | SUMMARY`
+
+**Example output:**
+
+```
+Session: sess_1q2w3e4r  (7 events)
+TIME      STAGE       EVENT_TYPE                    STATUS      REASON_CODE                           SUMMARY
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+10:14:22  entry       HookInvocationStarted                                                           pid=82341
+10:14:22  entry       InputEnvelopeCaptured                                                           lane=B mandatory_verification=true source=explicit_user_instruction
+10:14:22  entry       StageCompleted                pass                                              blockers=0 violations=0
+10:14:45  validate    HookInvocationStarted                                                           pid=82398
+10:14:45  validate    ContractViolationDetected     [blocking]  VERIFICATION_REQUIRED_NOT_RUN         Verification was declared mandatory but no verification command was executed
+10:14:45  validate    FinalOutcomeDeclared          block                                             blocking=1 advisory=0 verify=skipped
+10:14:45  validate    StageCompleted                fail        blockers=1 violations=1
+
+⚠ 1 violation(s): 1 blocking, 0 advisory
+Final outcome: BLOCK
+```
+
+Events are written to `.ai-index/runtime/events/{sessionId}/hook-events.jsonl` as an append-only stream separate from the tool-execution trace.
 
 ---
 
@@ -1103,6 +1146,131 @@ packages/core/src/runtime/ledger/
   reader.ts      — LedgerReader class
   mappers.ts     — 7 subsystem-to-LedgerEntry mapper functions (incl. fromEvidenceGateDecision)
   index.ts       — re-exports
+```
+
+---
+
+### Hook Audit Trail
+
+Nirnex maintains a structured, append-only **Hook Audit Trail** so every Claude hook invocation can be inspected with certainty. It answers: was the hook called? what obligations were extracted from the task? what violations were detected? why was the final outcome allow or block?
+
+The audit trail is separate from the Decision Ledger (governance records) and the tool-execution trace (TraceEvents). It covers hook lifecycle boundaries only.
+
+#### Event stream location
+
+```
+.ai-index/runtime/events/{session_id}/hook-events.jsonl
+```
+
+One file per session. Append-only. Never mixed with `events.jsonl` (tool execution events).
+
+#### Five event types
+
+| Event | Stage | When emitted |
+|---|---|---|
+| `HookInvocationStarted` | All | First action in each stage entrypoint — proves the hook was called and entered |
+| `InputEnvelopeCaptured` | `entry` | After TaskEnvelope is built — records what obligations the system knew about |
+| `ContractViolationDetected` | `validate` | Once per failed reconciliation check — structured evidence of each violation |
+| `StageCompleted` | `entry`, `validate` | At the end of a stage — explicit pass/fail boundary marker |
+| `FinalOutcomeDeclared` | `validate` | Before `process.exit` — the reconciled final decision with full evidence summary |
+
+Every event carries these universal fields: `event_id`, `timestamp`, `session_id`, `task_id`, `run_id`, `hook_stage`, `event_type`.
+
+`run_id` is distinct from `session_id` — a single session can contain multiple task attempts, and `run_id` correlates events for one invocation chain across all stages.
+
+#### Obligation capture — `InputEnvelopeCaptured`
+
+This event records what the system knew was required **before execution began**. It is the evidence that makes "required but not run" provable rather than disputable.
+
+Key payload fields:
+
+| Field | Type | What it means |
+|---|---|---|
+| `verification_commands_detected` | boolean | Whether the prompt contained explicit verification requests |
+| `verification_commands` | string[] | Extracted commands (e.g. `npm test`, `pytest`) |
+| `mandatory_verification_required` | boolean | Whether verification is mandatory for this task |
+| `verification_requirement_source` | string | **Why** verification is mandatory — not just that it is |
+
+**`verification_requirement_source` values:**
+
+| Value | Meaning |
+|---|---|
+| `explicit_user_instruction` | Prompt contained a direct verification request ("run npm test") |
+| `acceptance_criteria` | Task envelope acceptance criteria require verification |
+| `lane_policy` | Lane B or C requires verification by policy |
+| `none` | No verification obligation |
+
+#### Reason codes
+
+Every `ContractViolationDetected` event carries a `reason_code` from a finite, stable set:
+
+| Reason code | Condition |
+|---|---|
+| `ECO_BLOCKED` | Task was marked blocked by ECO but execution proceeded |
+| `FORCED_UNKNOWN_NO_VERIFICATION` | Lane B/C task with `forced_unknown = true` completed without verification |
+| `LANE_C_EMPTY_TRACE` | Lane C task stopped with zero recorded tool events |
+| `BLOCKED_PATH_DEVIATION` | A file in a blocked path was modified |
+| `LANE_C_DEADLOCK` | Lane C task expected scope modules untouched |
+| `VERIFICATION_REQUIRED_NOT_RUN` | Mandatory verification declared, no verification command found in trace |
+| `ACCEPTANCE_NOT_EVALUATED` | Acceptance criteria exist but no tool events recorded |
+| `VERIFICATION_NOT_REQUESTED` | Verification was not required (informational) |
+| `COMMAND_EXIT_NONZERO` | Verification command ran but exited with non-zero code |
+| `SUMMARY_CONTRADICTS_EVIDENCE` | Summary claims success but evidence shows failure |
+
+#### Violation severity and decision rule
+
+Every `ContractViolationDetected` event has `severity: 'blocking' | 'advisory'`.
+
+The `FinalOutcomeDeclared.decision` rule:
+
+- `blocking_violation_count > 0` → `decision: 'block'`
+- `blocking_violation_count === 0` (advisory violations only) → `decision: 'allow'`, violations surface in the payload
+- No violations → `decision: 'allow'`
+
+Advisory violations are surfaced — they are never silently dropped. The severity field in the event must agree with the decision engine, not just label the output.
+
+#### Verification status vocabulary
+
+`FinalOutcomeDeclared.verification_status` is always one of these five values — never inferred from absence:
+
+| Status | Meaning |
+|---|---|
+| `pass` | Verification command ran and exited with code 0 |
+| `fail` | Verification command ran and exited non-zero |
+| `skipped` | Verification was mandatory but no verification command was found in trace |
+| `unknown` | Verification command ran but exit code could not be determined |
+| `not_requested` | No verification obligation existed for this task |
+
+#### Non-negotiable invariants
+
+1. No run may be treated as completed/allowed without a `FinalOutcomeDeclared` event in the stream
+2. `FinalOutcomeDeclared.decision: allow` requires `blocking_violation_count === 0`
+3. Every block condition in `validate` emits `ContractViolationDetected` with a `reason_code` — prose messages are secondary
+4. Missing evidence is `status: 'unknown'` or `'skipped'` — never silently omitted
+5. The `hook-events.jsonl` stream is for runtime lifecycle visibility; the Decision Ledger is for governance records — these two stores serve different purposes and must not be conflated
+
+#### Module structure
+
+```
+packages/cli/src/runtime/
+  types.ts          — HookEvent discriminated union, ReasonCode, VerificationStatus, HookStage
+  session.ts        — appendHookEvent(), loadHookEvents(), generateRunId()
+
+packages/cli/src/commands/
+  hook-log.ts       — CLI inspector (nirnex hook-log)
+```
+
+#### Inspecting runs
+
+```sh
+# Full timeline for the most recent session
+nirnex hook-log --last
+
+# All contract violations across all sessions
+nirnex hook-log --violations
+
+# Timeline filtered to validate stage
+nirnex hook-log --last --stage validate
 ```
 
 ---
