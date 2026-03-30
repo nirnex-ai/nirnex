@@ -69,9 +69,158 @@ nirnex hook-log [options]
 Options:
   --last               Show timeline for the most recent session
   --session <id>       Show timeline for a specific session
+  --list               List all sessions chronologically with summary info
   --violations         Show only ContractViolationDetected events across all sessions
   --stage <stage>      Filter to a specific hook stage (bootstrap|entry|guard|trace|validate)
 `.trimStart();
+
+// ─── Session summary ──────────────────────────────────────────────────────────
+
+export interface SessionSummaryRow {
+  session_id: string;
+  first_event_ts: string;       // ISO timestamp of first event in the session
+  task_count: number;           // distinct task_ids (excluding sentinel 'none')
+  event_count: number;          // total hook events
+  outcome: 'ALLOW' | 'BLOCK' | 'INCOMPLETE'; // last FinalOutcomeDeclared decision, or INCOMPLETE
+  verification_status: VerificationStatus | '—';
+  blocking_violations: number;
+  advisory_violations: number;
+  reason_codes: string[];       // distinct reason codes seen across the session
+}
+
+/**
+ * Scan every session under .ai-index/runtime/events/ and build one summary row per session.
+ * Rows are ordered oldest-first (timestamp ASC) so the list reads chronologically.
+ */
+export function buildSessionSummaries(repoRoot: string): SessionSummaryRow[] {
+  const eventsRoot = path.join(repoRoot, '.ai-index', 'runtime', 'events');
+  if (!fs.existsSync(eventsRoot)) return [];
+
+  const sessionDirs = fs.readdirSync(eventsRoot).filter(entry =>
+    fs.statSync(path.join(eventsRoot, entry)).isDirectory(),
+  );
+
+  const rows: SessionSummaryRow[] = [];
+
+  for (const sessionId of sessionDirs) {
+    const events = loadHookEvents(repoRoot, sessionId);
+    if (events.length === 0) continue;
+
+    // Distinct task ids (ignore sentinel value used before an envelope is created)
+    const taskIds = new Set(events.map(e => e.task_id).filter(id => id && id !== 'none'));
+
+    // Violations
+    const violations = events.filter(e => e.event_type === 'ContractViolationDetected') as ContractViolationDetectedEvent[];
+    const blocking = violations.filter(v => v.payload.severity === 'blocking').length;
+    const advisory = violations.filter(v => v.payload.severity === 'advisory').length;
+    const reasonCodes = [...new Set(violations.map(v => v.payload.reason_code))];
+
+    // Final outcome — use the last FinalOutcomeDeclared in the session
+    const finalOutcome = events.filter(e => e.event_type === 'FinalOutcomeDeclared').at(-1);
+    const decision = (finalOutcome as any)?.payload?.decision;
+    const verificationStatus: VerificationStatus | '—' =
+      (finalOutcome as any)?.payload?.verification_status ?? '—';
+
+    const outcome: SessionSummaryRow['outcome'] =
+      decision === 'block' ? 'BLOCK' :
+      decision === 'allow' ? 'ALLOW' :
+      'INCOMPLETE';
+
+    rows.push({
+      session_id: sessionId,
+      first_event_ts: events[0].timestamp,
+      task_count: taskIds.size,
+      event_count: events.length,
+      outcome,
+      verification_status: verificationStatus,
+      blocking_violations: blocking,
+      advisory_violations: advisory,
+      reason_codes: reasonCodes,
+    });
+  }
+
+  // Oldest first so the list reads as a timeline from top to bottom
+  return rows.sort((a, b) => a.first_event_ts.localeCompare(b.first_event_ts));
+}
+
+function printSessionList(rows: SessionSummaryRow[]): void {
+  if (rows.length === 0) {
+    console.log('  · No sessions found.');
+    console.log('  · Sessions are created when Claude runs a task with Nirnex hooks active.');
+    return;
+  }
+
+  const bold  = (s: string) => `\x1b[1m${s}\x1b[0m`;
+  const dim   = (s: string) => `\x1b[90m${s}\x1b[0m`;
+  const red   = (s: string) => `\x1b[31m${s}\x1b[0m`;
+  const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
+  const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
+
+  const COL = { ts: 22, session: 30, tasks: 7, events: 8, outcome: 11, verify: 14, violations: 18, codes: 0 };
+
+  const header =
+    'TIMESTAMP'.padEnd(COL.ts) +
+    'SESSION'.padEnd(COL.session) +
+    'TASKS'.padEnd(COL.tasks) +
+    'EVENTS'.padEnd(COL.events) +
+    'OUTCOME'.padEnd(COL.outcome) +
+    'VERIFY'.padEnd(COL.verify) +
+    'VIOLATIONS'.padEnd(COL.violations) +
+    'REASON CODES';
+
+  process.stdout.write(`\n${bold('Nirnex Sessions')}  ${dim(`(${rows.length} session${rows.length !== 1 ? 's' : ''})`)}\n\n`);
+  process.stdout.write(`  ${dim(header)}\n`);
+  process.stdout.write(`  ${'─'.repeat(130)}\n`);
+
+  for (const r of rows) {
+    const ts = r.first_event_ts.replace('T', ' ').slice(0, 19) + 'Z';
+
+    // Truncate session id to fit column: show first 12 + … + last 6
+    const sid = r.session_id.length > 26
+      ? r.session_id.slice(0, 18) + '…' + r.session_id.slice(-6)
+      : r.session_id;
+
+    const outcomeStr =
+      r.outcome === 'BLOCK'      ? red('BLOCK')       :
+      r.outcome === 'ALLOW'      ? green('ALLOW')      :
+      yellow('INCOMPLETE');
+
+    const verifyStr =
+      r.verification_status === 'fail'         ? red('fail')          :
+      r.verification_status === 'pass'         ? green('pass')        :
+      r.verification_status === 'skipped'      ? yellow('skipped')    :
+      r.verification_status === 'not_requested'? dim('not_requested') :
+      r.verification_status === 'unknown'      ? dim('unknown')       :
+      dim('—');
+
+    const violStr =
+      r.blocking_violations > 0
+        ? red(`${r.blocking_violations} blocking`) + (r.advisory_violations > 0 ? `, ${r.advisory_violations} advisory` : '')
+        : r.advisory_violations > 0
+          ? yellow(`${r.advisory_violations} advisory`)
+          : green('none');
+
+    const codesStr = r.reason_codes.length > 0 ? dim(r.reason_codes.join(', ')) : '';
+
+    // Print with ANSI-aware padding: pad plain text width, then apply colour
+    const row =
+      ts.padEnd(COL.ts) +
+      sid.padEnd(COL.session) +
+      String(r.task_count).padEnd(COL.tasks) +
+      String(r.event_count).padEnd(COL.events);
+
+    // Colour fields don't pad cleanly — write them with fixed widths manually
+    process.stdout.write(
+      `  ${row}${outcomeStr.padEnd ? '' : ''}` +
+      `${outcomeStr}${' '.repeat(Math.max(0, COL.outcome - r.outcome.length))}` +
+      `${verifyStr}${' '.repeat(Math.max(0, COL.verify - String(r.verification_status).length))}` +
+      `${violStr}   ` +
+      `${codesStr}\n`,
+    );
+  }
+
+  process.stdout.write(`\n  ${dim('Use nirnex hook-log --session <id> to inspect a session in full.')}\n\n`);
+}
 
 function findSessionsDir(repoRoot: string): string {
   return path.join(repoRoot, '.ai-index', 'runtime', 'sessions');
@@ -178,12 +327,19 @@ export function hookLogCommand(args: string[]): void {
     process.exit(1);
   }
 
+  const showList       = args.includes('--list');
   const showViolations = args.includes('--violations');
-  const showLast = args.includes('--last') || (!args.includes('--session') && !showViolations);
+  const showLast = args.includes('--last') || (!args.includes('--session') && !showViolations && !showList);
   const sessionIdx = args.indexOf('--session');
   const stageIdx = args.indexOf('--stage');
   const sessionArg = sessionIdx !== -1 ? args[sessionIdx + 1] : null;
   const stageArg = stageIdx !== -1 ? args[stageIdx + 1] : undefined;
+
+  if (showList) {
+    const rows = buildSessionSummaries(repoRoot);
+    printSessionList(rows);
+    return;
+  }
 
   if (showViolations) {
     // Show all ContractViolationDetected events across all sessions

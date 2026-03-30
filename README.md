@@ -491,6 +491,9 @@ nirnex report --list
 Inspect the hook lifecycle event stream to diagnose what happened during any run — whether a hook was invoked, what obligations were extracted, what violations were detected, and why the final outcome was allow or block.
 
 ```sh
+# List all sessions chronologically with outcome, verification status, and violation summary
+nirnex hook-log --list
+
 # Show the full event timeline for the most recent session
 nirnex hook-log --last
 
@@ -504,9 +507,23 @@ nirnex hook-log --violations
 nirnex hook-log --last --stage validate
 ```
 
+**`nirnex hook-log --list` output:**
+
+```
+Nirnex Sessions  (3 sessions)
+
+  TIMESTAMP             SESSION                        TASKS  EVENTS  OUTCOME    VERIFY        VIOLATIONS          REASON CODES
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  2026-03-30 12:32:25Z  sess_b897816f…ef1a02           1      6       ALLOW      not_requested  none
+  2026-03-30 15:03:27Z  sess_c910de23…ab4f11           2      15      ALLOW      pass           none
+  2026-03-30 15:11:43Z  sess_d023ef45…bc5g22           1      50      BLOCK      fail           1 blocking         VERIFICATION_REQUIRED_NOT_RUN
+
+  Use nirnex hook-log --session <id> to inspect a session in full.
+```
+
 **Output columns:** `TIME | STAGE | EVENT_TYPE | STATUS | REASON_CODE | SUMMARY`
 
-**Example output:**
+**`nirnex hook-log --last` output:**
 
 ```
 Session: sess_1q2w3e4r  (7 events)
