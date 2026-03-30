@@ -211,7 +211,7 @@ function printSessionList(rows: SessionSummaryRow[]): void {
 
     // Colour fields don't pad cleanly — write them with fixed widths manually
     process.stdout.write(
-      `  ${row}${outcomeStr.padEnd ? '' : ''}` +
+      `  ${row}` +
       `${outcomeStr}${' '.repeat(Math.max(0, COL.outcome - r.outcome.length))}` +
       `${verifyStr}${' '.repeat(Math.max(0, COL.verify - String(r.verification_status).length))}` +
       `${violStr}   ` +
