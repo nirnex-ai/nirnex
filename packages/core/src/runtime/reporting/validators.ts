@@ -31,6 +31,11 @@ const EXPECTED_STAGES = ['knowledge', 'eco', 'classification', 'strategy', 'impl
  * Validates a RunEvidenceBundle for completeness and internal consistency.
  * Collects all issues — does not short-circuit on first failure.
  * Returns a ReportIntegrityResult with valid=true only when no 'error' severity issues exist.
+ *
+ * Hook-only runs: a bundle that has a `run_outcome_summary` event but no pipeline
+ * stage records is a valid hook-only run (written by the validate hook, not the
+ * orchestrator). For such runs, `missing_outcome` and `missing_stage` checks are
+ * skipped — the `run_outcome_summary` record IS the terminal outcome.
  */
 export function validateBundle(bundle: RunEvidenceBundle): ReportIntegrityResult {
   const issues: ReportValidationIssue[] = [];
@@ -38,29 +43,42 @@ export function validateBundle(bundle: RunEvidenceBundle): ReportIntegrityResult
   const broken_causal_refs: string[] = [];
   const unclassified_failure_codes: string[] = [];
 
+  // Detect hook-only runs: have a run_outcome_summary but no pipeline stages.
+  // These are written by the validate hook (not the orchestrator) and must not
+  // be validated against orchestrator-pipeline expectations.
+  const hasRunOutcomeSummary = bundle.raw_events.some((e) => e.kind === 'run_outcome_summary');
+  const hasPipelineStages    = bundle.stages.length > 0;
+  const isHookOnlyRun        = hasRunOutcomeSummary && !hasPipelineStages;
+
   // ── 1. Missing outcome ────────────────────────────────────────────────────
 
-  const hasOutcome = bundle.raw_events.some((e) => e.kind === 'outcome');
-  if (!hasOutcome) {
-    issues.push({
-      kind: 'missing_outcome',
-      severity: 'error',
-      message: 'No terminal outcome record found in run events',
-    });
+  // Hook-only runs satisfy the outcome requirement via run_outcome_summary.
+  if (!isHookOnlyRun) {
+    const hasOutcome = bundle.raw_events.some((e) => e.kind === 'outcome');
+    if (!hasOutcome) {
+      issues.push({
+        kind: 'missing_outcome',
+        severity: 'error',
+        message: 'No terminal outcome record found in run events',
+      });
+    }
   }
 
   // ── 2. Missing expected stages ────────────────────────────────────────────
 
-  const presentStageIds = new Set(bundle.stages.map((s) => s.stage_id));
-  for (const stage of EXPECTED_STAGES) {
-    if (!presentStageIds.has(stage)) {
-      issues.push({
-        kind: 'missing_stage',
-        severity: 'warning',
-        message: `Expected stage not present: ${stage}`,
-        affected_id: stage,
-      });
-      missing_stages.push(stage);
+  // Hook-only runs do not have pipeline stages by design — suppress these warnings.
+  if (!isHookOnlyRun) {
+    const presentStageIds = new Set(bundle.stages.map((s) => s.stage_id));
+    for (const stage of EXPECTED_STAGES) {
+      if (!presentStageIds.has(stage)) {
+        issues.push({
+          kind: 'missing_stage',
+          severity: 'warning',
+          message: `Expected stage not present: ${stage}`,
+          affected_id: stage,
+        });
+        missing_stages.push(stage);
+      }
     }
   }
 

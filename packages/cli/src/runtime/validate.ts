@@ -27,6 +27,49 @@ function readStdin(): Promise<string> {
   });
 }
 
+/**
+ * Extract the exit code from a Bash tool_result with multi-probe fallback.
+ *
+ * Claude Code's PostToolUse hook sends Bash results in varying shapes depending
+ * on version. We try every known location before giving up:
+ *   1. tool_result.exit_code          (number — primary field)
+ *   2. tool_result.exitCode           (camelCase variant)
+ *   3. tool_result.metadata.exit_code (nested metadata)
+ *   4. Parse tool_result.output / .content / .text for "EXIT_CODE:N" patterns
+ *   5. tool_result.is_error / isError  (boolean error flag → treat as exit 1)
+ *
+ * Returns the exit code as a number, or null if it cannot be determined.
+ */
+function extractExitCode(toolResult: Record<string, unknown> | undefined): number | null {
+  if (!toolResult) return null;
+
+  // 1 & 2: direct numeric fields
+  if (typeof toolResult.exit_code === 'number') return toolResult.exit_code;
+  if (typeof toolResult.exitCode  === 'number') return toolResult.exitCode as number;
+
+  // 3: nested metadata
+  const meta = toolResult.metadata as Record<string, unknown> | undefined;
+  if (meta) {
+    if (typeof meta.exit_code === 'number') return meta.exit_code as number;
+    if (typeof meta.exitCode  === 'number') return meta.exitCode  as number;
+  }
+
+  // 4: parse output string for EXIT_CODE:N or "exit code N" patterns
+  const outputStr = String(
+    toolResult.output ?? toolResult.content ?? toolResult.text ?? toolResult.result ?? ''
+  );
+  if (outputStr) {
+    const m = outputStr.match(/EXIT_CODE[:\s]+(\d+)/i)
+           ?? outputStr.match(/exit(?:\s+code)?[:\s]+(\d+)/i);
+    if (m) return parseInt(m[1], 10);
+  }
+
+  // 5: boolean error flag
+  if (toolResult.is_error === true || toolResult.isError === true) return 1;
+
+  return null;
+}
+
 interface ViolationRecord {
   event: ContractViolationDetectedEvent;
   severity: 'blocking' | 'advisory';
@@ -208,6 +251,38 @@ export async function runValidate(): Promise<void> {
         'no verification command found in trace',
         severity,
       );
+    } else {
+      // Verification was attempted — check exit code now so we can emit a blocking
+      // violation immediately rather than only setting verificationStatus later.
+      const bashEvents = events.filter(e => e.tool === 'Bash');
+      const verificationBashEarly = bashEvents.find(e => {
+        const cmd = String((e.tool_input as any)?.command ?? '');
+        if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
+        return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
+      });
+      if (verificationBashEarly) {
+        const exitCode = extractExitCode(verificationBashEarly.tool_result);
+        if (exitCode !== null && exitCode !== 0) {
+          // Proven non-zero exit: blocking violation
+          recordViolation(
+            ReasonCode.COMMAND_EXIT_NONZERO,
+            'Mandatory verification command exited with a non-zero code',
+            'exit_code = 0',
+            `exit_code = ${exitCode}`,
+            'blocking',
+          );
+        } else if (exitCode === null) {
+          // Exit code could not be determined — cannot prove the verification passed
+          recordViolation(
+            ReasonCode.COMMAND_EXIT_NONZERO,
+            'Mandatory verification command ran but exit code could not be determined — cannot confirm pass',
+            'exit_code = 0 (deterministic)',
+            'exit_code = unknown',
+            'advisory',
+          );
+        }
+        // exitCode === 0 → pass, no violation
+      }
     }
   }
 
@@ -238,9 +313,9 @@ export async function runValidate(): Promise<void> {
       return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
     });
     if (verificationBash) {
-      const exitCode = (verificationBash.tool_result as any)?.exit_code;
+      const exitCode = extractExitCode(verificationBash.tool_result);
       if (exitCode === 0) verificationStatus = 'pass';
-      else if (typeof exitCode === 'number') verificationStatus = 'fail';
+      else if (exitCode !== null) verificationStatus = 'fail';
       else verificationStatus = 'unknown';
     } else {
       verificationStatus = 'unknown';

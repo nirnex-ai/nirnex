@@ -229,8 +229,13 @@ export function assembleReport(
     stages.push(stageRecord);
   }
 
-  // Outcome synthetic stage
-  const outcomeEvent = rawEvents.find((e) => e.kind === 'outcome');
+  // Outcome synthetic stage.
+  // For orchestrator runs: use the 'outcome' record.
+  // For hook-only runs: fall back to 'run_outcome_summary' (same completion_state vocabulary).
+  const outcomeEvent =
+    rawEvents.find((e) => e.kind === 'outcome') ??
+    rawEvents.find((e) => e.kind === 'run_outcome_summary');
+
   if (outcomeEvent) {
     const completionState = (outcomeEvent.payload as any).completion_state as string | undefined;
     let outcomeStatus: StageRecord['status'] = 'ok';
