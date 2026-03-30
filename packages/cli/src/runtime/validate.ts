@@ -272,13 +272,15 @@ export async function runValidate(): Promise<void> {
             'blocking',
           );
         } else if (exitCode === null) {
-          // Exit code could not be determined — cannot prove the verification passed
+          // Exit code could not be determined — cannot confirm the verification passed.
+          // Under mandatory verification the burden of proof is on the pass, not the block:
+          // unknown outcome must be treated as blocking, not advisory.
           recordViolation(
             ReasonCode.COMMAND_EXIT_NONZERO,
             'Mandatory verification command ran but exit code could not be determined — cannot confirm pass',
             'exit_code = 0 (deterministic)',
             'exit_code = unknown',
-            'advisory',
+            'blocking',
           );
         }
         // exitCode === 0 → pass, no violation

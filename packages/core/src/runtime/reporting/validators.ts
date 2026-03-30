@@ -46,8 +46,14 @@ export function validateBundle(bundle: RunEvidenceBundle): ReportIntegrityResult
   // Detect hook-only runs: have a run_outcome_summary but no pipeline stages.
   // These are written by the validate hook (not the orchestrator) and must not
   // be validated against orchestrator-pipeline expectations.
+  //
+  // NOTE: the assembler synthesises a single "outcome" stage from run_outcome_summary,
+  // so bundle.stages may have length 1 even for hook-only runs. Exclude that synthetic
+  // stage from the pipeline-stage count — only knowledge/eco/classification/strategy/
+  // implementation constitute "real" pipeline stages.
+  const PIPELINE_STAGE_IDS = new Set(['knowledge', 'eco', 'classification', 'strategy', 'implementation']);
   const hasRunOutcomeSummary = bundle.raw_events.some((e) => e.kind === 'run_outcome_summary');
-  const hasPipelineStages    = bundle.stages.length > 0;
+  const hasPipelineStages    = bundle.stages.some((s) => PIPELINE_STAGE_IDS.has(s.stage_id));
   const isHookOnlyRun        = hasRunOutcomeSummary && !hasPipelineStages;
 
   // ── 1. Missing outcome ────────────────────────────────────────────────────
