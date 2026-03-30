@@ -592,7 +592,7 @@ Key payload fields:
 | Field | Type | What it means |
 |---|---|---|
 | `verification_commands_detected` | boolean | Whether the prompt contained explicit verification requests |
-| `verification_commands` | string[] | Extracted commands (e.g. `npm test`, `pytest`) |
+| `verification_commands` | string[] | Extracted commands (e.g. `npm test`, `npm run lint`, `pytest`) |
 | `mandatory_verification_required` | boolean | Whether verification is mandatory for this task |
 | `verification_requirement_source` | string | **Why** verification is mandatory — not just that it is |
 
@@ -600,10 +600,20 @@ Key payload fields:
 
 | Value | Meaning |
 |---|---|
-| `explicit_user_instruction` | Prompt contained a direct verification request ("run npm test") |
+| `explicit_user_instruction` | Prompt contained a direct verification request ("run npm test", "run npm run lint", "verify by running pytest") |
 | `acceptance_criteria` | Task envelope acceptance criteria require verification |
 | `lane_policy` | Lane B or C requires verification by policy |
 | `none` | No verification obligation |
+
+**Extraction patterns recognised** (entry stage, `extractVerificationCommands`):
+
+- `run npm test` / `run yarn test` / `run pnpm test` / `run jest` / `run pytest` etc.
+- `run npm run <script>` / `run yarn run <script>` — captures arbitrary `npm run` scripts (e.g. `npm run lint`, `npm run build`)
+- Bare `npm run lint` / `npm run typecheck` / `npm run build` etc. without a leading "run" keyword
+- `verify with …` / `verify by running …`
+- `check that tests pass` / `check that lint passes` / `ensure tests pass`
+
+The `validate` stage matches bash trace events against the **stored `verification_commands` array** first (exact substring), then falls back to a broad regex covering test frameworks and `npm run` / `yarn run` / `pnpm run` invocations. This means any command captured at entry is recognised at validation regardless of which test framework or script runner was used.
 
 #### Reason codes
 
