@@ -440,17 +440,29 @@ Every persisted record conforms to:
 
 **`record_type` is the SQL-queryable projection of `payload.kind`.** They must always be equal. The validator enforces this as a hard error — mismatch indicates a mapper bug.
 
-#### Five record families
+#### Record families
 
-| Record type | When emitted | Hard fields |
-|---|---|---|
-| `decision` | Any stage decision (intent, ECO, gate, lane, etc.) | `decision_code`, `result.status`, `rationale` |
-| `override` | System protection bypassed | `override_id`, `effect`, `approved_by`, `scope` |
-| `outcome` | Terminal state (merged / escalated / refused / abandoned) | `completion_state`, `final_disposition_reason` |
-| `refusal` | Hard block issued | `refusal_code`, `refusal_reason`, `blocking_dimension` |
-| `deviation` | Drift from expected behavior detected | `detected_at_stage`, `severity`, `disposition` |
+| Record type | Stage | When emitted | Hard fields |
+|---|---|---|---|
+| `decision` | pipeline | Any stage decision (intent, ECO, gate, lane, etc.) | `decision_code`, `result.status`, `rationale` |
+| `override` | synthetic | System protection bypassed | `override_id`, `effect`, `approved_by`, `scope` |
+| `outcome` | synthetic | Terminal state (merged / escalated / refused / abandoned) | `completion_state`, `final_disposition_reason` |
+| `refusal` | pipeline | Hard block issued | `refusal_code`, `refusal_reason`, `blocking_dimension` |
+| `deviation` | pipeline | Drift from expected behavior detected | `detected_at_stage`, `severity`, `disposition` |
+| `run_outcome_summary` | `analysis` | Written by the `validate` hook at task completion — one record per task | `summarized_trace_id`, `completion_state`, `final_lane`, `had_refusal`, `evidence_gate_failed`, `stages_completed` |
 
 `record_type: 'trace'` exists for legacy Sprint 6 import only. New code must use the typed families.
+
+**`run_outcome_summary` completion states** (written by `validate` hook):
+
+| State | Condition |
+|---|---|
+| `merged` | Task allowed, zero violations |
+| `escalated` | Task allowed, one or more advisory violations |
+| `refused` | Task blocked by one or more blocking violations |
+| `abandoned` | Not used by the hook path; reserved for orchestrator-level abandonment |
+
+This record is the primary input to `nirnex report --list` and regression detection. `trace_id` is set to the `task_id` from the active envelope; `request_id` is the `session_id`.
 
 #### Parent semantics
 
@@ -486,6 +498,22 @@ await runOrchestrator(
 ```
 
 If `onLedgerEntry` is absent, pipeline behavior is unchanged (backward compatible).
+
+#### Hook pipeline integration
+
+The `validate` hook (Claude Code `Stop` hook) writes directly to the ledger independently of the orchestrator. This is the primary write path for interactive Claude sessions:
+
+```
+validate hook completes
+  → appendHookEvent(…)          — hook-events.jsonl (lifecycle visibility)
+  → appendLedgerEntry(db, …)    — .aidos-ledger.db  (governance record)
+      record_type: 'run_outcome_summary'
+      stage:       'analysis'
+      trace_id:    envelope.task_id
+      request_id:  session_id
+```
+
+If the ledger write fails, a `LEDGER_WRITE_FAILED` advisory is emitted to `hook-events.jsonl`. The task decision (`allow` / `block`) is **not** affected — ledger persistence is never on the critical path.
 
 #### Storage
 
@@ -526,10 +554,13 @@ fromDimensionScoringTrace(dt, opts)    // ECO scoring → DecisionRecord
 fromConflictEvents(events, opts)       // ConflictLedgerEvent[] → single DecisionRecord
 fromRefusal(stage, code, reason, opts) // gate block → RefusalRecord
 fromOrchestratorResult(result, opts)   // OrchestratorResult → OutcomeRecord
+fromRunOutcomeSummary(summary, opts)   // validate hook outcome → run_outcome_summary record
 fromTraceJson(json, opts)              // LEGACY: Sprint 6 trace → record_type: 'trace'
 ```
 
 `fromConflictEvents` collapses multiple events into one decision record — preserving event count and stable refs in `rationale.signal_refs` without record explosion.
+
+`fromRunOutcomeSummary` is called by the `validate` hook (not the orchestrator) and writes to stage `'analysis'`. It is the bridge between the hook pipeline and `nirnex report`.
 
 #### Validation
 
@@ -619,18 +650,19 @@ The `validate` stage matches bash trace events against the **stored `verificatio
 
 Every `ContractViolationDetected` event carries a `reason_code` from a finite, stable set:
 
-| Reason code | Condition |
-|---|---|
-| `ECO_BLOCKED` | Task was marked blocked by ECO but execution proceeded |
-| `FORCED_UNKNOWN_NO_VERIFICATION` | Lane B/C task with `forced_unknown = true` completed without verification |
-| `LANE_C_EMPTY_TRACE` | Lane C task stopped with zero recorded tool events |
-| `BLOCKED_PATH_DEVIATION` | A file in a blocked path was modified |
-| `LANE_C_DEADLOCK` | Lane C task expected scope modules untouched |
-| `VERIFICATION_REQUIRED_NOT_RUN` | Mandatory verification declared, no verification command found in trace |
-| `ACCEPTANCE_NOT_EVALUATED` | Acceptance criteria exist but no tool events recorded |
-| `VERIFICATION_NOT_REQUESTED` | Verification was not required (informational) |
-| `COMMAND_EXIT_NONZERO` | Verification command ran but exited with non-zero code |
-| `SUMMARY_CONTRADICTS_EVIDENCE` | Summary claims success but evidence shows failure |
+| Reason code | Severity | Condition |
+|---|---|---|
+| `ECO_BLOCKED` | blocking | Task was marked blocked by ECO but execution proceeded |
+| `FORCED_UNKNOWN_NO_VERIFICATION` | blocking | Lane B/C task with `forced_unknown = true` completed without verification |
+| `LANE_C_EMPTY_TRACE` | blocking | Lane C task stopped with zero recorded tool events |
+| `BLOCKED_PATH_DEVIATION` | blocking | A file in a blocked path was modified |
+| `LANE_C_DEADLOCK` | blocking | Lane C task expected scope modules untouched |
+| `VERIFICATION_REQUIRED_NOT_RUN` | blocking | Mandatory verification declared, no verification command found in trace |
+| `COMMAND_EXIT_NONZERO` | blocking | Verification command ran but exited with non-zero code |
+| `ACCEPTANCE_NOT_EVALUATED` | advisory | Acceptance criteria exist but no tool events recorded |
+| `VERIFICATION_NOT_REQUESTED` | advisory | Verification was not required (informational) |
+| `SUMMARY_CONTRADICTS_EVIDENCE` | advisory | Summary claims success but evidence shows failure |
+| `LEDGER_WRITE_FAILED` | advisory | `validate` hook could not write the run outcome to `.aidos-ledger.db` — run will not appear in `nirnex report --list`; check disk space or DB permissions |
 
 #### Violation severity and decision rule
 
@@ -662,7 +694,7 @@ Advisory violations are surfaced — they are never silently dropped. The severi
 2. `FinalOutcomeDeclared.decision: allow` requires `blocking_violation_count === 0`
 3. Every block condition in `validate` emits `ContractViolationDetected` with a `reason_code` — prose messages are secondary
 4. Missing evidence is `status: 'unknown'` or `'skipped'` — never silently omitted
-5. The `hook-events.jsonl` stream is for runtime lifecycle visibility; the Decision Ledger is for governance records — these two stores serve different purposes and must not be conflated
+5. The `hook-events.jsonl` stream is for runtime lifecycle visibility; the Decision Ledger is for governance records — these two stores serve different purposes and must not be conflated. The `validate` hook intentionally bridges both: it writes lifecycle events to `hook-events.jsonl` **and** writes a `run_outcome_summary` record to `.aidos-ledger.db` so `nirnex report --list` reflects every completed task. If the ledger write fails, a `LEDGER_WRITE_FAILED` advisory is emitted to the hook stream — the failure is never silent.
 
 #### Module structure
 
@@ -678,8 +710,14 @@ packages/cli/src/commands/
 #### Inspecting runs
 
 ```sh
+# List all sessions chronologically — outcome, verification status, violation counts, reason codes
+nirnex hook-log --list
+
 # Full timeline for the most recent session
 nirnex hook-log --last
+
+# Full timeline for a specific session
+nirnex hook-log --session sess_abc123
 
 # All contract violations across all sessions
 nirnex hook-log --violations
@@ -687,6 +725,15 @@ nirnex hook-log --violations
 # Timeline filtered to validate stage
 nirnex hook-log --last --stage validate
 ```
+
+`nirnex hook-log --list` columns: `TIMESTAMP | SESSION | TASKS | EVENTS | OUTCOME | VERIFY | VIOLATIONS | REASON CODES`
+
+- **OUTCOME**: `ALLOW` (green) / `BLOCK` (red) / `INCOMPLETE` (yellow — no `FinalOutcomeDeclared` yet)
+- **VERIFY**: verification_status from the last `FinalOutcomeDeclared` in the session
+- **VIOLATIONS**: blocking count (red if > 0), advisory count (yellow if > 0), `none` (green)
+- **REASON CODES**: deduplicated codes from all `ContractViolationDetected` events in the session
+
+Sessions are sorted oldest-first so the list reads as a timeline. Use `--session <id>` to drill into any row.
 
 ---
 
