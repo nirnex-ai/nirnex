@@ -110,6 +110,7 @@ nirnex.config.json
 | `.ai/calibration/` | Stores evaluation data (optional, advanced use) |
 | `.ai-index/` | Local structural graph, traces, reports, and runtime session data |
 | `.ai-index/runtime/events/{session}/hook-events.jsonl` | Append-only hook lifecycle event stream (audit trail) |
+| `.aidos-ledger.db` | Append-only SQLite ledger — written by the `validate` hook at task completion; queried by `nirnex report` |
 | `nirnex.config.json` | Source of truth for project configuration |
 
 ---
@@ -448,6 +449,18 @@ Nirnex Runs
   Run nirnex report --last or nirnex report --id <trace_id> to generate a report.
 ```
 
+**How runs are recorded**
+
+Runs appear in `nirnex report --list` when the `validate` hook completes. At the end of every task the validate hook writes a `run_outcome_summary` record to `.aidos-ledger.db` with one of three completion states:
+
+| Completion state | Condition |
+|---|---|
+| `merged` | Task allowed, zero violations |
+| `escalated` | Task allowed, one or more advisory violations |
+| `refused` | Task blocked by one or more blocking violations |
+
+Runs from `nirnex plan` are also recorded. If neither has run yet, `nirnex report --list` will show `No runs found in ledger`.
+
 
 
 ### `nirnex override`
@@ -512,6 +525,20 @@ Final outcome: BLOCK
 ```
 
 Events are written to `.ai-index/runtime/events/{sessionId}/hook-events.jsonl` as an append-only stream separate from the tool-execution trace.
+
+**Reason codes**
+
+| Code | Severity | Stage | Meaning |
+|---|---|---|---|
+| `VERIFICATION_REQUIRED_NOT_RUN` | blocking | validate | Verification was mandatory (explicit instruction, acceptance criteria, or lane policy) but no matching command appeared in the trace |
+| `COMMAND_EXIT_NONZERO` | blocking | validate | Verification command ran but exited with a non-zero code |
+| `BLOCKED_PATH_DEVIATION` | blocking | validate | A file in a blocked path was modified |
+| `FORCED_UNKNOWN_NO_VERIFICATION` | blocking | validate | Lane B/C task had `forced_unknown=true` but no human verification |
+| `LANE_C_EMPTY_TRACE` | blocking | validate | Lane C task completed with no recorded tool events |
+| `LANE_C_DEADLOCK` | blocking | validate | Lane C task did not touch any of its expected scope modules |
+| `ECO_BLOCKED` | blocking | validate | Task proceeded despite ECO marking it blocked |
+| `ACCEPTANCE_NOT_EVALUATED` | advisory | validate | Acceptance criteria present but no tool events to evaluate them |
+| `LEDGER_WRITE_FAILED` | advisory | validate | Ledger persistence failed — run will not appear in `nirnex report --list`; check disk space or DB permissions |
 
 ---
 
