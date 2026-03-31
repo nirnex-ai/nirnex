@@ -6,72 +6,78 @@ import styles from './index.module.css';
 
 /* ── TYPES ─────────────────────────────────────────────── */
 interface Layer { num: string; name: string; userQ: string; answer: string; desc: string; href: string; }
-interface Principle { n: string; title: string; body: string; }
 
 /* ── DATA ──────────────────────────────────────────────── */
-const TRUST_ITEMS = [
-  { icon: '—', label: 'No blind execution', sub: 'Every agent action is scoped before it runs.' },
-  { icon: '—', label: 'Every decision is auditable', sub: 'A trace_id connects every step end-to-end.' },
-  { icon: '—', label: 'AI acts inside defined boundaries', sub: 'Out-of-scope writes are rejected at runtime.' },
+
+const REALITY_ITEMS = [
+  'AI reads partial context',
+  "Chooses paths you didn't intend",
+  'Modifies unrelated modules',
+  'Leaves no explainable trace',
 ];
 
-const PROBLEMS = [
-  {
-    n: '01',
-    title: 'Context is guessed',
-    body: 'Agents read what they can reach, not what is relevant. Scope is assumed, not verified. The context window is filled with noise.',
-  },
-  {
-    n: '02',
-    title: 'Decisions are untraceable',
-    body: 'No log of what the agent read, which version, or why it chose it. Post-mortems are guesswork. The same mistake repeats.',
-  },
-  {
-    n: '03',
-    title: 'Safety is post-hoc',
-    body: 'You find out what the agent touched after it\'s done. Rollback is manual. Blast radius is invisible until it isn\'t.',
-  },
+const WHO_ITEMS = [
+  { n: '01', title: 'Large codebases', body: 'Hundreds of interdependent modules where one unscoped change cascades.' },
+  { n: '02', title: 'Multi-agent workflows', body: 'Multiple agents sharing a codebase without enforced execution boundaries.' },
+  { n: '03', title: 'Regulated environments', body: 'Financial, healthcare, and infrastructure systems that require auditable AI decisions.' },
+  { n: '04', title: 'Critical systems', body: 'Production code where a wrong AI decision costs more than the sprint.' },
+];
+
+const OUTCOMES = [
+  'You know the exact scope before execution',
+  'AI cannot modify outside declared boundaries',
+  'Every decision is traceable and replayable',
+  'Failures are explainable, not mysterious',
 ];
 
 const MECHANICS = [
   {
     n: '01',
-    title: 'Build execution context',
-    body: 'Parse the live codebase with tree-sitter and ast-grep. Produce a precision-scored map of every symbol, dependency, and file relevant to the task.',
+    title: 'Execution Context Object',
+    sub: 'Context',
+    body: 'Parse the live codebase with tree-sitter and ast-grep. Produce a precision-scored ECO — a verified map of every symbol, dependency, and file relevant to the task. The agent never guesses at scope.',
   },
   {
     n: '02',
-    title: 'Apply constraints',
-    body: 'Wrap the task in a Task Execution Envelope: allowed modules, blocked files, max line scope. The agent sees only what it is permitted to see.',
+    title: 'Task Execution Envelope',
+    sub: 'Constraints',
+    body: 'Wrap the task in a TEE: allowed modules, blocked files, max line scope. The agent sees only what it is permitted to see. Writes outside scope are rejected before they touch the codebase.',
   },
   {
     n: '03',
-    title: 'Orchestrate execution',
-    body: 'The agent executes inside declared bounds. Writes outside scope are rejected before they touch the codebase. Violations fail loudly.',
+    title: 'Controlled Execution',
+    sub: 'Execution',
+    body: 'The agent executes inside declared bounds. Violations fail loudly, not silently. Confidence scoring flags uncertainty before execution — not after deployment.',
   },
   {
     n: '04',
-    title: 'Generate trace',
-    body: 'Every decision — what was read, what was chosen, what was written — is logged under a single trace_id. Replay any failure in isolation.',
+    title: 'Decision Ledger',
+    sub: 'Trace',
+    body: 'Every decision — what was read, what was chosen, what was written — is logged under a single trace_id. Replay any failure in isolation. Root cause in minutes, not days.',
   },
 ];
 
+const PROOF_ITEMS = [
+  { label: 'Deterministic pipeline', sub: 'Same inputs produce the same execution bounds — every time.' },
+  { label: 'Explicit constraints', sub: 'Allowed modules, blocked files, and max scope are declared before any agent acts.' },
+  { label: 'Append-only decision ledger', sub: 'Every decision is written once, immutable, replayable from any point.' },
+  { label: 'Evidence-based gating', sub: 'Classification requires a verified parse graph. Guesses are structurally impossible.' },
+];
+
 const WITHOUT_ITEMS = [
-  'Agent guesses at execution context',
-  'No scope enforcement — agent decides what to touch',
-  'Output looks correct until it isn\'t',
-  'No audit trail — decisions are invisible',
-  'Root cause: days of manual triage',
-  'Same mistake, different file, next sprint',
+  "Agent guesses at execution context",
+  "No scope enforcement — agent decides what to touch",
+  "Output looks correct until it isn't",
+  "No audit trail — decisions are invisible",
+  "Root cause: days of manual triage",
 ];
 
 const WITH_ITEMS = [
-  'Verified parse graph — exact scope, not guesses',
-  'Task Execution Envelope — out-of-scope writes rejected',
-  'Explicit confidence score flags uncertainty before shipping',
-  'Full decision trace — replay any step from trace_id',
-  'Root cause in minutes — full chain available',
-  'Ground truth sampling closes the loop automatically',
+  "Verified parse graph — exact scope, not guesses",
+  "Task Execution Envelope — out-of-scope writes rejected",
+  "Explicit confidence score flags uncertainty before shipping",
+  "Full decision trace — replay any step from trace_id",
+  "Root cause in minutes — full chain available",
 ];
 
 const LAYERS: Layer[] = [
@@ -95,50 +101,6 @@ const LAYERS: Layer[] = [
     answer: 'Yes — every decision is logged, traced, and replayable.',
     desc: 'A single trace_id connects every stage from spec to output. Replay any failure in isolation. 5% ground truth sampling closes the loop between what the system believed and what was true.',
     href: '/docs/decision-ledger/overview',
-  },
-];
-
-const PRINCIPLES: Principle[] = [
-  {
-    n: '01',
-    title: 'Classification After Evidence',
-    body: 'Spec → Knowledge Query → ECO → Classification. Classification cannot proceed without evidence. Agents never guess at scope.',
-  },
-  {
-    n: '02',
-    title: 'Every Decision Is Auditable',
-    body: 'A single trace_id connects the initial requirement through every stage to completion. When something goes wrong, read the trace chain backwards.',
-  },
-  {
-    n: '03',
-    title: 'Visible at rest. Unmissable under load.',
-    body: 'Lane A developers should forget this system exists. Lane C developers should find it indispensable. Value is earned through Lane B/C — not Lane A friction.',
-  },
-  {
-    n: '04',
-    title: 'Code wins on facts, not intent.',
-    body: 'For "what exists?" — code is ground truth. For "what should exist?" — spec wins but must be validated. When ambiguous: escalate, never assume.',
-  },
-];
-
-const USE_CASES = [
-  {
-    n: '01',
-    title: 'Large codebases',
-    sub: 'AI works on what it can actually reach.',
-    body: 'When a codebase has hundreds of interdependent modules, unscoped agents create cascading changes. Nirnex constrains execution to the verified dependency graph of the task.',
-  },
-  {
-    n: '02',
-    title: 'Multi-agent workflows',
-    sub: 'Each agent constrained to its lane.',
-    body: 'Orchestrating multiple agents without shared execution context produces conflicts and silent overwrites. Nirnex assigns each agent a scoped envelope with no overlap.',
-  },
-  {
-    n: '03',
-    title: 'Regulated systems',
-    sub: 'Every decision auditable for compliance.',
-    body: 'In financial, healthcare, and infrastructure systems, AI changes require evidence. Every Nirnex execution produces a replayable trace suitable for audit and review.',
   },
 ];
 
@@ -166,7 +128,6 @@ const VIDEO_URL = 'https://github.com/user-attachments/assets/ab7ffbfe-fa29-44b9
 function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Pause & reset on close
   useEffect(() => {
     if (!open && videoRef.current) {
       videoRef.current.pause();
@@ -174,7 +135,6 @@ function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }): 
     }
   }, [open]);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -182,7 +142,6 @@ function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }): 
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
-  // Lock body scroll
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -204,7 +163,6 @@ function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }): 
       aria-modal="true"
       aria-label="Product demo video"
     >
-      {/* Close button */}
       <button
         onClick={onClose}
         aria-label="Close video"
@@ -223,7 +181,6 @@ function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }): 
         ✕
       </button>
 
-      {/* Label */}
       <div style={{
         position: 'absolute', top: '22px', left: '24px',
         fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
@@ -233,7 +190,6 @@ function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }): 
         Nirnex explainer
       </div>
 
-      {/* Video container — stop propagation so clicking video doesn't close modal */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
@@ -269,11 +225,13 @@ function VideoModal({ open, onClose }: { open: boolean; onClose: () => void }): 
 }
 
 /* ── LABEL ── */
-function SectionLabel({ text }: { text: string }): React.JSX.Element {
+function SectionLabel({ text, dark }: { text: string; dark?: boolean }): React.JSX.Element {
   return (
     <div style={{
       fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
-      textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem',
+      textTransform: 'uppercase',
+      color: dark ? 'rgba(214,51,24,0.8)' : '#D63318',
+      marginBottom: '1rem',
     }}>{text}</div>
   );
 }
@@ -308,7 +266,7 @@ function HomepageHero(): React.JSX.Element {
             textTransform: 'uppercase', color: 'var(--lp-muted)', marginBottom: '1.75rem',
           }}>
             <span style={{ width: '20px', height: '1px', background: '#D63318', display: 'inline-block', flexShrink: 0 }} />
-            Decision intelligence for software delivery
+            Decision control for AI execution
           </div>
 
           <h1 style={{
@@ -316,21 +274,15 @@ function HomepageHero(): React.JSX.Element {
             textTransform: 'uppercase', letterSpacing: '-0.03em',
             marginBottom: '1.5rem', color: 'var(--lp-h1)',
           }}>
-            AI is changing<br />your code.<br />
-            <span style={{ color: '#D63318' }}>You don't know why.</span>
+            You are letting AI<br />modify your code<br />
+            <span style={{ color: '#D63318' }}>without knowing<br />what it will touch.</span>
           </h1>
 
           <p style={{
             fontSize: '17px', fontWeight: 400, lineHeight: 1.75,
-            color: 'var(--lp-hero-body)', marginBottom: '0.75rem',
+            color: 'var(--lp-hero-body)', marginBottom: '2.5rem',
           }}>
-            Nirnex makes every AI-driven change traceable, constrained, and safe.
-          </p>
-          <p style={{
-            fontSize: '15px', fontWeight: 400, lineHeight: 1.75,
-            color: 'var(--lp-muted)', marginBottom: '2.5rem',
-          }}>
-            Control what AI can touch, how it executes, and how every decision is recorded.
+            Nirnex enforces scope, validates decisions, and records every action — before execution.
           </p>
 
           <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
@@ -367,7 +319,6 @@ function HomepageHero(): React.JSX.Element {
             border: '1px solid var(--lp-border)',
             fontFamily: 'var(--font-mono)',
           }}>
-            {/* Header */}
             <div style={{
               padding: '10px 16px',
               borderBottom: '1px solid var(--lp-border)',
@@ -421,73 +372,47 @@ function HomepageHero(): React.JSX.Element {
   );
 }
 
-/* 2 ── TRUST STRIP ──────────────────────────────────────── */
-function TrustStrip(): React.JSX.Element {
+/* 2 ── REALITY CHECK ─────────────────────────────────────── */
+function RealityCheckSection(): React.JSX.Element {
   return (
     <section style={{
-      background: 'var(--lp-trust-bg)',
+      background: '#111111',
+      color: '#FFFFFF',
+      padding: '5vw 4vw',
       borderBottom: '1px solid rgba(255,255,255,0.06)',
     }}>
-      <div className={styles.trustStrip}>
-        {TRUST_ITEMS.map((item, i) => (
-          <div key={i} className={styles.trustItem}>
-            <span style={{ color: '#D63318', fontSize: '16px', fontWeight: 700, flexShrink: 0, lineHeight: 1.4 }}>
-              {item.icon}
-            </span>
-            <div>
-              <div style={{
-                fontSize: '13px', fontWeight: 700, letterSpacing: '0.04em',
-                textTransform: 'uppercase', color: 'var(--lp-trust-text)',
-                marginBottom: '4px',
-              }}>{item.label}</div>
-              <div style={{ fontSize: '13px', color: 'var(--lp-trust-muted)', lineHeight: 1.6 }}>{item.sub}</div>
-            </div>
-          </div>
-        ))}
+      <div className={styles.insightGrid}>
+        <div>
+          <SectionLabel text="What actually happens today" dark />
+          <h2 style={{
+            fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase',
+            letterSpacing: '-0.03em', lineHeight: 1.05, color: '#FFFFFF',
+            border: 'none', padding: 0, margin: '0 0 1rem',
+          }}>
+            You only discover it<br />after deployment.
+          </h2>
+        </div>
+        <div>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {REALITY_ITEMS.map((item, i) => (
+              <li key={i} style={{
+                display: 'flex', alignItems: 'flex-start', gap: '14px',
+                padding: '16px 0',
+                borderBottom: i < REALITY_ITEMS.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none',
+              }}>
+                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, fontSize: '14px', paddingTop: '2px' }}>→</span>
+                <span style={{ fontSize: '16px', color: 'rgba(255,255,255,0.75)', lineHeight: 1.6 }}>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </section>
   );
 }
 
-/* 3 ── PROBLEM ──────────────────────────────────────────── */
-function ProblemSection(): React.JSX.Element {
-  return (
-    <section style={{ background: 'var(--lp-pain-bg)', borderBottom: '1px solid var(--lp-border-sub)' }}>
-      <div style={{ padding: '5vw 4vw 3vw', borderBottom: '1px solid var(--lp-border-sub)' }}>
-        <SectionLabel text="The Problem" />
-        <h2 style={{
-          fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase',
-          letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--lp-h2)',
-          border: 'none', padding: 0, margin: 0,
-        }}>
-          Agents don't know what<br />they're touching.
-        </h2>
-      </div>
-      <div className={styles.problemGrid}>
-        {PROBLEMS.map((p, i) => (
-          <div key={i} className={styles.problemCard}>
-            <div style={{
-              fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
-              textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
-            }}>{p.n} ·</div>
-            <div style={{
-              fontSize: 'clamp(1rem,1.8vw,1.3rem)', fontWeight: 900, textTransform: 'uppercase',
-              letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--lp-pain-scenario)',
-              marginBottom: '1rem',
-            }}>{p.title}</div>
-            <p style={{
-              fontSize: '14px', fontWeight: 400, color: 'var(--lp-pain-detail)',
-              lineHeight: 1.75, margin: 0,
-            }}>{p.body}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* 4 ── BELIEF ── Always dark maroon — brand moment */
-function BeliefSection(): React.JSX.Element {
+/* 3 ── POSITIONING ───────────────────────────────────────── */
+function PositioningSection(): React.JSX.Element {
   return (
     <section style={{
       background: 'linear-gradient(160deg, #1A0503 0%, #2B0805 100%)',
@@ -500,139 +425,155 @@ function BeliefSection(): React.JSX.Element {
           <div style={{
             fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
             textTransform: 'uppercase', color: 'rgba(214,51,24,0.7)', marginBottom: '1.25rem',
-          }}>The Core Belief</div>
+          }}>What Nirnex Is</div>
           <h2 style={{
             fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase',
-            letterSpacing: '-0.03em', lineHeight: 1.0, color: '#D63318',
-            border: 'none', padding: 0, margin: 0,
+            letterSpacing: '-0.03em', lineHeight: 1.0, color: '#FFFFFF',
+            border: 'none', padding: 0, margin: '0 0 1rem',
           }}>
-            You cannot<br />control what<br />you cannot trace.
+            Nirnex is not<br />an AI tool.
           </h2>
+          <p style={{
+            fontSize: '18px', fontWeight: 700, color: '#D63318',
+            lineHeight: 1.4, margin: 0,
+          }}>
+            It is a decision control system<br />for AI execution.
+          </p>
         </div>
         <div>
-          <p style={{
-            fontSize: '17px', fontWeight: 400, color: 'rgba(255,255,255,0.75)',
-            lineHeight: 1.8, marginBottom: '1rem',
-          }}>
-            AI agents are non-deterministic. You cannot unit-test a language model.
-            Prompt engineering is not a control surface — it's a hint.
-          </p>
-          <p style={{
-            fontSize: '17px', fontWeight: 400, color: 'rgba(255,255,255,0.75)',
-            lineHeight: 1.8, marginBottom: '1.25rem',
-          }}>
-            The only reliable lever is{' '}
-            <strong style={{ color: '#FFFFFF' }}>controlling the inputs the agent operates on,
-              bounding what it can write, and recording every step of its reasoning</strong> — before
-            it acts, during execution, and after completion.
-          </p>
-          <p style={{
-            fontSize: '16px', fontWeight: 700, color: '#FFFFFF', lineHeight: 1.5,
-            margin: 0, borderLeft: '3px solid #D63318', paddingLeft: '1rem',
-          }}>
-            Without a trace, you don't have an explanation.<br />You have a fragility problem.
-          </p>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {[
+              'It decides what AI is allowed to see',
+              'It decides what AI is allowed to change',
+              'It proves why a decision was made',
+            ].map((item, i) => (
+              <li key={i} style={{
+                display: 'flex', alignItems: 'flex-start', gap: '18px',
+                padding: '22px 0',
+                borderBottom: i < 2 ? '1px solid rgba(214,51,24,0.12)' : 'none',
+              }}>
+                <span style={{
+                  fontSize: '11px', fontWeight: 700, letterSpacing: '0.15em',
+                  textTransform: 'uppercase', color: '#D63318',
+                  paddingTop: '4px', flexShrink: 0, minWidth: '20px',
+                }}>0{i + 1}</span>
+                <span style={{ fontSize: '17px', fontWeight: 600, color: 'rgba(255,255,255,0.9)', lineHeight: 1.5 }}>
+                  {item}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>
   );
 }
 
-/* 5 ── SOLUTION OVERVIEW ─────────────────────────────────── */
-function SolutionSection(): React.JSX.Element {
+/* 4 ── WHO THIS IS FOR ───────────────────────────────────── */
+function WhoSection(): React.JSX.Element {
+  return (
+    <section style={{ background: 'var(--lp-pain-bg)', borderBottom: '1px solid var(--lp-border-sub)' }}>
+      <div style={{ padding: '5vw 4vw 3vw', borderBottom: '1px solid var(--lp-border-sub)' }}>
+        <SectionLabel text="Who This Is For" />
+        <h2 style={{
+          fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase',
+          letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--lp-h2)',
+          border: 'none', padding: 0, margin: 0,
+        }}>
+          This is for teams<br />where mistakes matter.
+        </h2>
+      </div>
+      <div className={styles.principlesGrid}>
+        {WHO_ITEMS.map((item, i) => (
+          <div key={i} className={styles.principleItem}>
+            <div style={{
+              fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
+              textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
+            }}>{item.n} ·</div>
+            <div style={{
+              fontSize: 'clamp(1rem,1.8vw,1.3rem)', fontWeight: 900, textTransform: 'uppercase',
+              letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--lp-h2)',
+              marginBottom: '0.875rem',
+            }}>{item.title}</div>
+            <p style={{
+              fontSize: '14px', fontWeight: 400, color: 'var(--lp-principle-body)', lineHeight: 1.75, margin: 0,
+            }}>{item.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* 5 ── OUTCOME ───────────────────────────────────────────── */
+function OutcomeSection(): React.JSX.Element {
   return (
     <section style={{
       background: 'var(--lp-solution-bg)',
+      padding: '6vw 4vw',
       borderBottom: '1px solid var(--lp-border-sub)',
-      padding: '5vw 4vw',
     }}>
-      <SectionLabel text="How It Works" />
-      <div className={styles.solutionGrid}>
-        {/* Left: explanation */}
+      <SectionLabel text="What Changes When You Use Nirnex" />
+      <div className={styles.insightGrid}>
         <div>
           <h2 style={{
-            fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase',
-            letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--lp-h2)',
-            border: 'none', padding: 0, margin: '0 0 1.5rem',
+            fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase',
+            letterSpacing: '-0.03em', lineHeight: 1.0, color: 'var(--lp-h2)',
+            border: 'none', padding: 0, margin: 0,
           }}>
-            A runtime layer that<br />controls AI execution.
+            Predictable.<br />Bounded.<br />Explainable.
           </h2>
-          <p style={{
-            fontSize: '16px', fontWeight: 600, color: 'var(--lp-h2)',
-            lineHeight: 1.65, marginBottom: '1rem',
-            borderLeft: '3px solid #D63318', paddingLeft: '1rem',
-          }}>
-            Before an agent sees your codebase, Nirnex decides what it's allowed to see —
-            and records every action it takes.
-          </p>
-          <p style={{
-            fontSize: '15px', lineHeight: 1.8, color: 'var(--lp-body)', marginBottom: '0.875rem',
-          }}>
-            A verified parse graph maps the exact symbols, dependencies, and files relevant to the
-            task. The agent operates inside that map — nothing more. Writes outside declared
-            scope are rejected before they touch the codebase.
-          </p>
-          <p style={{ fontSize: '15px', lineHeight: 1.8, color: 'var(--lp-body)', margin: 0 }}>
-            Every decision is logged under a single trace_id you can replay in isolation.
-            Root cause in minutes, not days.
-          </p>
         </div>
-
-        {/* Right: vertical flow diagram */}
-        <div className={styles.flowDiagram}>
-          {[
-            { label: 'Prompt', sub: 'Incoming change request or spec' },
-            { label: 'Execution Context', sub: 'Parse graph · scored relevance · exact scope' },
-            { label: 'Constraints', sub: 'Allowed modules · blocked files · max scope' },
-            { label: 'Controlled Execution', sub: 'Agent acts inside bounds · violations rejected', highlight: true },
-            { label: 'Trace', sub: 'trace_id · full decision log · replayable' },
-          ].map((step, i, arr) => (
-            <React.Fragment key={i}>
-              <div className={styles.flowStep} style={step.highlight ? { borderColor: '#D63318', background: 'rgba(214,51,24,0.04)' } : {}}>
-                <span style={{
-                  fontSize: '12px', fontWeight: 700, letterSpacing: '0.15em',
-                  textTransform: 'uppercase', color: step.highlight ? '#D63318' : 'var(--lp-muted)',
-                  minWidth: '16px',
-                }}>{String(i + 1).padStart(2, '0')}</span>
-                <div>
-                  <div style={{
-                    fontSize: '12px', fontWeight: 700, textTransform: 'uppercase',
-                    letterSpacing: '0.06em', color: step.highlight ? '#D63318' : 'var(--lp-h2)',
-                    marginBottom: '2px',
-                  }}>{step.label}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--lp-muted)', lineHeight: 1.4 }}>{step.sub}</div>
-                </div>
-              </div>
-              {i < arr.length - 1 && (
-                <div className={styles.flowConnector}>↓</div>
-              )}
-            </React.Fragment>
-          ))}
+        <div>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {OUTCOMES.map((item, i) => (
+              <li key={i} style={{
+                display: 'flex', alignItems: 'flex-start', gap: '16px',
+                padding: '18px 0',
+                borderBottom: i < OUTCOMES.length - 1 ? '1px solid var(--lp-border-sub)' : 'none',
+              }}>
+                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, fontSize: '16px', paddingTop: '2px' }}>✓</span>
+                <span style={{ fontSize: '16px', color: 'var(--lp-body)', lineHeight: 1.6, fontWeight: 500 }}>{item}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>
   );
 }
 
-/* 6 ── MECHANICS ─────────────────────────────────────────── */
-function MechanicsSection(): React.JSX.Element {
+/* 6 ── HOW IT WORKS ──────────────────────────────────────── */
+function HowSection(): React.JSX.Element {
   return (
     <section style={{ background: 'var(--lp-layers-bg)', borderBottom: '1px solid var(--lp-border-sub)' }}>
       <div style={{ padding: '5vw 4vw 3vw', borderBottom: '1px solid var(--lp-border-sub)' }}>
-        <SectionLabel text="The Mechanics" />
+        <SectionLabel text="How It Works" />
         <h2 style={{
           fontSize: 'clamp(1.5rem,2.5vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase',
           letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--lp-h2)',
-          border: 'none', padding: 0, margin: 0,
-        }}>Four steps. No guesswork.</h2>
+          border: 'none', padding: 0, margin: '0 0 0.75rem',
+        }}>Context → Constraints → Execution → Trace</h2>
+        <p style={{ fontSize: '14px', color: 'var(--lp-muted)', lineHeight: 1.7, margin: 0 }}>
+          Four steps. No guesswork. Every action declared before it runs.
+        </p>
       </div>
       <div className={styles.mechanicsGrid}>
         {MECHANICS.map((m, i) => (
           <div key={i} className={styles.mechanicStep}>
             <div style={{
-              fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
-              textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
-            }}>{m.n} ·</div>
+              display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.25rem',
+            }}>
+              <span style={{
+                fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
+                textTransform: 'uppercase', color: '#D63318',
+              }}>{m.n} ·</span>
+              <span style={{
+                fontSize: '11px', fontWeight: 700, letterSpacing: '0.15em',
+                textTransform: 'uppercase', color: 'var(--lp-muted)',
+                border: '1px solid var(--lp-border-sub)', padding: '2px 6px',
+              }}>{m.sub}</span>
+            </div>
             <div style={{
               fontSize: 'clamp(1rem,1.6vw,1.15rem)', fontWeight: 900, textTransform: 'uppercase',
               letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--lp-h2)',
@@ -648,56 +589,7 @@ function MechanicsSection(): React.JSX.Element {
   );
 }
 
-/* 7 ── BEFORE / AFTER ────────────────────────────────────── */
-function ComparisonSection(): React.JSX.Element {
-  return (
-    <section style={{ borderBottom: '1px solid var(--lp-border-sub)' }}>
-      <div className={styles.beforeAfterGrid}>
-        {/* Without Nirnex */}
-        <div className={styles.beforePanel} style={{ padding: '4vw', background: 'var(--lp-compare-without-bg)' }}>
-          <div style={{
-            fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
-            textTransform: 'uppercase', color: 'var(--lp-compare-without-lbl)', marginBottom: '0.5rem',
-          }}>Without Nirnex</div>
-          <div style={{
-            fontSize: '13px', color: 'var(--lp-compare-without-sub)',
-            fontStyle: 'italic', marginBottom: '1.75rem',
-          }}>Random outputs. Silent failures. Guesswork.</div>
-          <ul className={styles.compareList}>
-            {WITHOUT_ITEMS.map((item, i) => (
-              <li key={i}>
-                <span style={{ color: 'var(--lp-compare-without-lbl)', fontWeight: 700, flexShrink: 0 }}>✕</span>
-                <span style={{ color: 'var(--lp-compare-without-val)' }}>{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* With Nirnex */}
-        <div style={{ padding: '4vw', background: 'var(--lp-compare-with-bg)' }}>
-          <div style={{
-            fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
-            textTransform: 'uppercase', color: '#D63318', marginBottom: '0.5rem',
-          }}>With Nirnex</div>
-          <div style={{
-            fontSize: '13px', color: 'var(--lp-compare-with-sub)',
-            fontStyle: 'italic', marginBottom: '1.75rem',
-          }}>Controlled outputs. Full trace. Root cause in minutes.</div>
-          <ul className={styles.compareList}>
-            {WITH_ITEMS.map((item, i) => (
-              <li key={i}>
-                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0 }}>✓</span>
-                <span style={{ color: 'var(--lp-compare-with-val)', fontWeight: 500 }}>{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* 8 ── LAYERS ───────────────────────────────────────────── */
+/* 7 ── LAYERS ───────────────────────────────────────────── */
 function LayersSection(): React.JSX.Element {
   const handleMouseEnter = (e: MouseEvent<HTMLAnchorElement>): void => {
     const t = e.currentTarget;
@@ -752,72 +644,34 @@ function LayersSection(): React.JSX.Element {
   );
 }
 
-/* 9 ── PRINCIPLES ───────────────────────────────────────── */
-function PrinciplesSection(): React.JSX.Element {
+/* 8 ── PROOF ─────────────────────────────────────────────── */
+function ProofSection(): React.JSX.Element {
   return (
     <section style={{
-      padding: '6vw 4vw', background: 'var(--lp-principles-bg)',
-      borderBottom: '1px solid var(--lp-border-sub)',
+      background: 'var(--lp-trust-bg)',
+      borderBottom: '1px solid rgba(255,255,255,0.06)',
     }}>
-      <div style={{ marginBottom: '3rem' }}>
-        <SectionLabel text="Non-Negotiables" />
-        <h2 style={{
-          fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase',
-          letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--lp-h2)',
-          border: 'none', padding: 0, margin: 0,
-        }}>What We Won't Compromise On</h2>
-      </div>
-      <div className={styles.principlesGrid}>
-        {PRINCIPLES.map((p: Principle, i: number) => (
-          <div key={i} className={styles.principleItem}>
-            <div style={{
-              fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
-              textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem',
-            }}>{p.n} ·</div>
-            <div style={{
-              fontSize: 'clamp(1rem,1.8vw,1.3rem)', fontWeight: 900, textTransform: 'uppercase',
-              letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--lp-h2)', marginBottom: '0.875rem',
-            }}>{p.title}</div>
-            <p style={{
-              fontSize: '15px', fontWeight: 400, color: 'var(--lp-principle-body)', lineHeight: 1.75, margin: 0,
-            }}>{p.body}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* 10 ── USE CASES ────────────────────────────────────────── */
-function UseCasesSection(): React.JSX.Element {
-  return (
-    <section style={{ background: 'var(--lp-pain-bg)', borderBottom: '1px solid var(--lp-border-sub)' }}>
-      <div style={{ padding: '5vw 4vw 3vw', borderBottom: '1px solid var(--lp-border-sub)' }}>
-        <SectionLabel text="Where It Works" />
+      <div style={{ padding: '4vw 4vw 2.5vw', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{
+          fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
+          textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem',
+        }}>This Is Not Probabilistic Control</div>
         <h2 style={{
           fontSize: 'clamp(1.5rem,2.5vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase',
-          letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--lp-h2)',
+          letterSpacing: '-0.02em', lineHeight: 1, color: '#FFFFFF',
           border: 'none', padding: 0, margin: 0,
-        }}>Built for teams where a wrong AI<br />decision has consequences.</h2>
+        }}>Deterministic by design.</h2>
       </div>
-      <div className={styles.useCasesGrid}>
-        {USE_CASES.map((uc, i) => (
-          <div key={i} className={styles.useCaseCard}>
+      <div className={styles.mechanicsGrid}>
+        {PROOF_ITEMS.map((item, i) => (
+          <div key={i} className={styles.mechanicStep} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ color: '#D63318', fontSize: '16px', fontWeight: 700, lineHeight: 1.4 }}>—</span>
             <div style={{
-              fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
-              textTransform: 'uppercase', color: '#D63318', marginBottom: '1.25rem',
-            }}>{uc.n} ·</div>
-            <div style={{
-              fontSize: 'clamp(1rem,1.8vw,1.3rem)', fontWeight: 900, textTransform: 'uppercase',
-              letterSpacing: '-0.01em', lineHeight: 1.1, color: 'var(--lp-h2)', marginBottom: '0.5rem',
-            }}>{uc.title}</div>
-            <div style={{
-              fontSize: '12px', fontWeight: 700, textTransform: 'uppercase',
-              letterSpacing: '0.06em', color: '#D63318', marginBottom: '0.875rem',
-            }}>{uc.sub}</div>
-            <p style={{
-              fontSize: '14px', fontWeight: 400, color: 'var(--lp-pain-detail)', lineHeight: 1.75, margin: 0,
-            }}>{uc.body}</p>
+              fontSize: '13px', fontWeight: 700, letterSpacing: '0.04em',
+              textTransform: 'uppercase', color: 'var(--lp-trust-text)',
+              marginBottom: '4px',
+            }}>{item.label}</div>
+            <div style={{ fontSize: '13px', color: 'var(--lp-trust-muted)', lineHeight: 1.6 }}>{item.sub}</div>
           </div>
         ))}
       </div>
@@ -825,7 +679,104 @@ function UseCasesSection(): React.JSX.Element {
   );
 }
 
-/* 11 ── DEMO / PROOF ─────────────────────────────────────── */
+/* 9 ── BEFORE / AFTER ────────────────────────────────────── */
+function ComparisonSection(): React.JSX.Element {
+  return (
+    <section style={{ borderBottom: '1px solid var(--lp-border-sub)' }}>
+      <div className={styles.beforeAfterGrid}>
+        {/* Without Nirnex */}
+        <div className={styles.beforePanel} style={{ padding: '4vw', background: 'var(--lp-compare-without-bg)' }}>
+          <div style={{
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
+            textTransform: 'uppercase', color: 'var(--lp-compare-without-lbl)', marginBottom: '0.5rem',
+          }}>Without Nirnex</div>
+          <div style={{
+            fontSize: '13px', color: 'var(--lp-compare-without-sub)',
+            fontStyle: 'italic', marginBottom: '1.75rem',
+          }}>Unpredictable.</div>
+          <ul className={styles.compareList}>
+            {WITHOUT_ITEMS.map((item, i) => (
+              <li key={i}>
+                <span style={{ color: 'var(--lp-compare-without-lbl)', fontWeight: 700, flexShrink: 0 }}>✕</span>
+                <span style={{ color: 'var(--lp-compare-without-val)' }}>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* With Nirnex */}
+        <div style={{ padding: '4vw', background: 'var(--lp-compare-with-bg)' }}>
+          <div style={{
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
+            textTransform: 'uppercase', color: '#D63318', marginBottom: '0.5rem',
+          }}>With Nirnex</div>
+          <div style={{
+            fontSize: '13px', color: 'var(--lp-compare-with-sub)',
+            fontStyle: 'italic', marginBottom: '1.75rem',
+          }}>Controlled + explainable.</div>
+          <ul className={styles.compareList}>
+            {WITH_ITEMS.map((item, i) => (
+              <li key={i}>
+                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0 }}>✓</span>
+                <span style={{ color: 'var(--lp-compare-with-val)', fontWeight: 500 }}>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* 10 ── OBJECTION ────────────────────────────────────────── */
+function ObjectionSection(): React.JSX.Element {
+  return (
+    <section style={{
+      background: 'var(--lp-pain-bg)',
+      padding: '6vw 4vw',
+      borderBottom: '1px solid var(--lp-border-sub)',
+    }}>
+      <div className={styles.insightGrid}>
+        <div>
+          <SectionLabel text="The Objection" />
+          <h2 style={{
+            fontSize: 'clamp(1.5rem,3vw,2.5rem)', fontWeight: 900, textTransform: 'uppercase',
+            letterSpacing: '-0.03em', lineHeight: 1.05, color: 'var(--lp-h2)',
+            border: 'none', padding: 0, margin: 0,
+          }}>
+            "I already have<br />tests and<br />code review."
+          </h2>
+        </div>
+        <div>
+          <p style={{
+            fontSize: '15px', fontWeight: 400, color: 'var(--lp-body)',
+            lineHeight: 1.8, marginBottom: '1.5rem',
+          }}>
+            Tests validate outcomes. Code review validates intent.
+            Neither validates <em>decision correctness</em> — whether the agent was operating on the
+            right context, inside the right boundaries, for the right reasons.
+          </p>
+          <div style={{ borderLeft: '3px solid #D63318', paddingLeft: '1rem' }}>
+            <p style={{
+              fontSize: '15px', fontWeight: 600, color: 'var(--lp-h2)',
+              lineHeight: 1.7, margin: '0 0 0.75rem',
+            }}>
+              Tests catch what went wrong after the fact.
+            </p>
+            <p style={{
+              fontSize: '15px', fontWeight: 600, color: 'var(--lp-h2)',
+              lineHeight: 1.7, margin: 0,
+            }}>
+              Nirnex prevents invalid execution before it happens.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* 11 ── DEMO ─────────────────────────────────────────────── */
 function DemoSection(): React.JSX.Element {
   return (
     <section style={{
@@ -887,7 +838,7 @@ function DemoSection(): React.JSX.Element {
   );
 }
 
-/* 12 ── CTA ── Always dark — the closing brand statement */
+/* 12 ── CTA ── Always dark */
 function CtaSection(): React.JSX.Element {
   return (
     <section className={styles.ctaGrid} style={{
@@ -908,14 +859,14 @@ function CtaSection(): React.JSX.Element {
           letterSpacing: '-0.03em', lineHeight: 1, color: '#fff',
           border: 'none', padding: 0, margin: '0 0 1rem',
         }}>
-          Ready to control what<br />your agents touch?
+          Stop letting<br />AI guess.
         </h2>
         <p style={{
           fontSize: '15px', fontWeight: 300, color: 'rgba(255,255,255,0.55)',
           maxWidth: '480px', margin: 0, lineHeight: 1.75,
         }}>
           Built for regulated enterprises and engineering organizations where a wrong AI
-          decision costs more than the sprint. Read the full v9 architecture specification.
+          decision costs more than the sprint. Read the full architecture specification.
         </p>
       </div>
       <div className={styles.ctaButtons}>
@@ -942,19 +893,19 @@ export default function Home(): React.JSX.Element {
   const { siteConfig } = useDocusaurusContext();
   return (
     <Layout
-      title="Nirnex — AI is changing your code. You don't know why."
-      description="Nirnex makes every AI-driven change traceable, constrained, and safe. Control what AI can touch, how it executes, and how every decision is recorded."
+      title="Nirnex — You are letting AI modify your code without knowing what it will touch."
+      description="Nirnex enforces scope, validates decisions, and records every action — before execution."
     >
       <HomepageHero />
-      <TrustStrip />
-      <ProblemSection />
-      <BeliefSection />
-      <SolutionSection />
-      <MechanicsSection />
-      <ComparisonSection />
+      <RealityCheckSection />
+      <PositioningSection />
+      <WhoSection />
+      <OutcomeSection />
+      <HowSection />
       <LayersSection />
-      <PrinciplesSection />
-      <UseCasesSection />
+      <ProofSection />
+      <ComparisonSection />
+      <ObjectionSection />
       <DemoSection />
       <CtaSection />
     </Layout>
