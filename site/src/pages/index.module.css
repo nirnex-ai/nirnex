@@ -13,6 +13,40 @@
   position: relative;
 }
 
+/* Hero CTA button group */
+.heroCtas {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.heroCtas > * {
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .heroCtas {
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+  }
+
+  /* Both buttons go full-width and stack */
+  .heroCtas > * {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+
+  /* Restore border on ghost button when stacked (no longer side-by-side) */
+  .heroCtas .heroCtaGhost {
+    border: 1px solid var(--lp-ghost-btn-border) !important;
+    border-top: none !important;
+  }
+}
+
 /* ── TRUST STRIP ───────────────────────────────────────── */
 .trustStrip {
   display: grid;
@@ -40,6 +74,7 @@
 .problemCard {
   padding: 3vw 2.5vw;
   border-right: 1px solid var(--lp-border-sub);
+  border-top: 3px solid #D63318;
 }
 
 .problemCard:last-child {
@@ -212,6 +247,97 @@
   border-bottom: none;
 }
 
+/* ── PROOF ROW — title + 4 items in one horizontal band ── */
+.proofRow {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(4, 1fr);
+}
+
+.proofTitle {
+  padding: 3.5vw 4vw;
+  border-right: 1px solid var(--lp-proof-item-border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.proofItem {
+  padding: 3.5vw 2.5vw;
+  border-right: 1px solid var(--lp-proof-item-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.proofItem:last-child {
+  border-right: none;
+}
+
+/* Tablet: title spans full width, items go 2 × 2 */
+@media (max-width: 1024px) {
+  .proofRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .proofTitle {
+    grid-column: 1 / -1;
+    border-right: none;
+    border-bottom: 1px solid var(--lp-proof-item-border);
+    padding: 3vw 4vw;
+  }
+
+  .proofItem {
+    border-bottom: 1px solid var(--lp-proof-item-border);
+  }
+
+  .proofItem:nth-child(even) {
+    border-right: none;
+  }
+
+  /* last two items — no bottom border */
+  .proofItem:nth-last-child(-n+2) {
+    border-bottom: none;
+  }
+}
+
+/* Mobile: single column stack */
+@media (max-width: 768px) {
+  .proofRow {
+    grid-template-columns: 1fr;
+  }
+
+  .proofTitle {
+    padding: 40px 24px;
+    border-bottom: 1px solid var(--lp-proof-item-border);
+  }
+
+  .proofItem {
+    padding: 32px 24px;
+    border-right: none !important;
+    border-bottom: 1px solid var(--lp-proof-item-border) !important;
+  }
+
+  .proofItem:last-child {
+    border-bottom: none !important;
+  }
+}
+
+/* ── POSITIONING CARDS: 3-col → 1-col ─────────────────── */
+.positioningCards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+@media (max-width: 1024px) {
+  .positioningCards {
+    grid-template-columns: 1fr;
+    max-width: 480px;
+  }
+}
+
 /* ── CTA ───────────────────────────────────────────────── */
 .ctaGrid {
   display: grid;
@@ -376,5 +502,10 @@
   .ctaButtons {
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  /* ── Positioning cards ── */
+  .positioningCards {
+    grid-template-columns: 1fr !important;
   }
 }

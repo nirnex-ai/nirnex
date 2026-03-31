@@ -64,12 +64,6 @@ const config = {
             position: 'left',
           },
           {
-            type: 'doc',
-            docId: 'intro/overview',
-            position: 'left',
-            label: 'Docs',
-          },
-          {
             href: 'https://github.com/nirnex-ai/nirnex',
             label: 'GitHub',
             position: 'right',
@@ -121,7 +115,7 @@ const config = {
             ],
           },
         ],
-        copyright: `&copy; ${new Date().getFullYear()} Nirnex· AI Company`,
+        copyright: `&copy; ${new Date().getFullYear()} Nirnex· AI`,
       },
 
       prism: {

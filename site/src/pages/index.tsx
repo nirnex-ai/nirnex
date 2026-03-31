@@ -286,7 +286,7 @@ function HomepageHero(): React.JSX.Element {
             before execution, not after something breaks.
           </p>
 
-          <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
+          <div className={styles.heroCtas}>
             <button
               onClick={() => setVideoOpen(true)}
               style={{
@@ -304,12 +304,12 @@ function HomepageHero(): React.JSX.Element {
               </i>
               See How It Works
             </button>
-            <Link to="/docs/intro/overview" style={{
+            <Link to="/docs/intro/overview" className={styles.heroCtaGhost} style={{
               background: 'transparent', color: 'var(--lp-h1)',
               padding: '14px 32px', fontSize: '12px', fontWeight: 700,
               letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
               border: '1px solid var(--lp-ghost-btn-border)', borderLeft: 'none',
-              display: 'inline-block',
+              display: 'inline-flex', alignItems: 'center',
             }}>Access the Architecture →</Link>
           </div>
         </div>
@@ -373,91 +373,72 @@ function HomepageHero(): React.JSX.Element {
   );
 }
 
-/* 2 ── REALITY CHECK ─────────────────────────────────────── */
-function RealityCheckSection(): React.JSX.Element {
-  return (
-    <section style={{
-      background: '#111111',
-      color: '#FFFFFF',
-      padding: '5vw 4vw',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
+/* 2 ── PROBLEM PANELS (side-by-side) ────────────────────── */
+function ProblemPanelSection(): React.JSX.Element {
+  const listItem = (text: string, border: boolean, key: number) => (
+    <li key={key} style={{
+      display: 'flex', alignItems: 'flex-start', gap: '14px',
+      padding: '15px 0',
+      borderBottom: border ? '1px solid var(--lp-problem-item-border)' : 'none',
     }}>
-      <div className={styles.insightGrid}>
-        <div>
-          <SectionLabel text="What actually happens today" dark />
+      <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, paddingTop: '2px' }}>→</span>
+      <span style={{ fontSize: '15px', color: 'var(--lp-problem-text)', lineHeight: 1.6 }}>{text}</span>
+    </li>
+  );
+
+  return (
+    <section style={{ borderBottom: '1px solid var(--lp-problem-outer-border)' }}>
+      <div className={styles.beforeAfterGrid}>
+
+        {/* Left ── What actually happens today */}
+        <div className={styles.beforePanel} style={{
+          background: 'var(--lp-problem-left-bg)',
+          padding: '5vw 4vw',
+          borderRight: '1px solid var(--lp-problem-panel-border)',
+        }}>
+          <SectionLabel text="What actually happens today" />
           <h2 style={{
-            fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase',
-            letterSpacing: '-0.03em', lineHeight: 1.05, color: '#FFFFFF',
-            border: 'none', padding: 0, margin: '0 0 1rem',
+            fontSize: 'clamp(1.6rem,2.8vw,2.4rem)', fontWeight: 900, textTransform: 'uppercase',
+            letterSpacing: '-0.03em', lineHeight: 1.0, color: 'var(--lp-problem-h2)',
+            border: 'none', padding: 0, margin: '0 0 2.5rem',
           }}>
             You only discover it<br />after deployment.
           </h2>
-        </div>
-        <div>
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {REALITY_ITEMS.map((item, i) => (
-              <li key={i} style={{
-                display: 'flex', alignItems: 'flex-start', gap: '14px',
-                padding: '16px 0',
-                borderBottom: i < REALITY_ITEMS.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none',
-              }}>
-                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, fontSize: '14px', paddingTop: '2px' }}>→</span>
-                <span style={{ fontSize: '16px', color: 'rgba(255,255,255,0.75)', lineHeight: 1.6 }}>{item}</span>
-              </li>
-            ))}
+            {REALITY_ITEMS.map((item, i) => listItem(item, i < REALITY_ITEMS.length - 1, i))}
           </ul>
         </div>
-      </div>
-    </section>
-  );
-}
 
-/* 2b ── IDENTIFICATION ───────────────────────────────────── */
-function IdentificationSection(): React.JSX.Element {
-  return (
-    <section style={{
-      background: '#0D0D0D',
-      color: '#FFFFFF',
-      padding: '5vw 4vw',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
-    }}>
-      <div className={styles.insightGrid}>
-        <div>
-          <SectionLabel text="If This Sounds Familiar" dark />
+        {/* Right ── If this sounds familiar */}
+        <div style={{
+          background: 'var(--lp-problem-right-bg)',
+          padding: '5vw 4vw',
+        }}>
+          <SectionLabel text="If This Sounds Familiar" />
           <h2 style={{
-            fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase',
-            letterSpacing: '-0.03em', lineHeight: 1.05,
-            color: '#FFFFFF', border: 'none', padding: 0, margin: 0,
+            fontSize: 'clamp(1.6rem,2.8vw,2.4rem)', fontWeight: 900, textTransform: 'uppercase',
+            letterSpacing: '-0.03em', lineHeight: 1.0, color: 'var(--lp-problem-h2)',
+            border: 'none', padding: 0, margin: '0 0 2.5rem',
           }}>
             You've already<br />seen this happen.
           </h2>
-        </div>
-        <div>
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {[
               'AI modified something outside the intended scope',
               'A change looked correct but broke another module',
               "You couldn't explain why the agent made that decision",
               'You relied on tests to catch issues after execution',
-            ].map((item, i) => (
-              <li key={i} style={{
-                display: 'flex', alignItems: 'flex-start', gap: '14px',
-                padding: '16px 0',
-                borderBottom: i < 3 ? '1px solid rgba(255,255,255,0.07)' : 'none',
-              }}>
-                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, paddingTop: '2px' }}>→</span>
-                <span style={{ fontSize: '15px', color: 'rgba(255,255,255,0.75)', lineHeight: 1.6 }}>{item}</span>
-              </li>
-            ))}
+            ].map((item, i, arr) => listItem(item, i < arr.length - 1, i))}
           </ul>
           <p style={{
-            marginTop: '1.5rem', fontSize: '15px',
-            color: 'rgba(255,255,255,0.5)', lineHeight: 1.7,
-            borderLeft: '3px solid rgba(214,51,24,0.4)', paddingLeft: '1rem',
+            marginTop: '1.75rem', fontSize: '14px',
+            color: 'var(--lp-problem-footer)', lineHeight: 1.7,
+            borderLeft: '3px solid var(--lp-problem-footer-bar)', paddingLeft: '1rem',
           }}>
             This isn't a tooling issue. It's a lack of control over how decisions are made.
           </p>
         </div>
+
       </div>
     </section>
   );
@@ -469,53 +450,124 @@ function PositioningSection(): React.JSX.Element {
     <section style={{
       background: 'linear-gradient(160deg, #1A0503 0%, #2B0805 100%)',
       color: '#FFFFFF',
-      padding: '6vw 4vw',
+      padding: '7vw 4vw',
       borderBottom: '1px solid rgba(214,51,24,0.2)',
     }}>
-      <div className={styles.insightGrid}>
-        <div>
-          <div style={{
-            fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
-            textTransform: 'uppercase', color: 'rgba(214,51,24,0.7)', marginBottom: '1.25rem',
-          }}>What Nirnex Is</div>
-          <h2 style={{
-            fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase',
-            letterSpacing: '-0.03em', lineHeight: 1.0, color: '#FFFFFF',
-            border: 'none', padding: 0, margin: '0 0 1rem',
+      {/* Centred header block */}
+      <div style={{ textAlign: 'center', maxWidth: '640px', margin: '0 auto 5vw' }}>
+        <div style={{
+          fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
+          textTransform: 'uppercase', color: 'rgba(214,51,24,0.7)', marginBottom: '1.25rem',
+        }}>What Nirnex Is</div>
+        <h2 style={{
+          fontSize: 'clamp(2.2rem,5vw,4.5rem)', fontWeight: 900, textTransform: 'uppercase',
+          letterSpacing: '-0.03em', lineHeight: 0.95, color: '#FFFFFF',
+          border: 'none', padding: 0, margin: '0 0 1.25rem',
+        }}>
+          Nirnex is not<br />an AI tool.
+        </h2>
+        <p style={{
+          fontSize: '18px', fontWeight: 700, color: '#D63318',
+          lineHeight: 1.45, margin: 0,
+        }}>
+          It is a decision control system<br />for AI execution.
+        </p>
+      </div>
+
+      {/* Three photo-background cards */}
+      <div className={styles.positioningCards}>
+        {[
+          {
+            n: '01',
+            label: 'It decides what AI\nis allowed to see',
+            bg: '/nirnex/img/bg-ai-allowed.jpg',
+            icon: (
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#D63318" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            ),
+          },
+          {
+            n: '02',
+            label: 'It decides what AI\nis allowed to change',
+            bg: '/nirnex/img/bg-ai-change.jpg',
+            icon: (
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#D63318" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            ),
+          },
+          {
+            n: '03',
+            label: 'It proves why a\ndecision was made',
+            bg: '/nirnex/img/bg-ai-decision.jpg',
+            icon: (
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#D63318" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="9" y1="13" x2="15" y2="13" />
+                <line x1="9" y1="17" x2="13" y2="17" />
+              </svg>
+            ),
+          },
+        ].map((card, i) => (
+          <div key={i} style={{
+            position: 'relative', overflow: 'hidden',
+            borderRadius: '12px',
+            minHeight: '380px',
+            display: 'flex', flexDirection: 'column',
+            justifyContent: 'space-between',
+            border: '1px solid rgba(214,51,24,0.18)',
           }}>
-            Nirnex is not<br />an AI tool.
-          </h2>
-          <p style={{
-            fontSize: '18px', fontWeight: 700, color: '#D63318',
-            lineHeight: 1.4, margin: 0,
-          }}>
-            It is a decision control system<br />for AI execution.
-          </p>
-        </div>
-        <div>
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {[
-              'It decides what AI is allowed to see',
-              'It decides what AI is allowed to change',
-              'It proves why a decision was made',
-            ].map((item, i) => (
-              <li key={i} style={{
-                display: 'flex', alignItems: 'flex-start', gap: '18px',
-                padding: '22px 0',
-                borderBottom: i < 2 ? '1px solid rgba(214,51,24,0.12)' : 'none',
+            {/* Photo background */}
+            {/* <div style={{
+              position: 'absolute', inset: 0,
+              backgroundImage: `url(${card.bg})`,
+              backgroundSize: 'cover', backgroundPosition: 'center',
+              opacity: 0.12,
+            }} /> */}
+            {/* Dark gradient overlay — stronger at bottom for text legibility */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(180deg, rgba(26,5,3,0.55) 0%, rgba(26,5,3,0.85) 60%, rgba(26,5,3,0.97) 100%)',
+            }} />
+
+            {/* Icon — top, centred */}
+            {/* <div style={{
+              position: 'relative', zIndex: 1,
+              display: 'flex', justifyContent: 'center',
+              paddingTop: '2.25rem',
+            }}>
+              <div style={{
+                width: '128px', height: '128px',
+                // border: '1px solid rgba(214,51,24,0.3)',
+                borderRadius: '8px',
+                // background: 'rgba(214,51,24,0.06)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <span style={{
-                  fontSize: '11px', fontWeight: 700, letterSpacing: '0.15em',
-                  textTransform: 'uppercase', color: '#D63318',
-                  paddingTop: '4px', flexShrink: 0, minWidth: '20px',
-                }}>0{i + 1}</span>
-                <span style={{ fontSize: '17px', fontWeight: 600, color: 'rgba(255,255,255,0.9)', lineHeight: 1.5 }}>
-                  {item}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+                {card.icon}
+              </div>
+            </div> */}
+
+            {/* Text block — bottom, left-aligned */}
+            <div style={{
+              position: 'relative', zIndex: 1,
+              padding: '0 1.75rem 2rem',
+            }}>
+              <div style={{
+                fontSize: '6rem', fontWeight: 700, letterSpacing: '0.2em',
+                textTransform: 'uppercase', color: '#330901ff', marginBottom: '0.6rem',
+              }}>{card.n}</div>
+              <p style={{
+                fontSize: '28px', fontWeight: 600,
+                color: 'rgba(255,255,255,0.92)', lineHeight: 1,
+                margin: 0, whiteSpace: 'pre-line',
+              }}>{card.label}</p>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -559,37 +611,109 @@ function WhoSection(): React.JSX.Element {
 
 /* 5 ── OUTCOME ───────────────────────────────────────────── */
 function OutcomeSection(): React.JSX.Element {
+  const OUTCOME_COLS = [
+    {
+      n: '01',
+      word: 'Predictable.',
+      desc: 'You know the exact scope before a single line changes.',
+      items: [
+        'Scope is verified before execution begins',
+        'No silent side-effects — ever',
+        'Consistent results across every run',
+      ],
+    },
+    {
+      n: '02',
+      word: 'Bounded.',
+      desc: 'The agent cannot act outside its declared execution envelope.',
+      items: [
+        'Out-of-scope writes are structurally rejected',
+        'Allowed modules declared upfront',
+        'Constraints enforced, not assumed',
+      ],
+    },
+    {
+      n: '03',
+      word: 'Explainable.',
+      desc: 'Every decision is recorded, replayable, and auditable.',
+      items: [
+        'Append-only decision ledger per trace_id',
+        'Failures are explainable, not mysterious',
+        'Full chain available for review or rollback',
+      ],
+    },
+  ];
+
   return (
     <section style={{
       background: 'var(--lp-solution-bg)',
-      padding: '6vw 4vw',
       borderBottom: '1px solid var(--lp-border-sub)',
     }}>
-      <SectionLabel text="What Changes When You Use Nirnex" />
-      <div className={styles.insightGrid}>
+      {/* Section header */}
+      <div style={{
+        padding: '5vw 4vw 4vw',
+        borderBottom: '1px solid var(--lp-border-sub)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '2rem', flexWrap: 'wrap',
+      }}>
         <div>
+          <SectionLabel text="What Changes When You Use Nirnex" />
           <h2 style={{
             fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase',
             letterSpacing: '-0.03em', lineHeight: 1.0, color: 'var(--lp-h2)',
-            border: 'none', padding: 0, margin: 0,
+            border: 'none', padding: 0, margin: '0.75rem 0 0',
           }}>
-            Predictable.<br />Bounded.<br />Explainable.
+            Three guarantees.<br />Every run.
           </h2>
+          <p style={{
+            maxWidth: '340px', fontSize: '15px', color: 'var(--lp-body)', lineHeight: 1.7,
+            margin: 0, paddingBottom: '0.2rem',
+          }}>
+            Nirnex replaces probabilistic AI behaviour with structural guarantees — before execution, during it, and after.
+          </p>
         </div>
-        <div>
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {OUTCOMES.map((item, i) => (
-              <li key={i} style={{
-                display: 'flex', alignItems: 'flex-start', gap: '16px',
-                padding: '18px 0',
-                borderBottom: i < OUTCOMES.length - 1 ? '1px solid var(--lp-border-sub)' : 'none',
-              }}>
-                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, fontSize: '16px', paddingTop: '2px' }}>✓</span>
-                <span style={{ fontSize: '16px', color: 'var(--lp-body)', lineHeight: 1.6, fontWeight: 500 }}>{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+
+      </div>
+
+      {/* 3-column grid */}
+      <div className={styles.problemGrid}>
+        {OUTCOME_COLS.map((col, i) => (
+          <div key={i} className={styles.problemCard}>
+            {/* Number */}
+            <div style={{
+              fontSize: '12px', fontWeight: 700, letterSpacing: '0.18em',
+              textTransform: 'uppercase', color: '#D63318', marginBottom: '1.5rem',
+            }}>{col.n}</div>
+
+            {/* Word heading */}
+            <h3 style={{
+              fontSize: 'clamp(1.6rem,2.5vw,2.4rem)', fontWeight: 900, textTransform: 'uppercase',
+              letterSpacing: '-0.03em', lineHeight: 1.0, color: 'var(--lp-h2)',
+              border: 'none', padding: 0, margin: '0 0 1rem',
+            }}>
+              {col.word}
+            </h3>
+
+            {/* Descriptor */}
+            <p style={{
+              fontSize: '14px', color: 'var(--lp-body)', lineHeight: 1.7,
+              margin: '0 0 1.75rem', fontStyle: 'italic',
+            }}>{col.desc}</p>
+
+            {/* Items */}
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {col.items.map((item, j) => (
+                <li key={j} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '12px',
+                  padding: '12px 0',
+                  borderTop: '1px solid var(--lp-border-sub)',
+                }}>
+                  <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, paddingTop: '2px' }}>✓</span>
+                  <span style={{ fontSize: '14px', color: 'var(--lp-body)', lineHeight: 1.65 }}>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -767,30 +891,31 @@ function LayersSection(): React.JSX.Element {
 function ProofSection(): React.JSX.Element {
   return (
     <section style={{
-      background: 'var(--lp-trust-bg)',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      background: 'var(--lp-proof-bg)',
+      borderBottom: '1px solid var(--lp-proof-border)',
     }}>
-      <div style={{ padding: '4vw 4vw 2.5vw', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{
-          fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
-          textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem',
-        }}>This Is Not Probabilistic Control</div>
-        <h2 style={{
-          fontSize: 'clamp(1.5rem,2.5vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase',
-          letterSpacing: '-0.02em', lineHeight: 1, color: '#FFFFFF',
-          border: 'none', padding: 0, margin: 0,
-        }}>Deterministic by design.</h2>
-      </div>
-      <div className={styles.mechanicsGrid}>
+      <div className={styles.proofRow}>
+        {/* Title cell */}
+        <div className={styles.proofTitle}>
+          <div style={{
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.22em',
+            textTransform: 'uppercase', color: '#D63318', marginBottom: '1rem',
+          }}>This Is Not Probabilistic Control</div>
+          <h2 style={{
+            fontSize: 'clamp(1.4rem,2vw,2rem)', fontWeight: 900, textTransform: 'uppercase',
+            letterSpacing: '-0.02em', lineHeight: 1.1, color: 'var(--lp-proof-h2)',
+            border: 'none', padding: 0, margin: 0,
+          }}>Deterministic<br />by design.</h2>
+        </div>
+        {/* 4 proof items */}
         {PROOF_ITEMS.map((item, i) => (
-          <div key={i} className={styles.mechanicStep} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div key={i} className={styles.proofItem}>
             <span style={{ color: '#D63318', fontSize: '16px', fontWeight: 700, lineHeight: 1.4 }}>—</span>
             <div style={{
               fontSize: '13px', fontWeight: 700, letterSpacing: '0.04em',
-              textTransform: 'uppercase', color: 'var(--lp-trust-text)',
-              marginBottom: '4px',
+              textTransform: 'uppercase', color: 'var(--lp-proof-label)',
             }}>{item.label}</div>
-            <div style={{ fontSize: '13px', color: 'var(--lp-trust-muted)', lineHeight: 1.6 }}>{item.sub}</div>
+            <div style={{ fontSize: '13px', color: 'var(--lp-proof-sub)', lineHeight: 1.6 }}>{item.sub}</div>
           </div>
         ))}
       </div>
@@ -804,7 +929,7 @@ function ComparisonSection(): React.JSX.Element {
     <section style={{ borderBottom: '1px solid var(--lp-border-sub)' }}>
       <div className={styles.beforeAfterGrid}>
         {/* Without Nirnex */}
-        <div className={styles.beforePanel} style={{ padding: '4vw', background: 'var(--lp-compare-without-bg)' }}>
+        <div className={styles.beforePanel} style={{ padding: '4vw', background: 'var(--lp-compare-without-bg)', textAlign: 'right' }}>
           <div style={{
             fontSize: '12px', fontWeight: 700, letterSpacing: '0.2em',
             textTransform: 'uppercase', color: 'var(--lp-compare-without-lbl)', marginBottom: '0.5rem',
@@ -815,7 +940,7 @@ function ComparisonSection(): React.JSX.Element {
           }}>Unpredictable.</div>
           <ul className={styles.compareList}>
             {WITHOUT_ITEMS.map((item, i) => (
-              <li key={i}>
+              <li key={i} style={{ flexDirection: 'row-reverse', justifyContent: 'flex-start' }}>
                 <span style={{ color: 'var(--lp-compare-without-lbl)', fontWeight: 700, flexShrink: 0 }}>✕</span>
                 <span style={{ color: 'var(--lp-compare-without-val)' }}>{item}</span>
               </li>
@@ -852,33 +977,35 @@ function ObjectionSection(): React.JSX.Element {
   return (
     <section style={{
       background: 'var(--lp-pain-bg)',
-      padding: '6vw 4vw',
+      padding: '7vw 4vw',
       borderBottom: '1px solid var(--lp-border-sub)',
     }}>
-      <div className={styles.insightGrid}>
-        <div>
-          <SectionLabel text="The Objection" />
-          <h2 style={{
-            fontSize: 'clamp(1.5rem,3vw,2.5rem)', fontWeight: 900, textTransform: 'uppercase',
-            letterSpacing: '-0.03em', lineHeight: 1.05, color: 'var(--lp-h2)',
-            border: 'none', padding: 0, margin: 0,
-          }}>
-            "I already have<br />tests and<br />code review."
-          </h2>
-        </div>
-        <div>
+      <div style={{ maxWidth: '640px', margin: '0 auto', textAlign: 'center' }}>
+
+        {/* Label + heading */}
+        <SectionLabel text="The Objection" />
+        <h2 style={{
+          fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase',
+          letterSpacing: '-0.03em', lineHeight: 1.0, color: 'var(--lp-h2)',
+          border: 'none', padding: 0, margin: '0 0 2rem',
+        }}>
+          "I already have<br />tests and code review."
+        </h2>
+
+        {/* Body — left-aligned inside the centred column */}
+        <div style={{ textAlign: 'left' }}>
           <p style={{
             fontSize: '15px', fontWeight: 400, color: 'var(--lp-body)',
-            lineHeight: 1.8, marginBottom: '1.5rem',
+            lineHeight: 1.8, marginBottom: '1.75rem',
           }}>
             Tests validate outcomes. Code review validates intent.
-            Neither validates <em>decision correctness</em> — whether the agent was operating on the
-            right context, inside the right boundaries, for the right reasons.
+            Neither validates <em>decision correctness</em> — whether the agent was operating
+            on the right context, inside the right boundaries, for the right reasons.
           </p>
-          <div style={{ borderLeft: '3px solid #D63318', paddingLeft: '1rem' }}>
+          <div style={{ borderLeft: '3px solid #D63318', paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <p style={{
               fontSize: '15px', fontWeight: 600, color: 'var(--lp-h2)',
-              lineHeight: 1.7, margin: '0 0 0.75rem',
+              lineHeight: 1.7, margin: 0,
             }}>
               Tests catch what went wrong after the fact.
             </p>
@@ -890,6 +1017,7 @@ function ObjectionSection(): React.JSX.Element {
             </p>
           </div>
         </div>
+
       </div>
     </section>
   );
@@ -987,21 +1115,23 @@ function CtaSection(): React.JSX.Element {
           Built for regulated enterprises and engineering organizations where a wrong AI
           decision costs more than the sprint. Read the full architecture specification.
         </p>
-      </div>
-      <div className={styles.ctaButtons}>
+        <br />
         <Link to="/docs/intro/overview" style={{
           background: '#D63318', color: '#FFFFFF',
           padding: '16px 36px', fontSize: '12px', fontWeight: 700,
           letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
           whiteSpace: 'nowrap', display: 'inline-block', textAlign: 'center',
         }}>Read the Architecture →</Link>
-        <Link to="/docs/business/executive-summary" style={{
+      </div>
+      <div className={styles.ctaButtons}>
+
+        {/* <Link to="/docs/business/executive-summary" style={{
           background: 'transparent', color: 'rgba(255,255,255,0.55)',
           padding: '16px 36px', fontSize: '12px', fontWeight: 700,
           letterSpacing: '0.2em', textTransform: 'uppercase', textDecoration: 'none',
           border: '1px solid rgba(255,255,255,0.12)',
           whiteSpace: 'nowrap', display: 'inline-block', textAlign: 'center',
-        }}>Business Case</Link>
+        }}>Business Case</Link> */}
       </div>
     </section>
   );
@@ -1016,8 +1146,7 @@ export default function Home(): React.JSX.Element {
       description="Nirnex enforces scope, validates decisions, and records every action — before execution."
     >
       <HomepageHero />
-      <RealityCheckSection />
-      <IdentificationSection />
+      <ProblemPanelSection />
       <PositioningSection />
       <WhoSection />
       <OutcomeSection />
