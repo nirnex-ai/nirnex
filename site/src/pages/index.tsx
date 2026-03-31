@@ -275,14 +275,15 @@ function HomepageHero(): React.JSX.Element {
             marginBottom: '1.5rem', color: 'var(--lp-h1)',
           }}>
             You are letting AI<br />modify your code<br />
-            <span style={{ color: '#D63318' }}>without knowing<br />what it will touch.</span>
+            <span style={{ color: '#D63318' }}>without knowing<br />what it will touch —<br />until it breaks something.</span>
           </h1>
 
           <p style={{
             fontSize: '17px', fontWeight: 400, lineHeight: 1.75,
             color: 'var(--lp-hero-body)', marginBottom: '2.5rem',
           }}>
-            Nirnex enforces scope, validates decisions, and records every action — before execution.
+            Nirnex enforces scope, validates decisions, and records every action —
+            before execution, not after something breaks.
           </p>
 
           <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
@@ -405,6 +406,57 @@ function RealityCheckSection(): React.JSX.Element {
               </li>
             ))}
           </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* 2b ── IDENTIFICATION ───────────────────────────────────── */
+function IdentificationSection(): React.JSX.Element {
+  return (
+    <section style={{
+      background: '#0D0D0D',
+      color: '#FFFFFF',
+      padding: '5vw 4vw',
+      borderBottom: '1px solid rgba(255,255,255,0.06)',
+    }}>
+      <div className={styles.insightGrid}>
+        <div>
+          <SectionLabel text="If This Sounds Familiar" dark />
+          <h2 style={{
+            fontSize: 'clamp(1.8rem,3.5vw,3rem)', fontWeight: 900, textTransform: 'uppercase',
+            letterSpacing: '-0.03em', lineHeight: 1.05,
+            color: '#FFFFFF', border: 'none', padding: 0, margin: 0,
+          }}>
+            You've already<br />seen this happen.
+          </h2>
+        </div>
+        <div>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {[
+              'AI modified something outside the intended scope',
+              'A change looked correct but broke another module',
+              "You couldn't explain why the agent made that decision",
+              'You relied on tests to catch issues after execution',
+            ].map((item, i) => (
+              <li key={i} style={{
+                display: 'flex', alignItems: 'flex-start', gap: '14px',
+                padding: '16px 0',
+                borderBottom: i < 3 ? '1px solid rgba(255,255,255,0.07)' : 'none',
+              }}>
+                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, paddingTop: '2px' }}>→</span>
+                <span style={{ fontSize: '15px', color: 'rgba(255,255,255,0.75)', lineHeight: 1.6 }}>{item}</span>
+              </li>
+            ))}
+          </ul>
+          <p style={{
+            marginTop: '1.5rem', fontSize: '15px',
+            color: 'rgba(255,255,255,0.5)', lineHeight: 1.7,
+            borderLeft: '3px solid rgba(214,51,24,0.4)', paddingLeft: '1rem',
+          }}>
+            This isn't a tooling issue. It's a lack of control over how decisions are made.
+          </p>
         </div>
       </div>
     </section>
@@ -534,6 +586,73 @@ function OutcomeSection(): React.JSX.Element {
               }}>
                 <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0, fontSize: '16px', paddingTop: '2px' }}>✓</span>
                 <span style={{ fontSize: '16px', color: 'var(--lp-body)', lineHeight: 1.6, fontWeight: 500 }}>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* 5b ── ADVANTAGE ───────────────────────────────────────── */
+function AdvantageSection(): React.JSX.Element {
+  const devItems = [
+    'No hidden side effects from AI execution',
+    'Know exact scope before any change happens',
+    'Debug failures using full decision trace',
+    'Stop guessing why something broke',
+  ];
+  const bizItems = [
+    'Fewer regressions from AI-driven changes',
+    'Reduced debugging time and engineering cost',
+    'Predictable and controlled AI behaviour',
+    'Audit-ready trace for compliance and review',
+  ];
+  return (
+    <section style={{
+      background: 'var(--lp-solution-bg)',
+      padding: '6vw 4vw',
+      borderBottom: '1px solid var(--lp-border-sub)',
+    }}>
+      <SectionLabel text="Why Teams Use Nirnex" />
+      <div className={styles.insightGrid}>
+        {/* Developers */}
+        <div style={{ borderRight: '1px solid var(--lp-border-sub)', paddingRight: '6vw' }}>
+          <h3 style={{
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.18em',
+            textTransform: 'uppercase', color: '#D63318', marginBottom: '1.5rem',
+          }}>For Developers</h3>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {devItems.map((item, i) => (
+              <li key={i} style={{
+                display: 'flex', alignItems: 'flex-start', gap: '12px',
+                padding: '12px 0',
+                borderBottom: i < devItems.length - 1 ? '1px solid var(--lp-border-sub)' : 'none',
+                fontSize: '15px', color: 'var(--lp-body)', lineHeight: 1.6,
+              }}>
+                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0 }}>✓</span>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+        {/* Business */}
+        <div>
+          <h3 style={{
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.18em',
+            textTransform: 'uppercase', color: '#D63318', marginBottom: '1.5rem',
+          }}>For Teams &amp; Business</h3>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {bizItems.map((item, i) => (
+              <li key={i} style={{
+                display: 'flex', alignItems: 'flex-start', gap: '12px',
+                padding: '12px 0',
+                borderBottom: i < bizItems.length - 1 ? '1px solid var(--lp-border-sub)' : 'none',
+                fontSize: '15px', color: 'var(--lp-body)', lineHeight: 1.6,
+              }}>
+                <span style={{ color: '#D63318', fontWeight: 700, flexShrink: 0 }}>✓</span>
+                {item}
               </li>
             ))}
           </ul>
@@ -898,9 +1017,11 @@ export default function Home(): React.JSX.Element {
     >
       <HomepageHero />
       <RealityCheckSection />
+      <IdentificationSection />
       <PositioningSection />
       <WhoSection />
       <OutcomeSection />
+      <AdvantageSection />
       <HowSection />
       <LayersSection />
       <ProofSection />
