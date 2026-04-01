@@ -1108,6 +1108,8 @@ function CtaSection(): React.JSX.Element {
       color: '#FFFFFF',
       padding: '8vw 4vw',
       borderTop: '1px solid rgba(255,255,255,0.06)',
+      textAlign: 'center',
+
     }}>
       <div>
         <div style={{
@@ -1125,7 +1127,7 @@ function CtaSection(): React.JSX.Element {
         </h2>
         <p style={{
           fontSize: '15px', fontWeight: 300, color: 'rgba(255,255,255,0.55)',
-          maxWidth: '480px', margin: 0, lineHeight: 1.75,
+          maxWidth: '480px', margin: '0 auto', lineHeight: 1.75,
         }}>
           Built for regulated enterprises and engineering organizations where a wrong AI
           decision costs more than the sprint. Read the full architecture specification.
