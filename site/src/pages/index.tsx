@@ -740,6 +740,21 @@ function AdvantageSection(): React.JSX.Element {
       borderBottom: '1px solid var(--lp-border-sub)',
     }}>
       <SectionLabel text="Why Teams Use Nirnex" />
+      <h2 style={{
+        fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase',
+        letterSpacing: '-0.03em', lineHeight: 1.0, color: 'var(--lp-h2)',
+        border: 'none', padding: 0, margin: '0.75rem 0 0',
+      }}>
+        What changes when you stop letting AI guess
+      </h2>
+      <p style={{
+        maxWidth: '340px', fontSize: '15px', color: 'var(--lp-body)', lineHeight: 1.7,
+        margin: 0, paddingBottom: '0.2rem',
+      }}>
+        Most teams discover AI mistakes after deployment.
+        Nirnex makes them impossible to execute in the first place.
+      </p>
+      <br></br>
       <div className={styles.insightGrid}>
         {/* Developers */}
         <div style={{ borderRight: '1px solid var(--lp-border-sub)', paddingRight: '6vw' }}>
