@@ -247,6 +247,8 @@ function HomepageHero(): React.JSX.Element {
       position: 'relative',
       overflow: 'hidden',
       borderBottom: '1px solid var(--lp-border-sub)',
+      backgroundImage: 'url(/nirnex/img/bg.jpeg)',
+      backgroundBlendMode: 'soft-light',
     }}>
       {/* Watermark */}
       <div aria-hidden="true" style={{
