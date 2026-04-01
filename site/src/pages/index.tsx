@@ -740,6 +740,21 @@ function AdvantageSection(): React.JSX.Element {
       borderBottom: '1px solid var(--lp-border-sub)',
     }}>
       <SectionLabel text="Why Teams Use Nirnex" />
+      <h2 style={{
+        fontSize: 'clamp(2rem,4vw,3.5rem)', fontWeight: 900, textTransform: 'uppercase',
+        letterSpacing: '-0.03em', lineHeight: 1.0, color: 'var(--lp-h2)',
+        border: 'none', padding: 0, margin: '0.75rem 0 0',
+      }}>
+        What changes when you stop letting AI guess
+      </h2>
+      <p style={{
+        maxWidth: '340px', fontSize: '15px', color: 'var(--lp-body)', lineHeight: 1.7,
+        margin: 0, paddingBottom: '0.2rem',
+      }}>
+        Most teams discover AI mistakes after deployment.
+        Nirnex makes them impossible to execute in the first place.
+      </p>
+      <br></br>
       <div className={styles.insightGrid}>
         {/* Developers */}
         <div style={{ borderRight: '1px solid var(--lp-border-sub)', paddingRight: '6vw' }}>
@@ -1093,6 +1108,8 @@ function CtaSection(): React.JSX.Element {
       color: '#FFFFFF',
       padding: '8vw 4vw',
       borderTop: '1px solid rgba(255,255,255,0.06)',
+      textAlign: 'center',
+
     }}>
       <div>
         <div style={{
@@ -1110,7 +1127,7 @@ function CtaSection(): React.JSX.Element {
         </h2>
         <p style={{
           fontSize: '15px', fontWeight: 300, color: 'rgba(255,255,255,0.55)',
-          maxWidth: '480px', margin: 0, lineHeight: 1.75,
+          maxWidth: '480px', margin: '0 auto', lineHeight: 1.75,
         }}>
           Built for regulated enterprises and engineering organizations where a wrong AI
           decision costs more than the sprint. Read the full architecture specification.
