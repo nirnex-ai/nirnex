@@ -161,7 +161,21 @@ function scanRemovalTargets(cwd: string, opts: RemoveOpts): RemovalPlan {
     skip(`.aidos.db preserved (--keep-data)`);
   }
 
-  // 3. .ai-index/
+  // 3. .aidos-ledger.db
+  const ledgerPath = path.join(cwd, '.aidos-ledger.db');
+  if (fs.existsSync(ledgerPath) && !opts.keepData) {
+    actions.push({
+      path: ledgerPath,
+      type: 'delete_file',
+      confidence: 'high',
+      reason: 'SQLite ledger database created by nirnex validate hook',
+      requiresConfirmation: false,
+    });
+  } else if (fs.existsSync(ledgerPath) && opts.keepData) {
+    skip(`.aidos-ledger.db preserved (--keep-data)`);
+  }
+
+  // 4. .ai-index/
   const aiIndexDir = path.join(cwd, '.ai-index');
   if (fs.existsSync(aiIndexDir) && !opts.keepData) {
     actions.push({
