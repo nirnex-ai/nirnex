@@ -17,6 +17,8 @@ import {
   ReasonCodeValue,
   VerificationStatus,
 } from './types.js';
+import { extractExitCode } from './exit-code.js';
+import { evaluateZeroTrustRules } from './attestation.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -25,79 +27,6 @@ function readStdin(): Promise<string> {
     process.stdin.on('data', chunk => { buf += chunk; });
     process.stdin.on('end', () => resolve(buf));
   });
-}
-
-/**
- * Extract the exit code from a Bash tool_result with multi-probe fallback.
- *
- * Claude Code's PostToolUse hook sends Bash results in varying shapes depending
- * on version. We try every known location before giving up:
- *   1. tool_result.exit_code          (number — primary field)
- *   2. tool_result.exitCode           (camelCase variant)
- *   3. tool_result.metadata.exit_code (nested metadata)
- *   4. Parse tool_result.output / .content / .text for "EXIT_CODE:N" patterns
- *   5. tool_result.is_error / isError  (boolean error flag → treat as exit 1)
- *
- * Returns the exit code as a number, or null if it cannot be determined.
- */
-/**
- * @param toolResult  The tool_result / tool_response object from the trace event.
- * @param command     The raw Bash command string (from tool_input.command).
- *                    Used to gate probe 6 — required to distinguish direct commands
- *                    from shell compositions.
- */
-function extractExitCode(
-  toolResult: Record<string, unknown> | undefined,
-  command = '',
-): number | null {
-  if (!toolResult) return null;
-
-  // 1 & 2: direct numeric fields
-  if (typeof toolResult.exit_code === 'number') return toolResult.exit_code;
-  if (typeof toolResult.exitCode  === 'number') return toolResult.exitCode as number;
-
-  // 3: nested metadata
-  const meta = toolResult.metadata as Record<string, unknown> | undefined;
-  if (meta) {
-    if (typeof meta.exit_code === 'number') return meta.exit_code as number;
-    if (typeof meta.exitCode  === 'number') return meta.exitCode  as number;
-  }
-
-  // 4: parse output string for EXIT_CODE:N or "exit code N" patterns.
-  // Include stdout — Claude Code's actual output field for Bash results.
-  const outputStr = String(
-    toolResult.output ?? toolResult.content ?? toolResult.text ?? toolResult.result ?? toolResult.stdout ?? ''
-  );
-  if (outputStr) {
-    const m = outputStr.match(/EXIT_CODE[:\s]+(\d+)/i)
-           ?? outputStr.match(/exit(?:\s+code)?[:\s]+(\d+)/i);
-    if (m) return parseInt(m[1], 10);
-  }
-
-  // 5: boolean error flag
-  if (toolResult.is_error === true || toolResult.isError === true) return 1;
-
-  // 6: Claude Code zero-exit signature — stdout present + interrupted === false.
-  //
-  // IMPORTANT: this probe is only safe for *direct* commands.
-  //
-  // When Claude wraps a command in shell composition — e.g.
-  //   `npm run lint 2>&1; echo "EXIT_CODE:$?"`
-  // the overall Bash invocation exits 0 (because `echo` always succeeds),
-  // so Claude Code sees exit 0 and emits no explicit exit_code field.
-  // If the underlying command produces large output (thousands of ESLint errors),
-  // Claude Code's stdout truncation drops the trailing "EXIT_CODE:1" text before
-  // the PostToolUse hook receives it — probe 4 finds nothing, and probe 6 would
-  // then WRONGLY infer exit 0.
-  //
-  // Guard: suppress probe 6 when the command contains shell composition operators
-  // (; && ||). For those commands probe 4 is the only reliable path; if probe 4
-  // found nothing (output was truncated) we return null → mandatory verification
-  // treats null as a blocking failure (cannot confirm pass).
-  const usesShellComposition = command.length > 0 && /;|&&|\|\|/.test(command);
-  if (!usesShellComposition && typeof toolResult.stdout === 'string' && toolResult.interrupted === false) return 0;
-
-  return null;
 }
 
 interface ViolationRecord {
@@ -314,39 +243,21 @@ export async function runValidate(): Promise<void> {
         severity,
       );
     } else {
-      // Verification was attempted — check exit code now so we can emit a blocking
-      // violation immediately rather than only setting verificationStatus later.
-      const bashEvents = events.filter(e => e.tool === 'Bash');
-      const verificationBashEarly = bashEvents.findLast(e => {
-        const cmd = String((e.tool_input as any)?.command ?? '');
-        if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
-        return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
-      });
-      if (verificationBashEarly) {
-        const vcmdEarly = String((verificationBashEarly.tool_input as any)?.command ?? '');
-        const exitCode = extractExitCode(verificationBashEarly.tool_result, vcmdEarly);
-        if (exitCode !== null && exitCode !== 0) {
-          // Proven non-zero exit: blocking violation
-          recordViolation(
-            ReasonCode.COMMAND_EXIT_NONZERO,
-            'Mandatory verification command exited with a non-zero code',
-            'exit_code = 0',
-            `exit_code = ${exitCode}`,
-            'blocking',
-          );
-        } else if (exitCode === null) {
-          // Exit code could not be determined — cannot confirm the verification passed.
-          // Under mandatory verification the burden of proof is on the pass, not the block:
-          // unknown outcome must be treated as blocking, not advisory.
-          recordViolation(
-            ReasonCode.COMMAND_EXIT_NONZERO,
-            'Mandatory verification command ran but exit code could not be determined — cannot confirm pass',
-            'exit_code = 0 (deterministic)',
-            'exit_code = unknown',
-            'blocking',
-          );
-        }
-        // exitCode === 0 → pass, no violation
+      // Zero-Trust rules 2, 3, 4 — delegated to the pure enforcement engine.
+      // Rule 4: uses FIRST verification event (not last).
+      // Rule 2: null exit code → COMMAND_EXIT_UNKNOWN (blocking).
+      // Rule 3: edits after verification → POST_VERIFICATION_EDIT (blocking).
+      const ztViolations = evaluateZeroTrustRules(events, true, storedVerificationCommands);
+      for (const ztv of ztViolations) {
+        recordViolation(
+          ReasonCode[ztv.reason_code],
+          ztv.detail,
+          ztv.reason_code === 'COMMAND_EXIT_NONZERO' ? 'exit_code = 0' :
+          ztv.reason_code === 'COMMAND_EXIT_UNKNOWN' ? 'exit_code = 0 (deterministic)' :
+          'no file modifications after verification',
+          ztv.detail,
+          'blocking',
+        );
       }
     }
   }
@@ -369,16 +280,20 @@ export async function runValidate(): Promise<void> {
   } else if (violations.some(v => v.event.payload.reason_code === ReasonCode.VERIFICATION_REQUIRED_NOT_RUN)) {
     verificationStatus = 'skipped';
   } else if (mandatoryVerificationRequired) {
-    // Verification was attempted — classify by exit code if available, else unknown
+    // Verification was attempted — classify by exit code if available, else unknown.
+    // Rule 4: use the FIRST verification event, never the last.
     const bashEvents = events.filter(e => e.tool === 'Bash');
-    const verificationBash = bashEvents.findLast(e => {
+    const verificationBash = bashEvents.find(e => {
       const cmd = String((e.tool_input as any)?.command ?? '');
       if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
       return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
     });
     if (verificationBash) {
+      // Prefer attested exit code (frozen at capture time) over live re-extraction.
       const vcmd = String((verificationBash.tool_input as any)?.command ?? '');
-      const exitCode = extractExitCode(verificationBash.tool_result, vcmd);
+      const exitCode = verificationBash.attestation?.exit_code !== undefined
+        ? verificationBash.attestation.exit_code
+        : extractExitCode(verificationBash.tool_result, vcmd);
       if (exitCode === 0) verificationStatus = 'pass';
       else if (exitCode !== null) verificationStatus = 'fail';
       else verificationStatus = 'unknown';

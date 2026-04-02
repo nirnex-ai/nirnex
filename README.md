@@ -115,6 +115,74 @@ nirnex.config.json
 
 ---
 
+## Zero-Trust Execution Model
+
+Nirnex operates on a hard principle: **Claude output is never used for decision-making — only tool traces are.**
+
+Every decision to allow or block task completion derives exclusively from machine-verifiable execution artifacts. Claude cannot declare success, interpret results, or upgrade a failed outcome.
+
+### System Roles
+
+| Layer | Role | Trust Level |
+|---|---|---|
+| Claude | Executes commands, edits files | Untrusted |
+| Trace Hook | Captures raw execution data | Semi-trusted |
+| Nirnex Runtime | Validates + interprets | Trusted |
+| Ledger | Immutable record | Trusted |
+
+### Execution Attestation Layer
+
+Every Bash command produces a `CommandAttestation` — a machine-verifiable record frozen at capture time by the `PostToolUse` hook:
+
+```json
+{
+  "command_hash": "<sha256-of-command>",
+  "exit_code": 0,
+  "captured_by": "trace-hook",
+  "verified": true,
+  "capture_timestamp": "..."
+}
+```
+
+If this attestation is absent, the exit code is treated as unknown. Unknown exit codes are blocking under Rule 2.
+
+### Enforcement Rules
+
+| Rule | Description | Violation Code |
+|---|---|---|
+| Rule 1 | Mandatory verification with no matching trace event → BLOCK | `VERIFICATION_REQUIRED_NOT_RUN` |
+| Rule 2 | Exit code `null` (indeterminate) → BLOCK | `COMMAND_EXIT_UNKNOWN` |
+| Rule 3 | File modified after verification ran → BLOCK | `POST_VERIFICATION_EDIT` |
+| Rule 4 | Only the **first** verification run counts — retries cannot rescue a failed run | (applies to exit code selection) |
+
+### Decision Engine (Deterministic)
+
+```
+if (mandatory_verification && no matching trace event)  → BLOCK VERIFICATION_REQUIRED_NOT_RUN
+if (exit_code === null)                                 → BLOCK COMMAND_EXIT_UNKNOWN
+if (exit_code !== 0)                                    → BLOCK COMMAND_EXIT_NONZERO
+if (edit/write after first verification)                → BLOCK POST_VERIFICATION_EDIT
+if (exit_code === 0 && no post-verification edits)      → ALLOW
+```
+
+No Claude text is involved in any step. Every decision in the ledger points to a specific trace event.
+
+### Ledger Write (Immutable Truth)
+
+Every outcome is persisted to the append-only SQLite ledger with a chain of SHA-256 hashes:
+
+```json
+{
+  "decision": "block",
+  "reason_code": "COMMAND_EXIT_NONZERO",
+  "derived_from": ["evt_id_123"]
+}
+```
+
+Decisions cannot be updated or deleted. `BEFORE UPDATE` / `BEFORE DELETE` triggers abort any mutation attempt.
+
+---
+
 ## Requirements
 
 - Node.js >= 20

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { loadActiveEnvelope, appendTraceEvent, appendHookEvent, generateEventId, generateRunId } from './session.js';
 import { HookPostToolUse, TraceEvent, ContextOutput, HookInvocationStartedEvent } from './types.js';
 import { buildTraceStageCompleted } from './stage-completion.js';
+import { attestBashExecution } from './attestation.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -111,6 +112,17 @@ export async function runTraceHook(): Promise<void> {
       )
     : [];
 
+  const toolResult = hookData.tool_response ?? hookData.tool_result;
+
+  // Execution Attestation Layer (Zero-Trust): freeze exit code at capture time
+  // for Bash events so validate.ts never needs to re-infer it from tool_result.
+  const attestation = hookData.tool_name === 'Bash' && toolResult
+    ? attestBashExecution(
+        String((hookData.tool_input as Record<string, unknown>)?.command ?? ''),
+        toolResult,
+      )
+    : undefined;
+
   const event: TraceEvent = {
     event_id: generateEventId(),
     session_id: sessionId,
@@ -118,9 +130,10 @@ export async function runTraceHook(): Promise<void> {
     timestamp: new Date().toISOString(),
     tool: hookData.tool_name,
     tool_input: hookData.tool_input,
-    tool_result: hookData.tool_response ?? hookData.tool_result,
+    tool_result: toolResult,
     affected_files: affectedFiles,
     deviation_flags: deviationFlags,
+    ...(attestation ? { attestation } : {}),
   };
 
   try {

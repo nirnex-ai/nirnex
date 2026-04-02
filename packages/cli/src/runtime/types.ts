@@ -61,6 +61,20 @@ export interface TaskEnvelope {
   status: 'pending' | 'active' | 'completed' | 'failed';
 }
 
+/** Execution attestation — frozen at trace-hook capture time, not at validation time. */
+export interface CommandAttestation {
+  /** SHA-256 hex of the command string. */
+  command_hash: string;
+  /** Exit code extracted at capture time. null = indeterminate → Zero-Trust Rule 2 blocks. */
+  exit_code: number | null;
+  /** Always 'trace-hook' — the only trusted capture source. */
+  captured_by: 'trace-hook';
+  /** true iff exit_code was deterministically extracted (not null). */
+  verified: boolean;
+  /** ISO 8601 timestamp when the attestation was created. */
+  capture_timestamp: string;
+}
+
 export interface TraceEvent {
   event_id: string;
   session_id: string;
@@ -71,6 +85,8 @@ export interface TraceEvent {
   tool_result?: Record<string, unknown>;
   affected_files: string[];
   deviation_flags: string[];
+  /** Present for Bash events only. Frozen at capture time by the trace hook. */
+  attestation?: CommandAttestation;
 }
 
 // ─── Hook Audit Trail ──────────────────────────────────────────────────────
@@ -96,7 +112,12 @@ export type VerificationRequirementSource =
 export const ReasonCode = {
   VERIFICATION_NOT_REQUESTED: 'VERIFICATION_NOT_REQUESTED',
   VERIFICATION_REQUIRED_NOT_RUN: 'VERIFICATION_REQUIRED_NOT_RUN',
+  /** Verification command ran and exit code was proven non-zero. */
   COMMAND_EXIT_NONZERO: 'COMMAND_EXIT_NONZERO',
+  /** Verification command ran but exit code could not be determined (Zero-Trust Rule 2). */
+  COMMAND_EXIT_UNKNOWN: 'COMMAND_EXIT_UNKNOWN',
+  /** A file was modified after the verification command ran (Zero-Trust Rule 3). */
+  POST_VERIFICATION_EDIT: 'POST_VERIFICATION_EDIT',
   ACCEPTANCE_NOT_EVALUATED: 'ACCEPTANCE_NOT_EVALUATED',
   SUMMARY_CONTRADICTS_EVIDENCE: 'SUMMARY_CONTRADICTS_EVIDENCE',
   BLOCKED_PATH_DEVIATION: 'BLOCKED_PATH_DEVIATION',
