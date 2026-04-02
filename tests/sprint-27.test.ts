@@ -227,12 +227,13 @@ describe('2. attestBashExecution', () => {
 // ─── Section 3: evaluateZeroTrustRules ────────────────────────────────────────
 
 describe('3. evaluateZeroTrustRules', () => {
-  it('3.1 Rule 2: null exit_code → blocking COMMAND_EXIT_UNKNOWN', () => {
+  it('3.1 Rule 2: null exit_code → blocking COMMAND_EXIT_UNKNOWN with machine-observed value', () => {
     const events: TraceEvent[] = [makeBashEvent(VERIFY_CMD, null)];
     const violations = evaluateZeroTrustRules(events, true, STORED_CMDS);
-    const codes = violations.map(v => v.reason_code);
-    expect(codes).toContain('COMMAND_EXIT_UNKNOWN');
-    expect(violations.find(v => v.reason_code === 'COMMAND_EXIT_UNKNOWN')?.severity).toBe('blocking');
+    const v = violations.find(v => v.reason_code === 'COMMAND_EXIT_UNKNOWN');
+    expect(v).toBeDefined();
+    expect(v?.severity).toBe('blocking');
+    expect(v?.observed).toBe('exit_code = unknown');
   });
 
   it('3.2 Rule 2: exit_code=0 → no violation', () => {
@@ -241,23 +242,25 @@ describe('3. evaluateZeroTrustRules', () => {
     expect(violations).toHaveLength(0);
   });
 
-  it('3.3 Rule 2: exit_code=1 → blocking COMMAND_EXIT_NONZERO', () => {
+  it('3.3 Rule 2: exit_code=1 → blocking COMMAND_EXIT_NONZERO with exact observed exit code', () => {
     const events: TraceEvent[] = [makeBashEvent(VERIFY_CMD, 1)];
     const violations = evaluateZeroTrustRules(events, true, STORED_CMDS);
-    const codes = violations.map(v => v.reason_code);
-    expect(codes).toContain('COMMAND_EXIT_NONZERO');
-    expect(violations.find(v => v.reason_code === 'COMMAND_EXIT_NONZERO')?.severity).toBe('blocking');
+    const v = violations.find(v => v.reason_code === 'COMMAND_EXIT_NONZERO');
+    expect(v).toBeDefined();
+    expect(v?.severity).toBe('blocking');
+    expect(v?.observed).toBe('exit_code = 1');
   });
 
-  it('3.4 Rule 3: Edit after verification → blocking POST_VERIFICATION_EDIT', () => {
+  it('3.4 Rule 3: Edit after verification → blocking POST_VERIFICATION_EDIT with file in observed', () => {
     const events: TraceEvent[] = [
       makeBashEvent(VERIFY_CMD, 0, 0),
       makeEditEvent('src/foo.ts', 100),
     ];
     const violations = evaluateZeroTrustRules(events, true, STORED_CMDS);
-    const codes = violations.map(v => v.reason_code);
-    expect(codes).toContain('POST_VERIFICATION_EDIT');
-    expect(violations.find(v => v.reason_code === 'POST_VERIFICATION_EDIT')?.severity).toBe('blocking');
+    const v = violations.find(v => v.reason_code === 'POST_VERIFICATION_EDIT');
+    expect(v).toBeDefined();
+    expect(v?.severity).toBe('blocking');
+    expect(v?.observed).toContain('src/foo.ts');
   });
 
   it('3.5 Rule 3: Write after verification → blocking POST_VERIFICATION_EDIT', () => {

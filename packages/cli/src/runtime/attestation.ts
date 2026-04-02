@@ -41,7 +41,14 @@ export interface CommandAttestation {
 
 export interface ZeroTrustViolation {
   reason_code: 'COMMAND_EXIT_NONZERO' | 'COMMAND_EXIT_UNKNOWN' | 'POST_VERIFICATION_EDIT';
+  /** Human-readable description — used as violatedContract in the hook event. */
   detail: string;
+  /**
+   * Machine-observed value — used as the `actual` field in ContractViolationDetectedEvent.
+   * Always a concrete fact: "exit_code = 1", "exit_code = unknown", or "file: src/foo.ts".
+   * Never a prose description.
+   */
+  observed: string;
   severity: 'blocking';
 }
 
@@ -117,12 +124,14 @@ export function evaluateZeroTrustRules(
     violations.push({
       reason_code: 'COMMAND_EXIT_UNKNOWN',
       detail: 'Verification command ran but exit code could not be determined — cannot confirm pass (Zero-Trust Rule 2)',
+      observed: 'exit_code = unknown',
       severity: 'blocking',
     });
   } else if (exitCode !== 0) {
     violations.push({
       reason_code: 'COMMAND_EXIT_NONZERO',
-      detail: `Verification command exited with code ${exitCode} (Zero-Trust Rule 2)`,
+      detail: `Verification command exited with a non-zero code (Zero-Trust Rule 2)`,
+      observed: `exit_code = ${exitCode}`,
       severity: 'blocking',
     });
   }
@@ -140,7 +149,8 @@ export function evaluateZeroTrustRules(
       : String((edit.tool_input as Record<string, unknown>)?.file_path ?? 'unknown');
     violations.push({
       reason_code: 'POST_VERIFICATION_EDIT',
-      detail: `File modified after verification was run: ${files} (Zero-Trust Rule 3)`,
+      detail: 'File modified after verification was run (Zero-Trust Rule 3)',
+      observed: `file: ${files}`,
       severity: 'blocking',
     });
   }

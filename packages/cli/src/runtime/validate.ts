@@ -255,7 +255,7 @@ export async function runValidate(): Promise<void> {
           ztv.reason_code === 'COMMAND_EXIT_NONZERO' ? 'exit_code = 0' :
           ztv.reason_code === 'COMMAND_EXIT_UNKNOWN' ? 'exit_code = 0 (deterministic)' :
           'no file modifications after verification',
-          ztv.detail,
+          ztv.observed,   // machine-observed value, not prose — visible in hook-log actual column
           'blocking',
         );
       }
