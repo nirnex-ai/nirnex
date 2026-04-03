@@ -63,7 +63,7 @@ export function detectCircularDeps(
 ): ConflictRecord[] {
   if (!db || touchedPaths.length === 0) return [];
 
-  let edges: EdgeRow[] = [];
+  let edges: EdgeRow[];
   try {
     edges = db.prepare(`
       SELECT m_from.path AS from_path, m_to.path AS to_path

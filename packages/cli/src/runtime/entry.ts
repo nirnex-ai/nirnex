@@ -117,7 +117,7 @@ export async function runEntry(): Promise<void> {
     process.exit(0);
   }
 
-  let eco: Record<string, any> = {};
+  let eco: Record<string, any>;
   try {
     const { buildECO } = await import('@nirnex/core/dist/eco.js');
     eco = buildECO(null, repoRoot, { query: prompt });

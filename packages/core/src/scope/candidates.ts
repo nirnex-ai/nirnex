@@ -115,7 +115,7 @@ function walkFs(
     if (!policy.supportedExtensions.has(ext)) continue;
     if (isBinaryExt(ext)) continue;
 
-    let size = 0;
+    let size: number;
     try {
       size = fs.statSync(fullPath).size;
     } catch {

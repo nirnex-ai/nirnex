@@ -49,7 +49,6 @@ export function checkSchemaVersionOrRebuild(
     userVersion = readUserVersion(db);
   } catch {
     // Can't read DB — treat as stale, require rebuild
-    userVersion = 0;
   } finally {
     db?.close();
   }

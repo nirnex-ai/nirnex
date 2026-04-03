@@ -25,7 +25,7 @@ function polarityPair(a: string, b: string): string {
 
 function subjectsOverlap(a: string, b: string): boolean {
   const tokens = (s: string) =>
-    s.toLowerCase().split(/[\s_\-]+/).filter(t => t.length > 3);
+    s.toLowerCase().split(/[\s_-]+/).filter(t => t.length > 3);
   const tokensA = new Set(tokens(a));
   return tokens(b).some(t => tokensA.has(t));
 }

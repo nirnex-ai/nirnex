@@ -51,12 +51,13 @@ export function globToRegex(pattern: string): RegExp {
 
   let p = escapeRegex(pattern);
   // Replace ** first (use placeholder to avoid double-processing)
-  p = p.replace(/\\\*\\\*/g, '\x00');
+  const DSTAR = '\u0000';
+  p = p.replace(/\\\*\\\*/g, DSTAR);
   // Replace single * (matches within one segment)
   p = p.replace(/\\\*/g, '[^/]*');
   // Expand ** placeholder
-  p = p.replace(/\x00\//g, '(.+/)?');
-  p = p.replace(/\x00/g, '.*');
+  p = p.replace(new RegExp(DSTAR + '/', 'g'), '(.+/)?');
+  p = p.replace(new RegExp(DSTAR, 'g'), '.*');
 
   return new RegExp(`^${p}($|/.*$)`);
 }

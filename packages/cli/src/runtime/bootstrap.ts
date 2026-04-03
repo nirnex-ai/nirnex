@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
+import { openDb } from '@nirnex/core';
 import { createSession, saveSession, loadSession, appendHookEvent, generateEventId, generateRunId } from './session.js';
 import { HookSessionStart, HookInvocationStartedEvent } from './types.js';
 
@@ -25,7 +26,6 @@ function getIndexFreshness(repoRoot: string): { freshness: 'fresh' | 'stale' | '
     if (!fs.existsSync(dbPath)) return { freshness: 'unknown', head };
 
     // Read stored commit hash from DB
-    const { openDb } = require('@nirnex/core/dist/db.js');
     const db = openDb(dbPath);
     const meta = db.prepare('SELECT value FROM _meta WHERE key = ?').get('commit_hash') as { value: string } | undefined;
     db.close();

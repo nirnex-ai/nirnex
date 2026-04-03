@@ -33,7 +33,7 @@ export function statusCommand(_args: string[]): void {
     process.exit(1);
   }
 
-  let config: Record<string, any> = {};
+  let config: Record<string, any>;
   try {
     config = JSON.parse(readFileSync(configPath, 'utf8'));
     tick(`Project: \x1b[1m${config.projectName ?? path.basename(cwd)}\x1b[0m`);
@@ -43,14 +43,18 @@ export function statusCommand(_args: string[]): void {
 
   // Check .ai/ structure
   const aiDir = path.join(cwd, '.ai');
-  existsSync(aiDir)
-    ? tick('.ai/ workspace present')
-    : cross('.ai/ workspace missing — re-run nirnex setup');
+  if (existsSync(aiDir)) {
+    tick('.ai/ workspace present');
+  } else {
+    cross('.ai/ workspace missing — re-run nirnex setup');
+  }
 
   const promptsDir = path.join(aiDir, 'prompts');
-  existsSync(path.join(promptsDir, 'analyst.md')) && existsSync(path.join(promptsDir, 'implementer.md'))
-    ? tick('.ai/prompts/ configured')
-    : warn('.ai/prompts/ missing analyst.md or implementer.md');
+  if (existsSync(path.join(promptsDir, 'analyst.md')) && existsSync(path.join(promptsDir, 'implementer.md'))) {
+    tick('.ai/prompts/ configured');
+  } else {
+    warn('.ai/prompts/ missing analyst.md or implementer.md');
+  }
 
   // Check index
   const dbExists = existsSync(dbPath);
@@ -93,9 +97,11 @@ export function statusCommand(_args: string[]): void {
 
   // Check git hook
   const hookPath = path.join(cwd, '.git', 'hooks', 'post-commit');
-  existsSync(hookPath)
-    ? tick('Git post-commit hook installed')
-    : warn('Git post-commit hook not installed (index may drift)');
+  if (existsSync(hookPath)) {
+    tick('Git post-commit hook installed');
+  } else {
+    warn('Git post-commit hook not installed (index may drift)');
+  }
 
   // Check Claude hooks
   console.log('');
@@ -107,9 +113,11 @@ export function statusCommand(_args: string[]): void {
   } else {
     try {
       const settings = JSON.parse(readFileSync(claudeSettingsPath, 'utf8'));
-      settings.hooks
-        ? tick('.claude/settings.json hook bindings present')
-        : warn('.claude/settings.json has no hooks section — re-run nirnex setup');
+      if (settings.hooks) {
+        tick('.claude/settings.json hook bindings present');
+      } else {
+        warn('.claude/settings.json has no hooks section — re-run nirnex setup');
+      }
     } catch {
       warn('.claude/settings.json is malformed');
     }
@@ -127,9 +135,11 @@ export function statusCommand(_args: string[]): void {
   for (const h of claudeHooks) {
     if (!existsSync(path.join(hooksDir, h))) hooksMissing++;
   }
-  hooksMissing === 0
-    ? tick('All 5 Claude hook scripts present')
-    : warn(`${hooksMissing} Claude hook script(s) missing in .claude/hooks/ — re-run nirnex setup`);
+  if (hooksMissing === 0) {
+    tick('All 5 Claude hook scripts present');
+  } else {
+    warn(`${hooksMissing} Claude hook script(s) missing in .claude/hooks/ — re-run nirnex setup`);
+  }
 
   // Check runtime state
   const runtimeDir = path.join(cwd, '.ai-index', 'runtime');

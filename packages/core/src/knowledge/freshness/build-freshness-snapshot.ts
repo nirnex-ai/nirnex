@@ -27,7 +27,7 @@ export function buildFreshnessSnapshot(
   }
 
   // ── 2. Get current HEAD ───────────────────────────────────────────────────
-  let headCommit = 'none';
+  let headCommit: string;
   try {
     headCommit = execSync('git rev-parse HEAD', {
       cwd: repoRoot,
