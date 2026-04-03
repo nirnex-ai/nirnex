@@ -130,12 +130,78 @@ export function resolveNirnexBin(): string {
 }
 
 /**
- * Generate a self-contained hook launcher script.
- * Uses the resolved absolute bin path so the script is immune to shell PATH
- * restrictions when Claude Code invokes it via /bin/sh.
+ * Resolve the absolute path to the `node` binary at setup time.
+ *
+ * This is needed because `nirnex` itself starts with `#!/usr/bin/env node`.
+ * Even when the hook script uses an absolute path to `nirnex`, the nirnex
+ * binary's own shebang calls `/usr/bin/env node` — and that fails in Claude
+ * Code's restricted shell where `/usr/local/bin` is not in PATH.
+ *
+ * Resolution order:
+ *   1. `process.execPath` — the node that is running `nirnex setup` right now
+ *      (most reliable: always the correct version that can run nirnex)
+ *   2. Well-known absolute locations (Homebrew x64, Homebrew ARM, Volta, nvm)
+ *   3. Bare 'node' fallback
  */
-export function generateHookScript(subcommand: string, nirnexBin: string): string {
-  return `#!/bin/sh\nexec ${nirnexBin} runtime ${subcommand}\n`;
+export function resolveNodeBin(): string {
+  // 1. The currently running node process — most reliable at setup time
+  if (process.execPath && process.execPath !== 'node' && fs.existsSync(process.execPath)) {
+    return process.execPath;
+  }
+
+  // 2. Well-known absolute locations
+  for (const candidate of [
+    '/usr/local/bin/node',
+    '/opt/homebrew/bin/node',
+    `${process.env.HOME ?? ''}/.volta/bin/node`,
+  ]) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+
+  // 3. Fallback
+  return 'node';
+}
+
+/**
+ * Generate a self-contained hook launcher script.
+ *
+ * Injects `export PATH=` before the exec so that `/usr/bin/env node` (used
+ * in the nirnex binary's shebang) succeeds even in Claude Code's restricted
+ * shell environment where PATH is typically just `/usr/bin:/bin`.
+ *
+ * PATH is constructed as:
+ *   <node-binary-dir> : /usr/local/bin : /opt/homebrew/bin : $PATH
+ *
+ * The node binary's directory comes first (highest priority) to ensure the
+ * exact version used at setup time is preferred over any system fallback.
+ * Duplicate entries are removed while preserving order.
+ *
+ * @param subcommand  - runtime subcommand: bootstrap | entry | guard | trace | validate
+ * @param nirnexBin   - absolute path to the nirnex binary (from resolveNirnexBin)
+ * @param nodeBin     - absolute path to the node binary (from resolveNodeBin).
+ *                      Defaults to process.execPath (the running node at setup time).
+ */
+export function generateHookScript(
+  subcommand: string,
+  nirnexBin:  string,
+  nodeBin?:   string,
+): string {
+  const resolvedNode = nodeBin ?? process.execPath;
+
+  // Build a deduplicated, ordered list of directories to prepend to PATH.
+  // We include the node binary's own directory first (exact version match),
+  // then well-known install locations as fallbacks for any environment.
+  const dirs: string[] = [];
+  if (resolvedNode.startsWith('/')) {
+    dirs.push(path.dirname(resolvedNode));
+  }
+  dirs.push('/usr/local/bin', '/opt/homebrew/bin');
+
+  // Deduplicate while preserving insertion order
+  const uniqueDirs = [...new Set(dirs)];
+  const pathExport = `export PATH="${uniqueDirs.join(':')}:$PATH"`;
+
+  return `#!/bin/sh\n${pathExport}\nexec ${nirnexBin} runtime ${subcommand}\n`;
 }
 
 const CLAUDE_SETTINGS_HOOKS = {
@@ -367,8 +433,11 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
     mkdirSafe(hooksDir);
 
     // Resolve the absolute nirnex path once — all five scripts use it.
-    // This makes every hook immune to /bin/sh's restricted PATH at runtime.
+    // Resolve both the nirnex binary and the node binary at setup time so every
+    // generated hook script carries an explicit PATH that works in Claude Code's
+    // restricted shell (PATH = /usr/bin:/bin only).
     const nirnexBin = resolveNirnexBin();
+    const nodeBin   = resolveNodeBin();
     if (nirnexBin !== 'nirnex') {
       info(`Resolved nirnex binary: ${nirnexBin}`);
     } else {
@@ -376,11 +445,11 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
     }
 
     const hookFiles: [string, string][] = [
-      ['nirnex-bootstrap.sh', generateHookScript('bootstrap', nirnexBin)],
-      ['nirnex-entry.sh',     generateHookScript('entry',     nirnexBin)],
-      ['nirnex-guard.sh',     generateHookScript('guard',     nirnexBin)],
-      ['nirnex-trace.sh',     generateHookScript('trace',     nirnexBin)],
-      ['nirnex-validate.sh',  generateHookScript('validate',  nirnexBin)],
+      ['nirnex-bootstrap.sh', generateHookScript('bootstrap', nirnexBin, nodeBin)],
+      ['nirnex-entry.sh',     generateHookScript('entry',     nirnexBin, nodeBin)],
+      ['nirnex-guard.sh',     generateHookScript('guard',     nirnexBin, nodeBin)],
+      ['nirnex-trace.sh',     generateHookScript('trace',     nirnexBin, nodeBin)],
+      ['nirnex-validate.sh',  generateHookScript('validate',  nirnexBin, nodeBin)],
     ];
 
     for (const [name, content] of hookFiles) {
