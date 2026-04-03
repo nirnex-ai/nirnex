@@ -59,6 +59,15 @@ export interface TaskEnvelope {
   };
   conflict?: TEEConflictSection;
   status: 'pending' | 'active' | 'completed' | 'failed';
+  /**
+   * ISO 8601 timestamp set when the Stop hook first writes a terminal outcome
+   * for this task (G3 fix). Acts as the idempotency sentinel: subsequent Stop
+   * hook invocations check this field and skip validation + ledger write when set.
+   *
+   * Absent on envelopes written before the G3 fix was deployed — treat as
+   * "not yet finalized" (undefined === not finalized).
+   */
+  finalized_at?: string;
 }
 
 /** Execution attestation — frozen at trace-hook capture time, not at validation time. */
@@ -158,6 +167,15 @@ export const ReasonCode = {
    * Governance decisions may rest on missing evidence.
    */
   STORE_JSONL_WRITE_FAILURES_DETECTED:   'STORE_JSONL_WRITE_FAILURES_DETECTED',
+
+  // ── G3: Stop-hook idempotency ────────────────────────────────────────────
+  /**
+   * Stop hook re-invoked for a task that already has a terminal outcome.
+   * envelope.finalized_at is set — this invocation is suppressed as a no-op.
+   * Emitted as an advisory; the hook still returns decision='allow' so Claude
+   * Code can proceed without being blocked by the duplicate invocation.
+   */
+  TASK_ALREADY_FINALIZED: 'TASK_ALREADY_FINALIZED',
 } as const;
 
 export type ReasonCodeValue = typeof ReasonCode[keyof typeof ReasonCode];

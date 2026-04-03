@@ -299,6 +299,65 @@ At the end of every task the `validate` hook calls `reconcileStores()` **before*
 | `STORE_JSONL_MISSING_ENVELOPE_CAPTURED` | advisory | validate | `InputEnvelopeCaptured` absent from JSONL — entry hook may not have run |
 | `STORE_JSONL_WRITE_FAILURES_DETECTED` | advisory | validate | JSONL audit trail is incomplete — inspect `hook-write-failures.jsonl` |
 | `LEDGER_WRITE_FAILED` | advisory | validate | Ledger persistence failed — run will not appear in `nirnex report --list` |
+| `TASK_ALREADY_FINALIZED` | advisory | validate | Stop hook re-invoked for an already-finalized task — duplicate suppressed |
+
+---
+
+## Stop Hook Idempotency (G3 fix)
+
+Rapid re-invocation of the Stop hook (e.g. double-submit, transient Claude Code retry, or process restart) would previously produce multiple `run_outcome_summary` entries in the ledger for the same task — silently corrupting regression windows and report counts.
+
+### Defence layers
+
+The fix applies three independent guards so no single point of failure can produce a duplicate outcome:
+
+| Layer | Location | Mechanism |
+|-------|----------|-----------|
+| **L1 — Envelope sentinel** | `TaskEnvelope.finalized_at` (types.ts) | ISO 8601 timestamp written on first Stop hook completion. `isEnvelopeFinalized()` in session.ts reads this field. |
+| **L2 — Idempotency guard** | validate.ts (pre-validation) | If `finalized_at` is already set, emit a single `TASK_ALREADY_FINALIZED` advisory event and exit 0 immediately — no validation runs, no ledger write. |
+| **L3 — Ledger backstop** | validate.ts (pre-ledger-write) | Before writing to the ledger, `LedgerReader.fetchOutcomeSummaries(trace_id)` is called. If an entry already exists, the write is skipped — protecting against the case where the envelope save failed but execution reached the ledger step. |
+
+### Envelope finalization for both outcomes
+
+Previously, `envelope.status` was only updated (`'completed'`) on allow decisions. Blocked tasks left the envelope in `'active'` state, making them permanently re-invocable.
+
+The G3 fix finalizes the envelope for **both** outcomes:
+
+| Decision | `envelope.status` | `envelope.finalized_at` |
+|----------|--------------------|--------------------------|
+| `allow`  | `'completed'`      | set to current ISO timestamp |
+| `block`  | `'failed'`         | set to current ISO timestamp |
+
+### Sequence on re-invocation
+
+```
+Stop hook (2nd call)
+  ↓
+load envelope
+  ↓
+isEnvelopeFinalized() → true          ← L1 catches it here
+  ↓
+emit ContractViolationDetected
+  (TASK_ALREADY_FINALIZED, advisory)
+  ↓
+stdout: { decision: 'allow' }
+  ↓
+process.exit(0)  — no validation, no ledger write
+```
+
+If L1 is bypassed (e.g. envelope save failed on first call):
+
+```
+Stop hook (2nd call)
+  ↓
+[L1 guard passes — finalized_at not set]
+  ↓
+... full validation runs ...
+  ↓
+LedgerReader.fetchOutcomeSummaries(trace_id).length > 0  ← L3 catches it here
+  ↓
+ledger write skipped — original outcome preserved
+```
 
 ---
 

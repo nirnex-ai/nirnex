@@ -5,7 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, loadHookWriteFailures, appendHookEvent, generateEventId, generateRunId } from './session.js';
+import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, loadHookWriteFailures, appendHookEvent, generateEventId, generateRunId, isEnvelopeFinalized } from './session.js';
 import {
   HookStop,
   ValidateDecision,
@@ -97,6 +97,38 @@ export async function runValidate(): Promise<void> {
   // No active envelope → nothing to validate
   if (!envelope) {
     emitEarlyAllow('no_active_envelope');
+    process.exit(0);
+  }
+
+  // ── G3: Idempotency guard ───────────────────────────────────────────────────
+  // If the envelope already has a finalized_at timestamp, the Stop hook is being
+  // re-invoked (e.g. rapid double-submit, Claude Code retry, or transient
+  // process restart). Re-running full validation would produce duplicate ledger
+  // entries, redundant hook events, and false violation counts.
+  //
+  // Emit a single advisory event so the re-invocation is auditable, then exit
+  // cleanly with decision='allow'. The original outcome is already recorded.
+  if (isEnvelopeFinalized(envelope)) {
+    const dupEvent: ContractViolationDetectedEvent = {
+      event_id: generateEventId(),
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      task_id: envelope.task_id,
+      run_id: runId,
+      hook_stage: 'validate',
+      event_type: 'ContractViolationDetected',
+      status: 'violated',
+      payload: {
+        reason_code: ReasonCode.TASK_ALREADY_FINALIZED,
+        violated_contract: 'Stop hook must produce exactly one terminal outcome per task_id',
+        expected: `single outcome for task_id=${envelope.task_id}`,
+        actual: `task already finalized at ${envelope.finalized_at}; duplicate invocation suppressed`,
+        severity: 'advisory',
+        blocking_action_taken: false,
+      },
+    };
+    appendHookEvent(repoRoot, sessionId, dupEvent);
+    process.stdout.write(JSON.stringify({ decision: 'allow' } as ValidateDecision));
     process.exit(0);
   }
 
@@ -431,17 +463,36 @@ export async function runValidate(): Promise<void> {
   appendHookEvent(repoRoot, sessionId, stageEvent);
 
   // ── Output decision ───────────────────────────────────────────────────
+  //
+  // G3: finalize the envelope for BOTH allow and block outcomes so that any
+  // subsequent Stop hook re-invocation is caught by the idempotency guard above.
+  // `finalized_at` is set before stdout so the sentinel is on disk before the
+  // hook returns — this minimises the window where a crash could leave the
+  // envelope un-finalized while the process is mid-exit.
+
+  const finalizedAt = new Date().toISOString();
 
   if (decision === 'block') {
+    // G3: save envelope as 'failed' + finalized_at even for blocked tasks so
+    // re-invocation is prevented (previously the envelope was never saved on block).
+    try {
+      envelope.status = 'failed';
+      envelope.finalized_at = finalizedAt;
+      const { saveEnvelope } = await import('./session.js');
+      saveEnvelope(repoRoot, envelope);
+    } catch {
+      // Non-fatal: idempotency is best-effort when the envelope save fails
+    }
     const out: ValidateDecision = {
       decision: 'block',
       reason: `[Nirnex Validate] ${proseReasons.join(' | ')}`,
     };
     process.stdout.write(JSON.stringify(out));
   } else {
-    // Mark envelope as completed
+    // Mark envelope as completed and finalized (G3: adds finalized_at)
     try {
       envelope.status = 'completed';
+      envelope.finalized_at = finalizedAt;
       const { saveEnvelope } = await import('./session.js');
       saveEnvelope(repoRoot, envelope);
     } catch {
@@ -462,42 +513,56 @@ export async function runValidate(): Promise<void> {
     'merged';
 
   try {
-    const { initLedgerDb, appendLedgerEntry, getLedgerDbPath } = await import('@nirnex/core/dist/ledger.js');
+    const { initLedgerDb, appendLedgerEntry, getLedgerDbPath, LedgerReader } = await import('@nirnex/core/dist/ledger.js');
     const { randomUUID } = await import('node:crypto');
     const runTimestamp = new Date().toISOString();
-    const ledgerEntry = {
-      schema_version: '1.0.0' as const,
-      ledger_id: randomUUID(),
-      trace_id: envelope.task_id,
-      request_id: sessionId,
-      session_id: sessionId,
-      timestamp: runTimestamp,
-      stage: 'analysis' as const,
-      record_type: 'run_outcome_summary' as const,
-      actor: 'system' as const,
-      payload: {
-        kind: 'run_outcome_summary' as const,
-        summarized_trace_id: envelope.task_id,
-        completion_state: completionState,
-        final_lane: envelope.lane as 'A' | 'B' | 'C',
-        final_confidence: null,
-        had_refusal: decision === 'block',
-        had_override: false,
-        forced_unknown_applied: envelope.eco_summary.forced_unknown,
-        evidence_gate_failed: blockingViolations.length > 0,
-        stages_completed: events.length,
-        run_timestamp: runTimestamp,
-        // G2: embed the cross-store consistency record so every Ledger entry is
-        // self-describing — a reader can determine store consistency without
-        // re-reading the other two stores.
-        ...(storeReconciliationResult !== undefined
-          ? { store_reconciliation: storeReconciliationResult }
-          : {}),
-      },
-    };
     const db = initLedgerDb(getLedgerDbPath(repoRoot));
-    appendLedgerEntry(db, ledgerEntry);
-    db.close();
+
+    // G3: Ledger-level dedupe backstop.
+    // The envelope idempotency guard above is the primary protection. This is a
+    // secondary layer that fires when the envelope save failed (e.g. permissions
+    // error) but the process still reaches this point. If a run_outcome_summary
+    // already exists for this trace_id we skip the write — the original outcome
+    // is the authoritative one and the append-only ledger cannot be corrected.
+    const reader = new LedgerReader(db);
+    const existingSummaries = reader.fetchOutcomeSummaries(envelope.task_id);
+    if (existingSummaries.length > 0) {
+      // Outcome already recorded — no-op to prevent duplicate ledger entries.
+      db.close();
+    } else {
+      const ledgerEntry = {
+        schema_version: '1.0.0' as const,
+        ledger_id: randomUUID(),
+        trace_id: envelope.task_id,
+        request_id: sessionId,
+        session_id: sessionId,
+        timestamp: runTimestamp,
+        stage: 'analysis' as const,
+        record_type: 'run_outcome_summary' as const,
+        actor: 'system' as const,
+        payload: {
+          kind: 'run_outcome_summary' as const,
+          summarized_trace_id: envelope.task_id,
+          completion_state: completionState,
+          final_lane: envelope.lane as 'A' | 'B' | 'C',
+          final_confidence: null,
+          had_refusal: decision === 'block',
+          had_override: false,
+          forced_unknown_applied: envelope.eco_summary.forced_unknown,
+          evidence_gate_failed: blockingViolations.length > 0,
+          stages_completed: events.length,
+          run_timestamp: runTimestamp,
+          // G2: embed the cross-store consistency record so every Ledger entry is
+          // self-describing — a reader can determine store consistency without
+          // re-reading the other two stores.
+          ...(storeReconciliationResult !== undefined
+            ? { store_reconciliation: storeReconciliationResult }
+            : {}),
+        },
+      };
+      appendLedgerEntry(db, ledgerEntry);
+      db.close();
+    }
   } catch (ledgerErr) {
     // Ledger write failure must not block task execution, but must not be silent either.
     // Emit a structured advisory so the event stream reflects the governance gap.
