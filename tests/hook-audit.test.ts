@@ -24,8 +24,8 @@
  *   No mocks — real file system, real writes.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
@@ -33,6 +33,7 @@ import { tmpdir } from 'os';
 import {
   appendHookEvent,
   loadHookEvents,
+  loadHookWriteFailures,
   loadTraceEvents,
   generateEventId,
   generateRunId,
@@ -45,6 +46,7 @@ import {
   ContractViolationDetectedEvent,
   FinalOutcomeDeclaredEvent,
   StageCompletedEvent,
+  HookWriteFailedEvent,
   ReasonCode,
   TaskEnvelope,
   NirnexSession,
@@ -576,5 +578,232 @@ describe('FinalOutcomeDeclared.decision rule', () => {
     expect(outcome.payload.blocking_violation_count).toBe(0);
     expect(outcome.payload.advisory_violation_count).toBe(1);
     expect(outcome.payload.decision).toBe('allow');
+  });
+});
+
+// ─── G1 fix — write failures are observable, never silent ─────────────────────
+//
+// Before the fix: appendHookEvent had two silent-discard paths:
+//   (a) empty catch {} on fs.appendFileSync  → event lost, audit gap invisible
+//   (b) bare return on malformed events       → no record of what was dropped
+//
+// After the fix every failure path emits a structured HookWriteFailedEvent to:
+//   1. process.stderr   — always available; captured by the Claude Code process
+//   2. hook-write-failures.jsonl sidecar — separate inode from the failing file;
+//      readable by validate.ts via loadHookWriteFailures() (feeds G4 detection)
+//
+// The invariant that hook execution is never interrupted (no throw) is preserved.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('G1 — appendHookEvent write failures are observable, never silent', () => {
+  it('emits a structured HookWriteFailedEvent to stderr when the JSONL write fails', () => {
+    const dir = makeProject();
+    const sessionId = 'sess_g1_stderr_write_fail';
+    const runId = generateRunId();
+
+    // Pre-create the events dir and file, then lock it so the write fails.
+    const evDir = join(dir, '.ai-index', 'runtime', 'events', sessionId);
+    mkdirSync(evDir, { recursive: true });
+    const mainFile = join(evDir, 'hook-events.jsonl');
+    writeFileSync(mainFile, '', 'utf8');
+    chmodSync(mainFile, 0o444); // read-only → appendFileSync will throw EACCES
+
+    const stderrLines: string[] = [];
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: any) => {
+      stderrLines.push(typeof chunk === 'string' ? chunk : chunk.toString());
+      return true;
+    });
+
+    try {
+      appendHookEvent(dir, sessionId, {
+        event_id: generateEventId(), timestamp: new Date().toISOString(),
+        session_id: sessionId, task_id: 'task_g1', run_id: runId,
+        hook_stage: 'validate', event_type: 'HookInvocationStarted',
+        payload: { stage: 'validate', cwd: dir, repo_root: dir, pid: process.pid },
+      });
+
+      expect(stderrLines).toHaveLength(1);
+      const record: HookWriteFailedEvent = JSON.parse(stderrLines[0]);
+      expect(record.event_type).toBe('HookWriteFailed');
+      expect(record.payload.reason).toBe('write_error');
+      expect(record.payload.failed_event_type).toBe('HookInvocationStarted');
+      expect(record.payload.error).toBeTruthy();
+      expect(record.payload.target_path).toContain('hook-events.jsonl');
+      expect(record.session_id).toBe(sessionId);
+    } finally {
+      spy.mockRestore();
+      chmodSync(mainFile, 0o644);
+    }
+  });
+
+  it('writes a sidecar hook-write-failures.jsonl when the JSONL write fails', () => {
+    const dir = makeProject();
+    const sessionId = 'sess_g1_sidecar_write_fail';
+    const runId = generateRunId();
+
+    const evDir = join(dir, '.ai-index', 'runtime', 'events', sessionId);
+    mkdirSync(evDir, { recursive: true });
+    const mainFile = join(evDir, 'hook-events.jsonl');
+    writeFileSync(mainFile, '', 'utf8');
+    chmodSync(mainFile, 0o444);
+
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      appendHookEvent(dir, sessionId, {
+        event_id: generateEventId(), timestamp: new Date().toISOString(),
+        session_id: sessionId, task_id: 'task_g1', run_id: runId,
+        hook_stage: 'trace', event_type: 'HookInvocationStarted',
+        payload: { stage: 'trace', cwd: dir, repo_root: dir, pid: process.pid },
+      });
+
+      const sidecarPath = join(evDir, 'hook-write-failures.jsonl');
+      expect(existsSync(sidecarPath)).toBe(true);
+
+      const failures = loadHookWriteFailures(dir, sessionId);
+      expect(failures).toHaveLength(1);
+      expect(failures[0].event_type).toBe('HookWriteFailed');
+      expect(failures[0].payload.reason).toBe('write_error');
+      expect(failures[0].session_id).toBe(sessionId);
+    } finally {
+      spy.mockRestore();
+      chmodSync(mainFile, 0o644);
+    }
+  });
+
+  it('emits to stderr for malformed events instead of silently discarding them', () => {
+    const dir = makeProject();
+    const sessionId = 'sess_g1_malformed_stderr';
+
+    const stderrLines: string[] = [];
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: any) => {
+      stderrLines.push(typeof chunk === 'string' ? chunk : chunk.toString());
+      return true;
+    });
+
+    try {
+      // event_type omitted — fails the universal-field guard
+      appendHookEvent(dir, sessionId, {
+        event_id: generateEventId(),
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        task_id: 'task_g1',
+        run_id: generateRunId(),
+        hook_stage: 'entry',
+      } as any);
+
+      expect(stderrLines).toHaveLength(1);
+      const record: HookWriteFailedEvent = JSON.parse(stderrLines[0]);
+      expect(record.event_type).toBe('HookWriteFailed');
+      expect(record.payload.reason).toBe('malformed_event');
+      expect(record.payload.missing_fields).toContain('event_type');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('writes sidecar for malformed events; main JSONL is untouched', () => {
+    const dir = makeProject();
+    const sessionId = 'sess_g1_malformed_sidecar';
+
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      // hook_stage and event_type both absent
+      appendHookEvent(dir, sessionId, {
+        event_id: generateEventId(),
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        task_id: 'task_g1',
+        run_id: generateRunId(),
+      } as any);
+
+      // Main JSONL: the malformed event must NOT have been persisted.
+      expect(loadHookEvents(dir, sessionId)).toHaveLength(0);
+
+      // Sidecar: exactly one failure record, with the right missing_fields.
+      const failures = loadHookWriteFailures(dir, sessionId);
+      expect(failures).toHaveLength(1);
+      expect(failures[0].payload.reason).toBe('malformed_event');
+      expect(failures[0].payload.missing_fields).toEqual(
+        expect.arrayContaining(['hook_stage', 'event_type']),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('loadHookWriteFailures returns an empty array when no sidecar exists', () => {
+    const dir = makeProject();
+    expect(loadHookWriteFailures(dir, 'sess_g1_no_failures')).toEqual([]);
+  });
+
+  it('multiple write failures accumulate in the sidecar', () => {
+    const dir = makeProject();
+    const sessionId = 'sess_g1_multi_fail';
+    const runId = generateRunId();
+
+    const evDir = join(dir, '.ai-index', 'runtime', 'events', sessionId);
+    mkdirSync(evDir, { recursive: true });
+    const mainFile = join(evDir, 'hook-events.jsonl');
+    writeFileSync(mainFile, '', 'utf8');
+    chmodSync(mainFile, 0o444);
+
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      const goodEvent = () => ({
+        event_id: generateEventId(), timestamp: new Date().toISOString(),
+        session_id: sessionId, task_id: 'task_g1', run_id: runId,
+        hook_stage: 'trace' as const, event_type: 'HookInvocationStarted' as const,
+        payload: { stage: 'trace' as const, cwd: dir, repo_root: dir, pid: process.pid },
+      });
+
+      appendHookEvent(dir, sessionId, goodEvent());
+      appendHookEvent(dir, sessionId, goodEvent());
+      appendHookEvent(dir, sessionId, goodEvent());
+
+      const failures = loadHookWriteFailures(dir, sessionId);
+      expect(failures).toHaveLength(3);
+      expect(failures.every(f => f.payload.reason === 'write_error')).toBe(true);
+    } finally {
+      spy.mockRestore();
+      chmodSync(mainFile, 0o644);
+    }
+  });
+
+  it('hook execution is never interrupted — appendHookEvent does not throw on write failure', () => {
+    const dir = makeProject();
+    const sessionId = 'sess_g1_no_throw';
+    const runId = generateRunId();
+
+    const evDir = join(dir, '.ai-index', 'runtime', 'events', sessionId);
+    mkdirSync(evDir, { recursive: true });
+    const mainFile = join(evDir, 'hook-events.jsonl');
+    writeFileSync(mainFile, '', 'utf8');
+    chmodSync(mainFile, 0o444);
+
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    let threw = false;
+    try {
+      appendHookEvent(dir, sessionId, {
+        event_id: generateEventId(), timestamp: new Date().toISOString(),
+        session_id: sessionId, task_id: 'task_g1', run_id: runId,
+        hook_stage: 'bootstrap', event_type: 'HookInvocationStarted',
+        payload: { stage: 'bootstrap', cwd: dir, repo_root: dir, pid: process.pid },
+      });
+    } catch {
+      threw = true;
+    } finally {
+      spy.mockRestore();
+      chmodSync(mainFile, 0o644);
+    }
+
+    expect(threw).toBe(false);
+  });
+
+  it('HOOK_WRITE_FAILED reason code is registered in ReasonCode', () => {
+    expect(ReasonCode.HOOK_WRITE_FAILED).toBe('HOOK_WRITE_FAILED');
   });
 });

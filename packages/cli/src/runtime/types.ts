@@ -126,6 +126,12 @@ export const ReasonCode = {
   LANE_C_DEADLOCK: 'LANE_C_DEADLOCK',
   ECO_BLOCKED: 'ECO_BLOCKED',
   LEDGER_WRITE_FAILED: 'LEDGER_WRITE_FAILED',
+  /**
+   * One or more hook events could not be written to hook-events.jsonl.
+   * The failure is recorded in hook-write-failures.jsonl and emitted to stderr,
+   * but the audit trail for this session may be incomplete.
+   */
+  HOOK_WRITE_FAILED: 'HOOK_WRITE_FAILED',
 } as const;
 
 export type ReasonCodeValue = typeof ReasonCode[keyof typeof ReasonCode];
@@ -203,6 +209,43 @@ export interface FinalOutcomeDeclaredEvent extends HookEventBase {
     verification_status: VerificationStatus;
     acceptance_status: VerificationStatus;
     envelope_status: string;
+  };
+}
+
+/**
+ * Emitted when appendHookEvent() cannot write an event to hook-events.jsonl,
+ * or when an event is rejected because required universal fields are missing.
+ *
+ * NOT written to the main hook-events.jsonl (that file may be the source of
+ * the failure). Written to the sidecar hook-write-failures.jsonl and to
+ * process.stderr so the Claude Code process can capture it.
+ *
+ * Consumers: validate.ts reads this via loadHookWriteFailures() to detect
+ * whether the audit trail for the current session is complete.
+ */
+export interface HookWriteFailedEvent {
+  event_id: string;
+  timestamp: string;
+  session_id: string;
+  task_id: string;
+  run_id: string;
+  /** 'unknown' only when the source event was malformed and hook_stage was absent. */
+  hook_stage: HookStage | 'unknown';
+  event_type: 'HookWriteFailed';
+  payload: {
+    /** 'write_error' — fs.appendFileSync rejected the write.
+     *  'malformed_event' — one or more universal fields were absent on the source event. */
+    reason: 'write_error' | 'malformed_event';
+    /** event_type of the event that failed to be written; 'unknown' when malformed. */
+    failed_event_type: HookEventType | 'unknown';
+    /** event_id of the event that failed; empty string when malformed. */
+    failed_event_id: string;
+    /** Human-readable error message from the caught exception or validation check. */
+    error: string;
+    /** Absolute path of the file that could not be written. */
+    target_path: string;
+    /** Populated only when reason === 'malformed_event'. */
+    missing_fields?: string[];
   };
 }
 

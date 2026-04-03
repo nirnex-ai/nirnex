@@ -3,7 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { NirnexSession, TaskEnvelope, TraceEvent, HookEvent } from './types.js';
+import { NirnexSession, TaskEnvelope, TraceEvent, HookEvent, HookEventType, HookStage, HookWriteFailedEvent } from './types.js';
 
 export const RUNTIME_DIR = '.ai-index/runtime';
 
@@ -140,18 +140,105 @@ function hookEventsPath(repoRoot: string, sessionId: string): string {
   return path.join(eventsDir(repoRoot, sessionId), 'hook-events.jsonl');
 }
 
+/**
+ * Sidecar file for write-failure records. Deliberately separate from the main
+ * hook-events.jsonl so that a failure in the primary file does not prevent the
+ * failure record from being persisted (different inode, same directory).
+ */
+function hookWriteFailuresPath(repoRoot: string, sessionId: string): string {
+  return path.join(eventsDir(repoRoot, sessionId), 'hook-write-failures.jsonl');
+}
+
+/**
+ * Emit a structured HookWriteFailedEvent to both process.stderr and the sidecar
+ * file. Never throws — stderr is the last-resort channel if the sidecar also fails.
+ *
+ * Design rationale:
+ *  - stderr: always available; captured by the Claude Code process log regardless
+ *    of filesystem state.
+ *  - sidecar: a separate inode from hook-events.jsonl so validate.ts can query
+ *    failures programmatically via loadHookWriteFailures().
+ */
+function emitWriteFailure(
+  repoRoot: string,
+  sessionId: string,
+  event: HookEvent,
+  reason: 'write_error' | 'malformed_event',
+  error: string,
+  missingFields?: string[],
+): void {
+  const record: HookWriteFailedEvent = {
+    event_id:   generateEventId(),
+    timestamp:  new Date().toISOString(),
+    session_id: event.session_id || sessionId,
+    task_id:    event.task_id    || '',
+    run_id:     event.run_id     || '',
+    hook_stage: (event.hook_stage || 'unknown') as HookStage | 'unknown',
+    event_type: 'HookWriteFailed',
+    payload: {
+      reason,
+      failed_event_type: (event.event_type || 'unknown') as HookEventType | 'unknown',
+      failed_event_id:   event.event_id || '',
+      error,
+      target_path: hookEventsPath(repoRoot, sessionId),
+      ...(missingFields && missingFields.length > 0 ? { missing_fields: missingFields } : {}),
+    },
+  };
+
+  // Channel 1 — stderr: always reachable, captured by the Claude Code process.
+  process.stderr.write(JSON.stringify(record) + '\n');
+
+  // Channel 2 — sidecar file: separate I/O path from the failing main JSONL.
+  // validate.ts reads this via loadHookWriteFailures() to detect audit gaps.
+  try {
+    fs.appendFileSync(hookWriteFailuresPath(repoRoot, sessionId), JSON.stringify(record) + '\n', 'utf8');
+  } catch {
+    // Sidecar also failed — stderr record above is the remaining signal.
+  }
+}
+
 export function appendHookEvent(repoRoot: string, sessionId: string, event: HookEvent): void {
-  // Validate required universal fields before write
-  if (!event.event_id || !event.timestamp || !event.session_id || !event.hook_stage || !event.event_type) {
-    // Malformed mandatory record: log to debug but never crash execution
+  // Ensure the events directory exists first so both the main JSONL and the
+  // sidecar failures file can be written (best-effort; if this throws we still
+  // emit to stderr below via the write-failure path).
+  const dir = eventsDir(repoRoot, sessionId);
+  try {
+    ensureDir(dir);
+  } catch {
+    // Directory creation failed — fall through; the write attempt below will
+    // also fail and the catch block will emit a structured failure record.
+  }
+
+  // Validate required universal fields.  Malformed events must never reach the
+  // audit JSONL, but they must also never be silently discarded — emit a
+  // structured failure record so the gap is observable.
+  const missingFields: string[] = [];
+  if (!event.event_id)   missingFields.push('event_id');
+  if (!event.timestamp)  missingFields.push('timestamp');
+  if (!event.session_id) missingFields.push('session_id');
+  if (!event.hook_stage) missingFields.push('hook_stage');
+  if (!event.event_type) missingFields.push('event_type');
+
+  if (missingFields.length > 0) {
+    emitWriteFailure(
+      repoRoot, sessionId, event,
+      'malformed_event',
+      `event rejected: missing required fields [${missingFields.join(', ')}]`,
+      missingFields,
+    );
     return;
   }
-  const dir = eventsDir(repoRoot, sessionId);
-  ensureDir(dir);
+
   try {
     fs.appendFileSync(hookEventsPath(repoRoot, sessionId), JSON.stringify(event) + '\n', 'utf8');
-  } catch {
-    // Best-effort: never crash hook execution on write failure
+  } catch (writeErr) {
+    // Write failed — emit a structured failure record to stderr and the sidecar.
+    // Never throw: hook execution must not be interrupted by an audit write failure.
+    emitWriteFailure(
+      repoRoot, sessionId, event,
+      'write_error',
+      writeErr instanceof Error ? writeErr.message : String(writeErr),
+    );
   }
 }
 
@@ -166,4 +253,25 @@ export function loadHookEvents(repoRoot: string, sessionId: string): HookEvent[]
       try { return JSON.parse(line) as HookEvent; } catch { return null; }
     })
     .filter((e): e is HookEvent => e !== null);
+}
+
+/**
+ * Load all HookWriteFailedEvent records from the sidecar failures file.
+ *
+ * Called by validate.ts to determine whether the audit trail for the current
+ * session is complete before making a governance decision.  Any non-empty
+ * result means one or more hook events were lost — the caller must treat the
+ * evidence base as potentially incomplete (see G4).
+ */
+export function loadHookWriteFailures(repoRoot: string, sessionId: string): HookWriteFailedEvent[] {
+  const p = hookWriteFailuresPath(repoRoot, sessionId);
+  if (!fs.existsSync(p)) return [];
+  return fs
+    .readFileSync(p, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map(line => {
+      try { return JSON.parse(line) as HookWriteFailedEvent; } catch { return null; }
+    })
+    .filter((e): e is HookWriteFailedEvent => e !== null);
 }
