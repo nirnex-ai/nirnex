@@ -308,9 +308,76 @@ async function askYesNo(rl: readline.Interface, question: string, defaultYes = t
   return trimmed === 'y' || trimmed === 'yes';
 }
 
+// ─── Hook refresh (--refresh-hooks) ──────────────────────────────────────────
+
+/**
+ * Regenerate all five Claude hook scripts in place.
+ *
+ * Safe to run on any project — re-resolves nirnex and node binary paths at the
+ * time of invocation, then overwrites hook scripts with the latest template.
+ * Use this after a `nirnex` upgrade or a Node.js version change.
+ */
+async function refreshHooksOnly(cwd: string): Promise<void> {
+  console.log('\n\x1b[1mNirnex — Refresh Claude Hooks\x1b[0m\n');
+
+  const configPath = path.join(cwd, 'nirnex.config.json');
+  if (!fs.existsSync(configPath)) {
+    process.stderr.write(
+      '  \x1b[31m✘\x1b[0m nirnex.config.json not found — run \x1b[1mnirnex setup\x1b[0m first\n\n'
+    );
+    process.exit(1);
+  }
+
+  const claudeDir  = path.join(cwd, '.claude');
+  const hooksDir   = path.join(claudeDir, 'hooks');
+
+  if (!fs.existsSync(hooksDir)) {
+    process.stderr.write(
+      '  \x1b[31m✘\x1b[0m .claude/hooks/ not found — run \x1b[1mnirnex setup\x1b[0m first\n\n'
+    );
+    process.exit(1);
+  }
+
+  const nirnexBin = resolveNirnexBin();
+  const nodeBin   = resolveNodeBin();
+
+  info(`nirnex binary : ${nirnexBin}`);
+  info(`node binary   : ${nodeBin}`);
+  console.log('');
+
+  const hookFiles: [string, string][] = [
+    ['nirnex-bootstrap.sh', generateHookScript('bootstrap', nirnexBin, nodeBin)],
+    ['nirnex-entry.sh',     generateHookScript('entry',     nirnexBin, nodeBin)],
+    ['nirnex-guard.sh',     generateHookScript('guard',     nirnexBin, nodeBin)],
+    ['nirnex-trace.sh',     generateHookScript('trace',     nirnexBin, nodeBin)],
+    ['nirnex-validate.sh',  generateHookScript('validate',  nirnexBin, nodeBin)],
+  ];
+
+  for (const [name, content] of hookFiles) {
+    const p = path.join(hooksDir, name);
+    fs.writeFileSync(p, content, { mode: 0o755 });
+    tick(`Updated .claude/hooks/${name}`);
+  }
+
+  console.log('\n\x1b[32m\x1b[1mHooks refreshed.\x1b[0m\n');
+  console.log('All five scripts now embed:');
+  console.log(`  export PATH="${[
+    ...(nodeBin.startsWith('/') ? [path.dirname(nodeBin)] : []),
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+  ].filter((v, i, a) => a.indexOf(v) === i).join(':')}:$PATH"`);
+  console.log('');
+}
+
 // ─── Main setup logic ─────────────────────────────────────────────────────
 
-async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
+async function runSetup(cwd: string, opts: { yes: boolean; refreshHooks: boolean }): Promise<void> {
+  // ── --refresh-hooks: regenerate hook scripts only ──────────────────────────
+  if (opts.refreshHooks) {
+    await refreshHooksOnly(cwd);
+    return;
+  }
+
   console.log('\n\x1b[1mNirnex Setup\x1b[0m\n');
 
   // Detect environment
@@ -331,7 +398,8 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
   const configPath = path.join(cwd, 'nirnex.config.json');
   if (fs.existsSync(configPath)) {
     console.log('\x1b[33mThis project is already Nirnex-enabled.\x1b[0m');
-    console.log('Run \x1b[1mnirnex status\x1b[0m to check the current state.\n');
+    console.log('Run \x1b[1mnirnex status\x1b[0m to check the current state.');
+    console.log('Run \x1b[1mnirnex setup --refresh-hooks\x1b[0m to regenerate Claude hook scripts.\n');
     return;
   }
 
@@ -526,8 +594,9 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
 export { runSetup };
 
 export async function setupCommand(args: string[]): Promise<void> {
-  const yes = args.includes('--yes') || args.includes('-y');
-  const cwd = process.cwd();
+  const yes          = args.includes('--yes') || args.includes('-y');
+  const refreshHooks = args.includes('--refresh-hooks');
+  const cwd          = process.cwd();
 
-  await runSetup(cwd, { yes });
+  await runSetup(cwd, { yes, refreshHooks });
 }
