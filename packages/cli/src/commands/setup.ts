@@ -87,25 +87,56 @@ nirnex index
 
 // ─── Claude hook launcher templates ──────────────────────────────────────
 
-const HOOK_BOOTSTRAP = `#!/bin/sh
-exec nirnex runtime bootstrap
-`;
+/**
+ * Resolve the absolute path to the `nirnex` binary at setup time so hook
+ * scripts never rely on the shell's PATH.
+ *
+ * Claude Code runs hooks via `/bin/sh` with a stripped PATH (`/usr/bin:/bin`).
+ * The `nirnex` binary is typically at `/usr/local/bin/nirnex` — outside that
+ * restricted PATH. Without an absolute path every hook silently fails and
+ * nothing is ever written to hook-events.jsonl or the ledger.
+ *
+ * Resolution order:
+ *   1. Co-located with the running Node binary (standard `npm -g` layout)
+ *   2. `command -v nirnex` via child_process (inherits the user's full PATH)
+ *   3. Known well-known absolute locations (Homebrew, Volta)
+ *   4. Bare 'nirnex' fallback (works if /usr/local/bin is somehow in PATH)
+ */
+export function resolveNirnexBin(): string {
+  // 1. Standard npm -g install: node and nirnex live in the same directory
+  const adjacent = path.join(path.dirname(process.execPath), 'nirnex');
+  if (fs.existsSync(adjacent)) return adjacent;
 
-const HOOK_ENTRY = `#!/bin/sh
-exec nirnex runtime entry
-`;
+  // 2. Ask the shell — this process inherits the user's PATH at setup time
+  try {
+    const found = execSync('command -v nirnex', {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    if (found) return found;
+  } catch { /* not in PATH — continue */ }
 
-const HOOK_GUARD = `#!/bin/sh
-exec nirnex runtime guard
-`;
+  // 3. Well-known absolute locations (Homebrew ARM, Volta)
+  for (const candidate of [
+    '/usr/local/bin/nirnex',
+    '/opt/homebrew/bin/nirnex',
+    `${process.env.HOME ?? ''}/.volta/bin/nirnex`,
+  ]) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
 
-const HOOK_TRACE = `#!/bin/sh
-exec nirnex runtime trace
-`;
+  // 4. Fallback — relies on PATH; may not work inside restricted /bin/sh
+  return 'nirnex';
+}
 
-const HOOK_VALIDATE = `#!/bin/sh
-exec nirnex runtime validate
-`;
+/**
+ * Generate a self-contained hook launcher script.
+ * Uses the resolved absolute bin path so the script is immune to shell PATH
+ * restrictions when Claude Code invokes it via /bin/sh.
+ */
+export function generateHookScript(subcommand: string, nirnexBin: string): string {
+  return `#!/bin/sh\nexec ${nirnexBin} runtime ${subcommand}\n`;
+}
 
 const CLAUDE_SETTINGS_HOOKS = {
   hooks: {
@@ -335,12 +366,21 @@ async function runSetup(cwd: string, opts: { yes: boolean }): Promise<void> {
     mkdirSafe(claudeDir);
     mkdirSafe(hooksDir);
 
+    // Resolve the absolute nirnex path once — all five scripts use it.
+    // This makes every hook immune to /bin/sh's restricted PATH at runtime.
+    const nirnexBin = resolveNirnexBin();
+    if (nirnexBin !== 'nirnex') {
+      info(`Resolved nirnex binary: ${nirnexBin}`);
+    } else {
+      warn('Could not resolve absolute nirnex path — hooks will rely on shell PATH (may fail in restricted environments)');
+    }
+
     const hookFiles: [string, string][] = [
-      ['nirnex-bootstrap.sh', HOOK_BOOTSTRAP],
-      ['nirnex-entry.sh', HOOK_ENTRY],
-      ['nirnex-guard.sh', HOOK_GUARD],
-      ['nirnex-trace.sh', HOOK_TRACE],
-      ['nirnex-validate.sh', HOOK_VALIDATE],
+      ['nirnex-bootstrap.sh', generateHookScript('bootstrap', nirnexBin)],
+      ['nirnex-entry.sh',     generateHookScript('entry',     nirnexBin)],
+      ['nirnex-guard.sh',     generateHookScript('guard',     nirnexBin)],
+      ['nirnex-trace.sh',     generateHookScript('trace',     nirnexBin)],
+      ['nirnex-validate.sh',  generateHookScript('validate',  nirnexBin)],
     ];
 
     for (const [name, content] of hookFiles) {
