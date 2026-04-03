@@ -5,7 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, appendHookEvent, generateEventId, generateRunId } from './session.js';
+import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, loadHookWriteFailures, appendHookEvent, generateEventId, generateRunId } from './session.js';
 import {
   HookStop,
   ValidateDecision,
@@ -103,6 +103,10 @@ export async function runValidate(): Promise<void> {
   const events = loadTraceEvents(repoRoot, sessionId);
   const hookEvents = loadHookEvents(repoRoot, sessionId);
 
+  // G2: Load write-failure count from the G1 sidecar so reconcileStores() can
+  // detect incomplete JSONL audit trails before the governance decision is made.
+  const hookWriteFailureCount = loadHookWriteFailures(repoRoot, sessionId).length;
+
   // Find the InputEnvelopeCaptured event for this task to read obligation source
   const obligationEvent = hookEvents
     .filter(e => e.event_type === 'InputEnvelopeCaptured' && e.task_id === envelope.task_id)
@@ -149,6 +153,11 @@ export async function runValidate(): Promise<void> {
   // if anything in the reconciliation or status-derivation section throws.
   let verificationStatus: VerificationStatus = 'unknown';
   let acceptanceStatus: VerificationStatus = 'unknown';
+
+  // G2: cross-store reconciliation result — populated inside the try block.
+  // undefined until reconcileStores() runs; the Ledger payload embeds it so
+  // every run_outcome_summary is self-describing about store consistency.
+  let storeReconciliationResult: import('@nirnex/core/dist/runtime/store-hierarchy.js').StoreReconciliationResult | undefined;
 
   try {
 
@@ -271,6 +280,37 @@ export async function runValidate(): Promise<void> {
       'zero tool events in trace',
       'advisory',
     );
+  }
+
+  // ── G2: Cross-store reconciliation ────────────────────────────────────────
+  // Validate that Envelope, JSONL, and Ledger are mutually consistent BEFORE
+  // the governance decision is computed. Violations here feed into the decision
+  // (blocking violations can change allow → block).
+  //
+  // This replaces the doc-only hierarchy in CORE.MD with executable enforcement.
+  // The result is also embedded in the Ledger payload so every run_outcome_summary
+  // carries a self-describing cross-store consistency record.
+  {
+    const { reconcileStores, StoreViolationCode: SVC } = await import('@nirnex/core/dist/runtime/store-hierarchy.js');
+    storeReconciliationResult = reconcileStores({
+      envelope: {
+        task_id:    envelope.task_id,
+        session_id: envelope.session_id,
+        lane:       envelope.lane,
+      },
+      hookEvents,
+      writeFailureCount: hookWriteFailureCount,
+    });
+    // Surface each cross-store violation as a ContractViolationDetected event.
+    // Blocking violations here are as consequential as any within-envelope violation.
+    for (const v of storeReconciliationResult.violations) {
+      // Map StoreViolationCode → ReasonCode: both use the same string literals
+      // (STORE_* prefix). The cast is safe by construction.
+      const reasonCode = v.code as typeof ReasonCode[keyof typeof ReasonCode];
+      recordViolation(reasonCode, v.message, v.expected, v.actual, v.severity);
+    }
+    // Suppress unused-variable warning; SVC is referenced for structural check.
+    void SVC;
   }
 
   // ── Derive final verification/acceptance status ────────────────────────
@@ -447,6 +487,12 @@ export async function runValidate(): Promise<void> {
         evidence_gate_failed: blockingViolations.length > 0,
         stages_completed: events.length,
         run_timestamp: runTimestamp,
+        // G2: embed the cross-store consistency record so every Ledger entry is
+        // self-describing — a reader can determine store consistency without
+        // re-reading the other two stores.
+        ...(storeReconciliationResult !== undefined
+          ? { store_reconciliation: storeReconciliationResult }
+          : {}),
       },
     };
     const db = initLedgerDb(getLedgerDbPath(repoRoot));

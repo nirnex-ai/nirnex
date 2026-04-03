@@ -12,6 +12,8 @@
  *   - regression_report is the analysis output — persisted to the ledger
  */
 
+import type { StoreReconciliationResult } from '../store-hierarchy.js';
+
 // ─── Outcome summary ──────────────────────────────────────────────────────────
 
 /**
@@ -54,6 +56,18 @@ export type RunOutcomeSummaryRecord = {
 
   /** ISO 8601 timestamp of when the run occurred */
   run_timestamp: string;
+
+  /**
+   * Cross-store consistency check result from validate.ts (G2 fix).
+   *
+   * Present for runs recorded after the G2 store-hierarchy fix was deployed.
+   * Absent (undefined) for runs recorded before that fix — treat as "unknown".
+   *
+   * When present, this field makes every Ledger entry self-describing: a reader
+   * can determine whether the Envelope, JSONL, and Ledger were consistent at the
+   * time the run was recorded, without needing to re-read the other two stores.
+   */
+  store_reconciliation?: StoreReconciliationResult;
 };
 
 // ─── Window spec ──────────────────────────────────────────────────────────────

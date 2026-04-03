@@ -132,6 +132,32 @@ export const ReasonCode = {
    * but the audit trail for this session may be incomplete.
    */
   HOOK_WRITE_FAILED: 'HOOK_WRITE_FAILED',
+
+  // ── G2: Cross-store reconciliation codes ────────────────────────────────
+  // These match StoreViolationCode values in packages/core/src/runtime/store-hierarchy.ts.
+  // Both packages use the same string literals so ContractViolationDetected events in
+  // the JSONL stream and the Ledger payload share a consistent, queryable reason_code.
+
+  /**
+   * No InputEnvelopeCaptured event in JSONL for the active task_id.
+   * The entry hook may not have run or a G1 write failure suppressed it.
+   */
+  STORE_JSONL_MISSING_ENVELOPE_CAPTURED: 'STORE_JSONL_MISSING_ENVELOPE_CAPTURED',
+  /**
+   * TaskEnvelope.lane ≠ InputEnvelopeCaptured.payload.lane.
+   * The governance rules applied during execution differ from the active lane.
+   */
+  STORE_ENVELOPE_JSONL_LANE_MISMATCH:    'STORE_ENVELOPE_JSONL_LANE_MISMATCH',
+  /**
+   * InputEnvelopeCaptured.task_id ≠ TaskEnvelope.task_id.
+   * JSONL evidence belongs to a different task — cross-task contamination.
+   */
+  STORE_ENVELOPE_JSONL_TASK_ID_MISMATCH: 'STORE_ENVELOPE_JSONL_TASK_ID_MISMATCH',
+  /**
+   * hook-write-failures.jsonl is non-empty — the JSONL audit trail is incomplete.
+   * Governance decisions may rest on missing evidence.
+   */
+  STORE_JSONL_WRITE_FAILURES_DETECTED:   'STORE_JSONL_WRITE_FAILURES_DETECTED',
 } as const;
 
 export type ReasonCodeValue = typeof ReasonCode[keyof typeof ReasonCode];

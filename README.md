@@ -240,6 +240,68 @@ Decisions cannot be updated or deleted. `BEFORE UPDATE` / `BEFORE DELETE` trigge
 
 ---
 
+## Store Hierarchy — Canonical Source of Truth
+
+Nirnex maintains three runtime data stores. Their roles, data authority, and reconciliation rules are declared in code at `packages/core/src/runtime/store-hierarchy.ts` (`STORE_ROLES`, `reconcileStores()`).
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  STORE HIERARCHY  (data authority flows downward; reads flow upward)    │
+│                                                                          │
+│  1. TaskEnvelope   — active task state (ephemeral)                       │
+│     • Authority: task scope, tool policy, lane assignment, constraints   │
+│     • Lives only for the duration of an active task                      │
+│     ↓ reconciled into                                                    │
+│  2. Hook Audit Trail  (hook-events.jsonl)                                │
+│     • Authority: hook invocations, stage timing, observed violations     │
+│     • Non-binding: informs governance but does not determine it          │
+│     ↓ bridged into at validate time                                      │
+│  3. Decision Ledger  (.aidos-ledger.db)  ← CANONICAL SOURCE OF TRUTH   │
+│     • Authority: ALL governance decisions, reports, replay, regression   │
+│     • Hash-chained, append-only, tamper-evident                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+| Store | File | Canonical for | Not authoritative for |
+|---|---|---|---|
+| **TaskEnvelope** | `.ai-index/runtime/envelopes/{task_id}.json` | Task scope, lane, policy, constraints | Governance decisions, audit trail, reports |
+| **Hook Audit Trail** | `.ai-index/runtime/events/{session_id}/hook-events.jsonl` | Hook lifecycle, observed violations | Governance decisions, report generation, replay |
+| **Decision Ledger** | `.aidos-ledger.db` | Everything governance-related | Nothing — Ledger supersedes all stores for governance |
+
+### Cross-Store Reconciliation
+
+At the end of every task the `validate` hook calls `reconcileStores()` **before** computing the governance decision. Violations feed into the decision (blocking violations can change `allow` → `block`). The reconciliation result is also embedded in the Ledger `run_outcome_summary` payload, making every governance record self-describing.
+
+| Rule | Check | Severity | Violation Code |
+|---|---|---|---|
+| R1 | `InputEnvelopeCaptured` must exist in JSONL for the active `task_id` | advisory | `STORE_JSONL_MISSING_ENVELOPE_CAPTURED` |
+| R2 | `InputEnvelopeCaptured.payload.lane` must match `TaskEnvelope.lane` | **blocking** | `STORE_ENVELOPE_JSONL_LANE_MISMATCH` |
+| R3 | `InputEnvelopeCaptured.task_id` must match `TaskEnvelope.task_id` | **blocking** | `STORE_ENVELOPE_JSONL_TASK_ID_MISMATCH` |
+| R4 | `hook-write-failures.jsonl` must be empty (G1 write-failure sidecar) | advisory | `STORE_JSONL_WRITE_FAILURES_DETECTED` |
+
+**Full reason code table** (including cross-store codes):
+
+| Code | Severity | Stage | Meaning |
+|---|---|---|---|
+| `VERIFICATION_REQUIRED_NOT_RUN` | blocking | validate | Verification was mandatory but no matching command appeared in the trace |
+| `COMMAND_EXIT_NONZERO` | blocking | validate | Verification command exited non-zero |
+| `COMMAND_EXIT_UNKNOWN` | blocking | validate | Exit code could not be determined (Zero-Trust Rule 2) |
+| `POST_VERIFICATION_EDIT` | blocking | validate | File modified after verification ran (Zero-Trust Rule 3) |
+| `BLOCKED_PATH_DEVIATION` | blocking | validate | A file in a blocked path was modified |
+| `FORCED_UNKNOWN_NO_VERIFICATION` | blocking | validate | Lane B/C task with `forced_unknown=true` but no human verification |
+| `LANE_C_EMPTY_TRACE` | blocking | validate | Lane C task completed with no recorded tool events |
+| `LANE_C_DEADLOCK` | blocking | validate | Lane C task did not touch any expected scope modules |
+| `ECO_BLOCKED` | blocking | validate | Task proceeded despite ECO marking it blocked |
+| `STORE_ENVELOPE_JSONL_LANE_MISMATCH` | **blocking** | validate | Lane mismatch between TaskEnvelope and JSONL — wrong governance rules applied |
+| `STORE_ENVELOPE_JSONL_TASK_ID_MISMATCH` | **blocking** | validate | `task_id` mismatch — JSONL evidence belongs to a different task |
+| `ACCEPTANCE_NOT_EVALUATED` | advisory | validate | Acceptance criteria present but no tool events to evaluate them |
+| `HOOK_WRITE_FAILED` | advisory | validate | A hook event could not be written to JSONL (see G1 sidecar) |
+| `STORE_JSONL_MISSING_ENVELOPE_CAPTURED` | advisory | validate | `InputEnvelopeCaptured` absent from JSONL — entry hook may not have run |
+| `STORE_JSONL_WRITE_FAILURES_DETECTED` | advisory | validate | JSONL audit trail is incomplete — inspect `hook-write-failures.jsonl` |
+| `LEDGER_WRITE_FAILED` | advisory | validate | Ledger persistence failed — run will not appear in `nirnex report --list` |
+
+---
+
 ## Requirements
 
 - Node.js >= 20
