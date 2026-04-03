@@ -1,6 +1,6 @@
 {
   "name": "@nirnex/hooks",
-  "version": "6.6.2",
+  "version": "6.6.3",
   "description": "Nirnex hooks — Git and CI lifecycle hooks",
   "type": "module",
   "main": "./dist/index.js",
