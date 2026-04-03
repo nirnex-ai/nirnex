@@ -300,6 +300,57 @@ At the end of every task the `validate` hook calls `reconcileStores()` **before*
 | `STORE_JSONL_WRITE_FAILURES_DETECTED` | advisory | validate | JSONL audit trail is incomplete — inspect `hook-write-failures.jsonl` |
 | `LEDGER_WRITE_FAILED` | advisory | validate | Ledger persistence failed — run will not appear in `nirnex report --list` |
 | `TASK_ALREADY_FINALIZED` | advisory | validate | Stop hook re-invoked for an already-finalized task — duplicate suppressed |
+| `EVIDENCE_ENTRY_HOOK_MISSING` | blocking¹ / advisory² | validate | Entry hook definitively did not run — governance constraints never established |
+| `EVIDENCE_TOTAL_ENTRY_LOSS` | blocking¹ / advisory² | validate | Entry hook may have run but all bootstrap evidence was lost to write failures |
+| `EVIDENCE_EXECUTION_EVIDENCE_LOST` | **blocking** | validate | Write failures + zero trace events + obligations — cannot distinguish "no execution" from "evidence lost" |
+
+¹ Blocking for Lane B and C  ²  Advisory for Lane A
+
+---
+
+## Evidence Integrity (G4 fix)
+
+`validate.ts` previously loaded JSONL events and proceeded without any completeness check. A silent G1 write failure dropping all entry-hook events would go undetected — governance decisions would be made on an empty or partial evidence stream, producing **false confidence**.
+
+### Three checks, pure function
+
+`packages/core/src/runtime/evidence-integrity.ts` exports `checkEvidenceIntegrity()` — a pure, deterministic function called inside validate.ts's reconciliation block (before the governance decision is computed). Violations feed into the same `violations[]` array as all other checks — blocking violations change the decision from `allow` to `block`.
+
+| Check | Code | Predicate | Severity |
+|-------|------|-----------|----------|
+| **EV1** | `EVIDENCE_ENTRY_HOOK_MISSING` | No `HookInvocationStarted` (entry) AND `writeFailureCount=0` | blocking (B/C), advisory (A) |
+| **EV2** | `EVIDENCE_TOTAL_ENTRY_LOSS` | No `HookInvocationStarted` (entry) AND `writeFailureCount>0` | blocking (B/C), advisory (A) |
+| **EV3** | `EVIDENCE_EXECUTION_EVIDENCE_LOST` | `writeFailureCount>0` AND `traceEventCount=0` AND obligations exist | blocking (all lanes) |
+
+### EV1 vs EV2: differentiating missing from valid
+
+EV1 and EV2 are **mutually exclusive** — they differentiate the two root causes for absent entry evidence:
+
+```
+No entry events in JSONL
+  ├── writeFailureCount = 0  →  EV1 (ENTRY_HOOK_MISSING)
+  │     Entry hook definitively did not run.
+  │     Governance constraints were never applied.
+  │
+  └── writeFailureCount > 0  →  EV2 (TOTAL_ENTRY_LOSS)
+        Entry hook may have run but its events were lost.
+        Cannot confirm governance was bootstrapped.
+```
+
+This satisfies the G4 requirement to "differentiate missing vs valid" — EV1 is a governance gap (hook skipped), EV2 is a storage failure (hook ran but evidence was destroyed).
+
+### EV3: ambiguous execution state
+
+EV3 fires when **all three** conditions are true: write failures occurred, zero trace events exist, and the task had execution obligations (mandatory verification or Lane C). In this state it is impossible to distinguish:
+
+- Claude executed nothing (LANE_C_EMPTY_TRACE would catch this if no write failures)
+- Claude executed the task but all trace events were lost to write failures
+
+Both are blocking — governance obligations cannot be verified without execution evidence.
+
+### Ledger self-description
+
+The `EvidenceIntegrityResult` is embedded in every `run_outcome_summary` ledger entry under the `evidence_integrity` field (alongside `store_reconciliation` from G2). A reader can determine evidence completeness without re-reading the JSONL stream.
 
 ---
 

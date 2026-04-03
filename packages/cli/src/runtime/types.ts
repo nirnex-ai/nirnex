@@ -176,6 +176,31 @@ export const ReasonCode = {
    * Code can proceed without being blocked by the duplicate invocation.
    */
   TASK_ALREADY_FINALIZED: 'TASK_ALREADY_FINALIZED',
+
+  // ── G4: Evidence integrity codes ─────────────────────────────────────────
+  // These match EvidenceViolationCode values in
+  // packages/core/src/runtime/evidence-integrity.ts (EVIDENCE_* prefix).
+
+  /**
+   * No HookInvocationStarted from the entry stage in JSONL, and no write
+   * failures to explain the absence. The entry hook definitively did not run —
+   * governance constraints were never established at task start.
+   */
+  EVIDENCE_ENTRY_HOOK_MISSING:      'EVIDENCE_ENTRY_HOOK_MISSING',
+
+  /**
+   * No entry-stage events in JSONL AND write failures were detected.
+   * The entry hook may have run but its bootstrap events were lost.
+   * Cannot confirm governance was established.
+   */
+  EVIDENCE_TOTAL_ENTRY_LOSS:        'EVIDENCE_TOTAL_ENTRY_LOSS',
+
+  /**
+   * Write failures detected, zero trace events, and the task had execution
+   * obligations (mandatory verification or Lane C). Cannot distinguish
+   * "nothing executed" from "trace events silently dropped".
+   */
+  EVIDENCE_EXECUTION_EVIDENCE_LOST: 'EVIDENCE_EXECUTION_EVIDENCE_LOST',
 } as const;
 
 export type ReasonCodeValue = typeof ReasonCode[keyof typeof ReasonCode];

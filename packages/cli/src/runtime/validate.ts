@@ -191,6 +191,11 @@ export async function runValidate(): Promise<void> {
   // every run_outcome_summary is self-describing about store consistency.
   let storeReconciliationResult: import('@nirnex/core/dist/runtime/store-hierarchy.js').StoreReconciliationResult | undefined;
 
+  // G4: evidence integrity result — populated inside the try block.
+  // undefined until checkEvidenceIntegrity() runs; the Ledger payload embeds it
+  // so every run_outcome_summary carries a self-describing evidence sufficiency record.
+  let evidenceIntegrityResult: import('@nirnex/core/dist/runtime/evidence-integrity.js').EvidenceIntegrityResult | undefined;
+
   try {
 
   // ── Reconciliation checks ──────────────────────────────────────────────
@@ -343,6 +348,38 @@ export async function runValidate(): Promise<void> {
     }
     // Suppress unused-variable warning; SVC is referenced for structural check.
     void SVC;
+  }
+
+  // ── G4: Evidence integrity check ─────────────────────────────────────────
+  // Verifies that the event stream is complete enough for a trustworthy
+  // governance decision. Three checks run here (pure function, no I/O):
+  //
+  //   EV1 — Entry hook definitively didn't run (no write failures, no entry events)
+  //   EV2 — Entry hook may have run but evidence was lost (write failures + no entry events)
+  //   EV3 — Execution evidence lost under obligations (write failures + zero trace events)
+  //
+  // EV1/EV2 are mutually exclusive and differentiate "missing vs valid" evidence.
+  // Violations feed into the governance decision exactly like other checks.
+  {
+    const { checkEvidenceIntegrity, EvidenceViolationCode: EVC } = await import('@nirnex/core/dist/runtime/evidence-integrity.js');
+    evidenceIntegrityResult = checkEvidenceIntegrity({
+      envelope: {
+        task_id: envelope.task_id,
+        lane:    envelope.lane,
+      },
+      hookEvents,
+      traceEventCount:              events.length,
+      writeFailureCount:             hookWriteFailureCount,
+      mandatoryVerificationRequired,
+    });
+    for (const v of evidenceIntegrityResult.violations) {
+      // Map EvidenceViolationCode → ReasonCode: both use identical EVIDENCE_* literals.
+      // The cast is safe by construction.
+      const reasonCode = v.code as typeof ReasonCode[keyof typeof ReasonCode];
+      recordViolation(reasonCode, v.message, v.expected, v.actual, v.severity);
+    }
+    // Suppress unused-variable warning; EVC is referenced for structural check.
+    void EVC;
   }
 
   // ── Derive final verification/acceptance status ────────────────────────
@@ -557,6 +594,12 @@ export async function runValidate(): Promise<void> {
           // re-reading the other two stores.
           ...(storeReconciliationResult !== undefined
             ? { store_reconciliation: storeReconciliationResult }
+            : {}),
+          // G4: embed the evidence integrity record so every Ledger entry carries
+          // a self-describing record of whether the evidence stream was complete
+          // enough for the governance decision to be trustworthy.
+          ...(evidenceIntegrityResult !== undefined
+            ? { evidence_integrity: evidenceIntegrityResult }
             : {}),
         },
       };

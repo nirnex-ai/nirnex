@@ -13,6 +13,7 @@
  */
 
 import type { StoreReconciliationResult } from '../store-hierarchy.js';
+import type { EvidenceIntegrityResult } from '../evidence-integrity.js';
 
 // ─── Outcome summary ──────────────────────────────────────────────────────────
 
@@ -68,6 +69,19 @@ export type RunOutcomeSummaryRecord = {
    * time the run was recorded, without needing to re-read the other two stores.
    */
   store_reconciliation?: StoreReconciliationResult;
+
+  /**
+   * Evidence integrity check result from validate.ts (G4 fix).
+   *
+   * Present for runs recorded after the G4 evidence-integrity fix was deployed.
+   * Absent (undefined) for runs recorded before that fix — treat as "unknown".
+   *
+   * When present, records whether the JSONL evidence stream was sufficiently
+   * complete for the governance decision to be trustworthy: entry hook evidence
+   * present, no total evidence loss, and no execution evidence lost under
+   * obligations.
+   */
+  evidence_integrity?: EvidenceIntegrityResult;
 };
 
 // ─── Window spec ──────────────────────────────────────────────────────────────
