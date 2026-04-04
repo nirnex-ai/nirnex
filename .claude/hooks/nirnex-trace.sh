@@ -1,2 +1,2 @@
 #!/bin/sh
-exec nirnex runtime trace
+exec "/usr/local/bin/node" "/Users/pravijay/works/AIDOS/packages/cli/dist/index.js" runtime trace

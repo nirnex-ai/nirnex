@@ -692,3 +692,159 @@ describe('stdin behaviour', () => {
     await expect(runSetup(dir, { yes: true })).resolves.toBeUndefined();
   });
 });
+
+// ─── 18. Runtime contract ─────────────────────────────────────────────────────
+
+describe('runtime contract', () => {
+  it('creates .ai/runtime-contract.json during setup', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    expect(existsSync(join(dir, '.ai', 'runtime-contract.json'))).toBe(true);
+  });
+
+  it('runtime-contract.json is valid JSON', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const raw = readFileSync(join(dir, '.ai', 'runtime-contract.json'), 'utf8');
+    expect(() => JSON.parse(raw)).not.toThrow();
+  });
+
+  it('runtime-contract.json contains nodePath field', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const contract = JSON.parse(readFileSync(join(dir, '.ai', 'runtime-contract.json'), 'utf8'));
+    expect(typeof contract.nodePath).toBe('string');
+    expect(contract.nodePath.length).toBeGreaterThan(0);
+  });
+
+  it('runtime-contract.json contains nirnexEntry field', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const contract = JSON.parse(readFileSync(join(dir, '.ai', 'runtime-contract.json'), 'utf8'));
+    expect(typeof contract.nirnexEntry).toBe('string');
+    expect(contract.nirnexEntry.length).toBeGreaterThan(0);
+  });
+
+  it('runtime-contract.json records strategy as direct-node-entry', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const contract = JSON.parse(readFileSync(join(dir, '.ai', 'runtime-contract.json'), 'utf8'));
+    expect(contract.strategy).toBe('direct-node-entry');
+  });
+
+  it('runtime-contract.json contains a resolvedAt timestamp', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const contract = JSON.parse(readFileSync(join(dir, '.ai', 'runtime-contract.json'), 'utf8'));
+    expect(typeof contract.resolvedAt).toBe('string');
+    // Must parse as a valid ISO date
+    expect(Number.isNaN(Date.parse(contract.resolvedAt))).toBe(false);
+  });
+});
+
+// ─── 19. Hook script content (direct-node-entry strategy) ────────────────────
+
+describe('Claude hook script content', () => {
+  it('hook scripts start with #!/bin/sh', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    for (const name of ['nirnex-bootstrap.sh', 'nirnex-entry.sh', 'nirnex-guard.sh', 'nirnex-trace.sh', 'nirnex-validate.sh']) {
+      const content = readFileSync(join(dir, '.claude', 'hooks', name), 'utf8');
+      expect(content.startsWith('#!/bin/sh')).toBe(true);
+    }
+  });
+
+  it('hook scripts use exec with direct node invocation (no env node in body)', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    for (const name of ['nirnex-bootstrap.sh', 'nirnex-entry.sh', 'nirnex-guard.sh', 'nirnex-trace.sh', 'nirnex-validate.sh']) {
+      const content = readFileSync(join(dir, '.claude', 'hooks', name), 'utf8');
+      // Body lines must not delegate to shebang-based env node
+      const bodyLines = content.split('\n').slice(1);
+      const hasEnvNode = bodyLines.some(l => l.includes('env node'));
+      expect(hasEnvNode).toBe(false);
+    }
+  });
+
+  it('hook scripts contain runtime subcommand name', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const subcommands = ['bootstrap', 'entry', 'guard', 'trace', 'validate'];
+    const hookNames   = ['nirnex-bootstrap.sh', 'nirnex-entry.sh', 'nirnex-guard.sh', 'nirnex-trace.sh', 'nirnex-validate.sh'];
+
+    for (let i = 0; i < hookNames.length; i++) {
+      const content = readFileSync(join(dir, '.claude', 'hooks', hookNames[i]!), 'utf8');
+      expect(content).toContain(subcommands[i]);
+    }
+  });
+
+  it('hook scripts are executable', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    for (const name of ['nirnex-bootstrap.sh', 'nirnex-entry.sh', 'nirnex-guard.sh', 'nirnex-trace.sh', 'nirnex-validate.sh']) {
+      const mode = statSync(join(dir, '.claude', 'hooks', name)).mode;
+      expect(mode & 0o100).toBeTruthy();
+    }
+  });
+
+  it('hook scripts each contain runtime subcommand in the exec line', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const pairs: [string, string][] = [
+      ['nirnex-bootstrap.sh', 'runtime bootstrap'],
+      ['nirnex-entry.sh',     'runtime entry'],
+      ['nirnex-guard.sh',     'runtime guard'],
+      ['nirnex-trace.sh',     'runtime trace'],
+      ['nirnex-validate.sh',  'runtime validate'],
+    ];
+
+    for (const [name, expected] of pairs) {
+      const content = readFileSync(join(dir, '.claude', 'hooks', name), 'utf8');
+      expect(content).toContain(expected);
+    }
+  });
+});

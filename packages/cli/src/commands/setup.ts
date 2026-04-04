@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // ─── Default file templates ───────────────────────────────────────────────
 
@@ -88,59 +89,12 @@ nirnex index
 // ─── Claude hook launcher templates ──────────────────────────────────────
 
 /**
- * Resolve the absolute path to the `nirnex` binary at setup time so hook
- * scripts never rely on the shell's PATH.
- *
- * Claude Code runs hooks via `/bin/sh` with a stripped PATH (`/usr/bin:/bin`).
- * The `nirnex` binary is typically at `/usr/local/bin/nirnex` — outside that
- * restricted PATH. Without an absolute path every hook silently fails and
- * nothing is ever written to hook-events.jsonl or the ledger.
- *
- * Resolution order:
- *   1. Co-located with the running Node binary (standard `npm -g` layout)
- *   2. `command -v nirnex` via child_process (inherits the user's full PATH)
- *   3. Known well-known absolute locations (Homebrew, Volta)
- *   4. Bare 'nirnex' fallback (works if /usr/local/bin is somehow in PATH)
- */
-export function resolveNirnexBin(): string {
-  // 1. Standard npm -g install: node and nirnex live in the same directory
-  const adjacent = path.join(path.dirname(process.execPath), 'nirnex');
-  if (fs.existsSync(adjacent)) return adjacent;
-
-  // 2. Ask the shell — this process inherits the user's PATH at setup time
-  try {
-    const found = execSync('command -v nirnex', {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim();
-    if (found) return found;
-  } catch { /* not in PATH — continue */ }
-
-  // 3. Well-known absolute locations (Homebrew ARM, Volta)
-  for (const candidate of [
-    '/usr/local/bin/nirnex',
-    '/opt/homebrew/bin/nirnex',
-    `${process.env.HOME ?? ''}/.volta/bin/nirnex`,
-  ]) {
-    if (candidate && fs.existsSync(candidate)) return candidate;
-  }
-
-  // 4. Fallback — relies on PATH; may not work inside restricted /bin/sh
-  return 'nirnex';
-}
-
-/**
  * Resolve the absolute path to the `node` binary at setup time.
- *
- * This is needed because `nirnex` itself starts with `#!/usr/bin/env node`.
- * Even when the hook script uses an absolute path to `nirnex`, the nirnex
- * binary's own shebang calls `/usr/bin/env node` — and that fails in Claude
- * Code's restricted shell where `/usr/local/bin` is not in PATH.
  *
  * Resolution order:
  *   1. `process.execPath` — the node that is running `nirnex setup` right now
  *      (most reliable: always the correct version that can run nirnex)
- *   2. Well-known absolute locations (Homebrew x64, Homebrew ARM, Volta, nvm)
+ *   2. Well-known absolute locations (Homebrew x64, Homebrew ARM, Volta)
  *   3. Bare 'node' fallback
  */
 export function resolveNodeBin(): string {
@@ -163,45 +117,87 @@ export function resolveNodeBin(): string {
 }
 
 /**
+ * Resolve the absolute path to the Nirnex CLI entry JS file.
+ *
+ * This file is invoked directly via `node <entry>` in generated hook scripts,
+ * completely bypassing the `#!/usr/bin/env node` shebang. That shebang relies
+ * on `env` resolving `node` from PATH — which fails in Claude Code's restricted
+ * shell (PATH = /usr/bin:/bin only).
+ *
+ * Resolution order:
+ *   1. Derived from this module's own path (dist/commands/setup.js → dist/index.js).
+ *      Reliable for both global installs and monorepo dev setups.
+ *   2. process.argv[1] — the file Node was directly invoked with (real path).
+ *   3. Bare 'nirnex' fallback (may fail in restricted shells).
+ */
+export function resolveCliEntry(): string {
+  // 1. Derive from this module's own location — works for installed packages
+  //    and local dev builds alike.
+  try {
+    const thisFile = fileURLToPath(import.meta.url);
+    // setup.js lives at: <pkg-root>/dist/commands/setup.js
+    // entry lives at:    <pkg-root>/dist/index.js
+    const entry = path.resolve(path.dirname(thisFile), '..', 'index.js');
+    if (fs.existsSync(entry)) return entry;
+  } catch { /* import.meta.url unavailable in some test environments */ }
+
+  // 2. The file Node was invoked with (resolve symlinks for stability)
+  const argv1 = process.argv[1];
+  if (argv1) {
+    try {
+      const real = fs.realpathSync(argv1);
+      if (fs.existsSync(real)) return real;
+    } catch {}
+    if (fs.existsSync(argv1)) return argv1;
+  }
+
+  // 3. Fallback — will fail in Claude Code's restricted shell
+  return 'nirnex';
+}
+
+/**
  * Generate a self-contained hook launcher script.
  *
- * Injects `export PATH=` before the exec so that `/usr/bin/env node` (used
- * in the nirnex binary's shebang) succeeds even in Claude Code's restricted
- * shell environment where PATH is typically just `/usr/bin:/bin`.
+ * Invokes the Nirnex CLI by calling Node directly with the absolute path to
+ * the CLI entry JS file. This eliminates all PATH and shebang dependencies:
  *
- * PATH is constructed as:
- *   <node-binary-dir> : /usr/local/bin : /opt/homebrew/bin : $PATH
+ *   exec "/absolute/node" "/absolute/cli/dist/index.js" runtime <subcommand>
  *
- * The node binary's directory comes first (highest priority) to ensure the
- * exact version used at setup time is preferred over any system fallback.
- * Duplicate entries are removed while preserving order.
+ * The previous approach — setting PATH and calling `exec <nirnex-bin>` — still
+ * depended on the nirnex binary's own `#!/usr/bin/env node` shebang resolving
+ * correctly, which fails with exit code 127 in Claude Code's restricted shell
+ * (PATH = /usr/bin:/bin). Direct invocation removes that dependency entirely.
  *
- * @param subcommand  - runtime subcommand: bootstrap | entry | guard | trace | validate
- * @param nirnexBin   - absolute path to the nirnex binary (from resolveNirnexBin)
- * @param nodeBin     - absolute path to the node binary (from resolveNodeBin).
- *                      Defaults to process.execPath (the running node at setup time).
+ * @param subcommand - runtime subcommand: bootstrap | entry | guard | trace | validate
+ * @param nodeBin    - absolute path to the node binary (from resolveNodeBin)
+ * @param cliEntry   - absolute path to the CLI entry JS file (from resolveCliEntry)
  */
 export function generateHookScript(
   subcommand: string,
-  nirnexBin:  string,
-  nodeBin?:   string,
+  nodeBin:    string,
+  cliEntry:   string,
 ): string {
-  const resolvedNode = nodeBin ?? process.execPath;
+  return `#!/bin/sh\nexec "${nodeBin}" "${cliEntry}" runtime ${subcommand}\n`;
+}
 
-  // Build a deduplicated, ordered list of directories to prepend to PATH.
-  // We include the node binary's own directory first (exact version match),
-  // then well-known install locations as fallbacks for any environment.
-  const dirs: string[] = [];
-  if (resolvedNode.startsWith('/')) {
-    dirs.push(path.dirname(resolvedNode));
-  }
-  dirs.push('/usr/local/bin', '/opt/homebrew/bin');
-
-  // Deduplicate while preserving insertion order
-  const uniqueDirs = [...new Set(dirs)];
-  const pathExport = `export PATH="${uniqueDirs.join(':')}:$PATH"`;
-
-  return `#!/bin/sh\n${pathExport}\nexec ${nirnexBin} runtime ${subcommand}\n`;
+/**
+ * Write a runtime contract to `.ai/runtime-contract.json`.
+ *
+ * The contract records the resolved Node binary and CLI entry paths so that
+ * `nirnex doctor` can detect stale or broken runtime configurations without
+ * reading each hook script individually.
+ */
+export function writeRuntimeContract(cwd: string, nodeBin: string, cliEntry: string): void {
+  const aiDir = path.join(cwd, '.ai');
+  mkdirSafe(aiDir);
+  const contractPath = path.join(aiDir, 'runtime-contract.json');
+  const contract = {
+    nodePath: nodeBin,
+    nirnexEntry: cliEntry,
+    resolvedAt: new Date().toISOString(),
+    strategy: 'direct-node-entry',
+  };
+  fs.writeFileSync(contractPath, JSON.stringify(contract, null, 2) + '\n', 'utf8');
 }
 
 const CLAUDE_SETTINGS_HOOKS = {
@@ -311,11 +307,12 @@ async function askYesNo(rl: readline.Interface, question: string, defaultYes = t
 // ─── Hook refresh (--refresh-hooks) ──────────────────────────────────────────
 
 /**
- * Regenerate all five Claude hook scripts in place.
+ * Regenerate all five Claude hook scripts and the runtime contract in place.
  *
- * Safe to run on any project — re-resolves nirnex and node binary paths at the
- * time of invocation, then overwrites hook scripts with the latest template.
- * Use this after a `nirnex` upgrade or a Node.js version change.
+ * Safe to run on any project — re-resolves node binary and CLI entry paths at
+ * the time of invocation, then overwrites hook scripts with the latest template.
+ * Use this after a `nirnex` upgrade, a Node.js version change, or when
+ * `nirnex doctor` reports stale paths.
  */
 async function refreshHooksOnly(cwd: string): Promise<void> {
   console.log('\n\x1b[1mNirnex — Refresh Claude Hooks\x1b[0m\n');
@@ -338,19 +335,24 @@ async function refreshHooksOnly(cwd: string): Promise<void> {
     process.exit(1);
   }
 
-  const nirnexBin = resolveNirnexBin();
-  const nodeBin   = resolveNodeBin();
+  const nodeBin  = resolveNodeBin();
+  const cliEntry = resolveCliEntry();
 
-  info(`nirnex binary : ${nirnexBin}`);
-  info(`node binary   : ${nodeBin}`);
+  info(`node binary : ${nodeBin}`);
+  info(`CLI entry   : ${cliEntry}`);
   console.log('');
 
+  if (cliEntry === 'nirnex') {
+    warn('Could not resolve CLI entry path — hooks may fail in restricted shell environments');
+    warn('Run nirnex setup --refresh-hooks from the directory where nirnex is installed');
+  }
+
   const hookFiles: [string, string][] = [
-    ['nirnex-bootstrap.sh', generateHookScript('bootstrap', nirnexBin, nodeBin)],
-    ['nirnex-entry.sh',     generateHookScript('entry',     nirnexBin, nodeBin)],
-    ['nirnex-guard.sh',     generateHookScript('guard',     nirnexBin, nodeBin)],
-    ['nirnex-trace.sh',     generateHookScript('trace',     nirnexBin, nodeBin)],
-    ['nirnex-validate.sh',  generateHookScript('validate',  nirnexBin, nodeBin)],
+    ['nirnex-bootstrap.sh', generateHookScript('bootstrap', nodeBin, cliEntry)],
+    ['nirnex-entry.sh',     generateHookScript('entry',     nodeBin, cliEntry)],
+    ['nirnex-guard.sh',     generateHookScript('guard',     nodeBin, cliEntry)],
+    ['nirnex-trace.sh',     generateHookScript('trace',     nodeBin, cliEntry)],
+    ['nirnex-validate.sh',  generateHookScript('validate',  nodeBin, cliEntry)],
   ];
 
   for (const [name, content] of hookFiles) {
@@ -359,13 +361,14 @@ async function refreshHooksOnly(cwd: string): Promise<void> {
     tick(`Updated .claude/hooks/${name}`);
   }
 
+  writeRuntimeContract(cwd, nodeBin, cliEntry);
+  tick('Updated .ai/runtime-contract.json');
+
   console.log('\n\x1b[32m\x1b[1mHooks refreshed.\x1b[0m\n');
-  console.log('All five scripts now embed:');
-  console.log(`  export PATH="${[
-    ...(nodeBin.startsWith('/') ? [path.dirname(nodeBin)] : []),
-    '/usr/local/bin',
-    '/opt/homebrew/bin',
-  ].filter((v, i, a) => a.indexOf(v) === i).join(':')}:$PATH"`);
+  console.log('All five scripts now invoke:');
+  console.log(`  "${nodeBin}" "${cliEntry}" runtime <subcommand>`);
+  console.log('');
+  console.log('Run \x1b[1mnirnex doctor\x1b[0m to verify the runtime contract is healthy.');
   console.log('');
 }
 
@@ -500,24 +503,27 @@ async function runSetup(cwd: string, opts: { yes: boolean; refreshHooks: boolean
     mkdirSafe(claudeDir);
     mkdirSafe(hooksDir);
 
-    // Resolve the absolute nirnex path once — all five scripts use it.
-    // Resolve both the nirnex binary and the node binary at setup time so every
-    // generated hook script carries an explicit PATH that works in Claude Code's
-    // restricted shell (PATH = /usr/bin:/bin only).
-    const nirnexBin = resolveNirnexBin();
-    const nodeBin   = resolveNodeBin();
-    if (nirnexBin !== 'nirnex') {
-      info(`Resolved nirnex binary: ${nirnexBin}`);
+    // Resolve node binary and CLI entry once — all five hook scripts embed them.
+    // Using direct `node <entry>` invocation removes the shebang (#!/usr/bin/env node)
+    // dependency that caused exit 127 in Claude Code's restricted shell
+    // (PATH = /usr/bin:/bin). The previous approach of setting PATH + calling
+    // the nirnex binary still relied on shebang resolution to succeed.
+    const nodeBin  = resolveNodeBin();
+    const cliEntry = resolveCliEntry();
+
+    if (cliEntry !== 'nirnex') {
+      info(`Resolved CLI entry: ${cliEntry}`);
     } else {
-      warn('Could not resolve absolute nirnex path — hooks will rely on shell PATH (may fail in restricted environments)');
+      warn('Could not resolve CLI entry — hooks will fall back to shell PATH (may fail in restricted environments)');
     }
+    info(`Resolved node binary: ${nodeBin}`);
 
     const hookFiles: [string, string][] = [
-      ['nirnex-bootstrap.sh', generateHookScript('bootstrap', nirnexBin, nodeBin)],
-      ['nirnex-entry.sh',     generateHookScript('entry',     nirnexBin, nodeBin)],
-      ['nirnex-guard.sh',     generateHookScript('guard',     nirnexBin, nodeBin)],
-      ['nirnex-trace.sh',     generateHookScript('trace',     nirnexBin, nodeBin)],
-      ['nirnex-validate.sh',  generateHookScript('validate',  nirnexBin, nodeBin)],
+      ['nirnex-bootstrap.sh', generateHookScript('bootstrap', nodeBin, cliEntry)],
+      ['nirnex-entry.sh',     generateHookScript('entry',     nodeBin, cliEntry)],
+      ['nirnex-guard.sh',     generateHookScript('guard',     nodeBin, cliEntry)],
+      ['nirnex-trace.sh',     generateHookScript('trace',     nodeBin, cliEntry)],
+      ['nirnex-validate.sh',  generateHookScript('validate',  nodeBin, cliEntry)],
     ];
 
     for (const [name, content] of hookFiles) {
@@ -546,6 +552,11 @@ async function runSetup(cwd: string, opts: { yes: boolean; refreshHooks: boolean
     } else {
       info('.claude/settings.json hooks already configured, skipped');
     }
+
+    // Write runtime contract — records the resolved paths so nirnex doctor
+    // can validate them without re-reading every hook script.
+    writeRuntimeContract(cwd, nodeBin, cliEntry);
+    tick('Wrote .ai/runtime-contract.json');
   }
 
   // Run initial index
@@ -577,6 +588,7 @@ async function runSetup(cwd: string, opts: { yes: boolean; refreshHooks: boolean
   console.log('\n\x1b[32m\x1b[1mSetup complete.\x1b[0m\n');
   console.log('Next steps:');
   console.log('  \x1b[1mnirnex status\x1b[0m              — verify project is ready');
+  console.log('  \x1b[1mnirnex doctor\x1b[0m              — verify hook runtime contract is healthy');
   console.log('  \x1b[1mnirnex plan "your task"\x1b[0m     — generate your first plan');
   console.log('  \x1b[1mnirnex plan .ai/specs/foo.md\x1b[0m — plan from a spec file');
   console.log('');

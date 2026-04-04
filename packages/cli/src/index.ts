@@ -15,6 +15,7 @@ import { updateCommand }  from './commands/update.js';
 import { runtimeCommand } from './commands/runtime.js';
 import { reportCommand }  from './commands/report.js';
 import { hookLogCommand } from './commands/hook-log.js';
+import { doctorCommand }  from './commands/doctor.js';
 
 const [, , command = '', ...rest] = process.argv;
 
@@ -28,6 +29,7 @@ Usage:
   nirnex plan     [options]   Generate a delivery plan from a spec or query
   nirnex query    [options]   Query the knowledge graph
   nirnex status   [options]   Show index and project health
+  nirnex doctor   [options]   Validate hook runtime contract and Claude hook scripts
   nirnex trace    [options]   View execution traces
   nirnex report   [options]   Generate a static HTML report from a run
   nirnex replay   [options]   Replay a past analysis run
@@ -68,6 +70,9 @@ switch (command) {
     break;
   case 'status':
     statusCommand(rest);
+    break;
+  case 'doctor':
+    doctorCommand(rest);
     break;
   case 'report':
     reportCommand(rest);
