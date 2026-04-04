@@ -10,7 +10,8 @@
     "build": "tsc --build --force && cp packages/core/src/schema.sql packages/core/dist/",
     "nirnex": "node packages/cli/dist/index.js",
     "typecheck": "tsc --build",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "tests": "vitest run"
   },
   "devDependencies": {
     "@ast-grep/cli": "^0.42.0",
