@@ -20,14 +20,24 @@ import {
 import { extractExitCode } from './exit-code.js';
 import { evaluateZeroTrustRules } from './attestation.js';
 import { isConfidenceGateUnknown } from './confidence-gate.js';
+import { readStdinWithTimeout } from './stdin.js';
 
-function readStdin(): Promise<string> {
-  return new Promise(resolve => {
-    let buf = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', chunk => { buf += chunk; });
-    process.stdin.on('end', () => resolve(buf));
-  });
+/**
+ * Extracts the JSON string following a --payload flag from an args array.
+ *
+ * Returns the value string when --payload is present and followed by a
+ * non-empty value. Returns null otherwise.
+ *
+ * Exported for unit testing. Used by runValidate to support manual/debug
+ * invocation without piping JSON to stdin:
+ *
+ *   nirnex runtime validate --payload '{"session_id":"..."}'
+ */
+export function parsePayloadArg(args: string[]): string | null {
+  const idx = args.indexOf('--payload');
+  if (idx === -1) return null;
+  const value = args[idx + 1];
+  return value && value.length > 0 ? value : null;
 }
 
 interface ViolationRecord {
@@ -35,9 +45,106 @@ interface ViolationRecord {
   severity: 'blocking' | 'advisory';
 }
 
-export async function runValidate(): Promise<void> {
+export async function runValidate(args: string[] = []): Promise<void> {
   const runId = generateRunId();
-  const raw = await readStdin();
+
+  // ── Stdin transport ────────────────────────────────────────────────────────
+  // Prefer an explicit --payload flag (manual/debug mode) over reading stdin.
+  // Fall back to readStdinWithTimeout which:
+  //   - writes a stderr diagnostic so observers can distinguish waiting from hanging
+  //   - resolves with null after 30s if stdin never closes (never-EOF / broken-pipe)
+  const inlinePayload = parsePayloadArg(args);
+  const raw = inlinePayload !== null
+    ? inlinePayload
+    : await readStdinWithTimeout();
+
+  // ── Stdin timeout / broken-pipe gate ──────────────────────────────────────
+  // null means no payload arrived: either manual invocation without --payload,
+  // or the hook runner failed to close the pipe (normal path failure).
+  // Emit a structured block so the cause is diagnosable from the hook log.
+  if (raw === null) {
+    const repoRoot  = process.env.NIRNEX_REPO_ROOT ?? process.cwd();
+    const sessionId = process.env.NIRNEX_SESSION_ID ?? '';
+    process.stderr.write(
+      '[nirnex validate] STDIN_READ_TIMEOUT: No hook payload received within the timeout window.\n' +
+      '  Possible causes:\n' +
+      '    1. Direct invocation without stdin — use --payload \'{"session_id":"..."}\' for debugging.\n' +
+      '    2. Hook runner failed to close stdin (Claude Code crash or stall).\n' +
+      '  Reason code: STDIN_READ_TIMEOUT\n',
+    );
+    // Emit minimal hook events so the audit trail is not silently orphaned.
+    const timeoutInvocationEvent: HookInvocationStartedEvent = {
+      event_id:   generateEventId(),
+      timestamp:  new Date().toISOString(),
+      session_id: sessionId,
+      task_id:    'none',
+      run_id:     runId,
+      hook_stage: 'validate',
+      event_type: 'HookInvocationStarted',
+      payload: { stage: 'validate', cwd: process.cwd(), repo_root: repoRoot, pid: process.pid },
+    };
+    appendHookEvent(repoRoot, sessionId, timeoutInvocationEvent);
+    const timeoutViolationEvent: ContractViolationDetectedEvent = {
+      event_id:   generateEventId(),
+      timestamp:  new Date().toISOString(),
+      session_id: sessionId,
+      task_id:    'none',
+      run_id:     runId,
+      hook_stage: 'validate',
+      event_type: 'ContractViolationDetected',
+      status:     'violated',
+      payload: {
+        reason_code:            ReasonCode.STDIN_READ_TIMEOUT,
+        violated_contract:      'validate must receive a hook payload on stdin within the timeout window',
+        expected:               'JSON hook payload on stdin before timeout',
+        actual:                 inlinePayload === null
+          ? 'stdin did not close within the timeout window (never-EOF or broken-pipe)'
+          : 'unreachable',
+        severity:               'blocking',
+        blocking_action_taken:  true,
+      },
+    };
+    appendHookEvent(repoRoot, sessionId, timeoutViolationEvent);
+    const timeoutFinalEvent: FinalOutcomeDeclaredEvent = {
+      event_id:   generateEventId(),
+      timestamp:  new Date().toISOString(),
+      session_id: sessionId,
+      task_id:    'none',
+      run_id:     runId,
+      hook_stage: 'validate',
+      event_type: 'FinalOutcomeDeclared',
+      payload: {
+        decision:                  'block',
+        violation_count:           1,
+        blocking_violation_count:  1,
+        advisory_violation_count:  0,
+        reason_codes:              [ReasonCode.STDIN_READ_TIMEOUT],
+        verification_status:       'unknown' as VerificationStatus,
+        acceptance_status:         'unknown' as VerificationStatus,
+        envelope_status:           'stdin_timeout',
+      },
+    };
+    appendHookEvent(repoRoot, sessionId, timeoutFinalEvent);
+    const timeoutStageEvent: StageCompletedEvent = {
+      event_id:   generateEventId(),
+      timestamp:  new Date().toISOString(),
+      session_id: sessionId,
+      task_id:    'none',
+      run_id:     runId,
+      hook_stage: 'validate',
+      event_type: 'StageCompleted',
+      status:     'fail',
+      payload: { stage: 'validate', blocker_count: 1, violation_count: 1 },
+    };
+    appendHookEvent(repoRoot, sessionId, timeoutStageEvent);
+    const out: ValidateDecision = {
+      decision: 'block',
+      reason:   '[STDIN_READ_TIMEOUT] validate did not receive a hook payload within the timeout window. ' +
+                'Use --payload for manual invocation or check hook runner health.',
+    };
+    process.stdout.write(JSON.stringify(out));
+    process.exit(0);
+  }
 
   let hookData: HookStop = { session_id: 'unknown' };
   try {

@@ -20,6 +20,12 @@ Subcommands (called by Claude hook scripts):
 
 These commands read JSON from stdin and write JSON to stdout.
 They are not intended for direct user invocation.
+
+Debugging validate without the hook transport:
+  nirnex runtime validate --payload '{"session_id":"<id>"}'
+  Bypasses stdin and runs full governance logic with the supplied JSON payload.
+  Without --payload, validate blocks on stdin for up to 30 s then emits
+  a STDIN_READ_TIMEOUT block decision and exits.
 `.trimStart();
 
 export async function runtimeCommand(args: string[]): Promise<void> {
@@ -48,7 +54,7 @@ export async function runtimeCommand(args: string[]): Promise<void> {
     }
     case 'validate': {
       const { runValidate } = await import('../runtime/validate.js');
-      await runValidate();
+      await runValidate(args.slice(1));
       break;
     }
     default:

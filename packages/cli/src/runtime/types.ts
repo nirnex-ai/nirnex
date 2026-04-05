@@ -212,6 +212,27 @@ export const ReasonCode = {
    * the gap is visible in the audit trail and the ledger.
    */
   CONFIDENCE_GATE_UNKNOWN: 'CONFIDENCE_GATE_UNKNOWN',
+
+  // ── Stdin transport ──────────────────────────────────────────────────────────
+  /**
+   * validate was invoked but no hook payload arrived on stdin within the read
+   * timeout window, OR the stdin stream emitted an error (e.g. broken pipe).
+   *
+   * Two root causes share this code:
+   *   1. Unsupported invocation — direct CLI call without piping hook JSON,
+   *      so stdin never closes and the 30s timeout fires.
+   *   2. Hook runner failure — Claude Code crashed or stalled before closing
+   *      the write-end of the pipe in the normal hook transport path.
+   *
+   * Both are emitted as blocking because governance constraints cannot be
+   * applied without a valid hook payload. Operators can distinguish cause (1)
+   * from cause (2) by context: (1) produces no session state on disk; (2) will
+   * have a partial session with an open envelope.
+   *
+   * Use `nirnex runtime validate --payload '{"session_id":"..."}' ` for
+   * manual debugging to bypass stdin entirely.
+   */
+  STDIN_READ_TIMEOUT: 'STDIN_READ_TIMEOUT',
 } as const;
 
 export type ReasonCodeValue = typeof ReasonCode[keyof typeof ReasonCode];

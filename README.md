@@ -305,6 +305,7 @@ At the end of every task the `validate` hook calls `reconcileStores()` **before*
 | `EVIDENCE_ENTRY_HOOK_MISSING` | blocking¹ / advisory² | validate | Entry hook definitively did not run — governance constraints never established |
 | `EVIDENCE_TOTAL_ENTRY_LOSS` | blocking¹ / advisory² | validate | Entry hook may have run but all bootstrap evidence was lost to write failures |
 | `EVIDENCE_EXECUTION_EVIDENCE_LOST` | **blocking** | validate | Write failures + zero trace events + obligations — cannot distinguish "no execution" from "evidence lost" |
+| `STDIN_READ_TIMEOUT` | **blocking** | validate | Hook payload not received on stdin within the timeout window — direct invocation without `--payload`, or hook runner failed to close the pipe |
 
 ¹ Blocking for Lane B and C  ²  Advisory for Lane A
 
@@ -884,6 +885,25 @@ Events are written to `.ai-index/runtime/events/{sessionId}/hook-events.jsonl` a
 | `ECO_BLOCKED` | blocking | validate | Task proceeded despite ECO marking it blocked |
 | `ACCEPTANCE_NOT_EVALUATED` | advisory | validate | Acceptance criteria present but no tool events to evaluate them |
 | `LEDGER_WRITE_FAILED` | advisory | validate | Ledger persistence failed — run will not appear in `nirnex report --list`; check disk space or DB permissions |
+| `STDIN_READ_TIMEOUT` | **blocking** | validate | Hook payload not received on stdin within 30 s — direct invocation without `--payload`, or hook runner failed to close the pipe |
+
+---
+
+#### Debugging `runtime validate` directly
+
+`nirnex runtime validate` is a machine-facing command called by Claude Code's Stop hook. It reads its hook payload from stdin and must receive EOF before it can proceed. **Invoking it without piping input will block until the 30 s timeout fires**, at which point it emits a `STDIN_READ_TIMEOUT` block decision to stdout and exits.
+
+Use the `--payload` flag to supply the hook payload directly for debugging or local testing:
+
+```sh
+# Minimal payload — bypasses stdin, runs full governance logic against the active session
+nirnex runtime validate --payload '{"session_id":"sess_abc123"}'
+
+# Pipe an empty payload (hook path equivalent with no session data)
+echo '{}' | nirnex runtime validate
+```
+
+If you see `STDIN_READ_TIMEOUT` in `nirnex hook-log --last` under normal (non-manual) use, the hook runner failed to close the pipe before the timeout. Check `nirnex doctor` for hook health and inspect the Claude Code process for crashes or stalls during the Stop stage.
 
 ---
 
