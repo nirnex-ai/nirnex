@@ -1,2 +1,2 @@
 #!/bin/sh
-exec "/usr/local/bin/node" "/Users/pravijay/works/AIDOS/packages/cli/dist/index.js" runtime guard
+exec "/usr/local/bin/node" "/usr/local/lib/node_modules/@nirnex/cli/dist/index.js" runtime guard
