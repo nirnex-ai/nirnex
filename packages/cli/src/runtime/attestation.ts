@@ -85,6 +85,18 @@ function isVerificationCommand(event: TraceEvent, storedCmds: string[]): boolean
 }
 
 /**
+ * Returns true when the given bash command string matches a known verification
+ * command (stored commands take precedence; pattern is the fallback).
+ *
+ * Exported for reuse in guard.ts pre-execution checks.
+ */
+export function isBashVerificationCommand(command: string, storedCmds: string[]): boolean {
+  if (!command) return false;
+  if (storedCmds.length > 0 && storedCmds.some(vc => command.includes(vc))) return true;
+  return VERIFICATION_PATTERN.test(command);
+}
+
+/**
  * Evaluate Zero-Trust rules 2, 3, and 4 against a session's trace events.
  *
  * Pure function — no I/O, no side effects. Called from validate.ts after

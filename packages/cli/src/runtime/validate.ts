@@ -128,11 +128,32 @@ export async function runValidate(): Promise<void> {
       },
     };
     appendHookEvent(repoRoot, sessionId, dupEvent);
+    // Emit StageCompleted to close the lifecycle properly — the G3 path has
+    // HookInvocationStarted but previously exited without a terminal lifecycle event.
+    const dupScEvent: StageCompletedEvent = {
+      event_id: generateEventId(),
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      task_id: envelope.task_id,
+      run_id: runId,
+      hook_stage: 'validate',
+      event_type: 'StageCompleted',
+      status: 'pass',
+      payload: {
+        stage: 'validate',
+        blocker_count: 0,
+        violation_count: 1,
+      },
+    };
+    appendHookEvent(repoRoot, sessionId, dupScEvent);
     process.stdout.write(JSON.stringify({ decision: 'allow' } as ValidateDecision));
     process.exit(0);
   }
 
-  const events = loadTraceEvents(repoRoot, sessionId);
+  const rawEvents = loadTraceEvents(repoRoot, sessionId);
+  // Filter to only trace events for the current task — prevents cross-task
+  // trace contamination when multiple tasks run within the same Claude Code session.
+  const events = rawEvents.filter(e => e.task_id === envelope.task_id);
   const hookEvents = loadHookEvents(repoRoot, sessionId);
 
   // G2: Load write-failure count from the G1 sidecar so reconcileStores() can

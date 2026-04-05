@@ -18,10 +18,14 @@ Complete command reference for the `nirnex` CLI.
   - [report](#nirnex-report)
   - [replay](#nirnex-replay)
   - [hook-log](#nirnex-hook-log)
+  - [doctor](#nirnex-doctor)
+  - [update](#nirnex-update)
+  - [runtime](#nirnex-runtime)
 - [Configuration](#configuration)
 - [Directory Structure](#directory-structure)
 - [Environment Variables](#environment-variables)
 - [Claude Hook Lifecycle](#claude-hook-lifecycle)
+- [Zero-Trust Execution Rules](#zero-trust-execution-rules)
 - [Database Schema](#database-schema)
 
 ---
@@ -55,6 +59,7 @@ nirnex setup [options]
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--yes` | `-y` | Skip interactive prompts and auto-accept all defaults |
+| `--refresh-hooks` | | Regenerate all Claude hook scripts and update the runtime contract without re-running full setup |
 
 **What it does**
 
@@ -63,22 +68,36 @@ nirnex setup [options]
    - `.ai/prompts/implementer.md` — implementer agent persona
    - `.ai/specs/` — directory for spec files
    - `.ai/calibration/` — project-specific guidance
+   - `.ai/critical-paths.txt` — architecturally critical file list
 2. Creates `nirnex.config.json` in the repo root
 3. Creates `.ai-index/` for runtime data
 4. Installs a git `post-commit` hook for automatic index refresh
-5. Installs 5 Claude hook scripts under `.claude/hooks/`:
+5. Generates 5 Claude hook scripts under `.claude/hooks/`:
    - `nirnex-bootstrap.sh`
    - `nirnex-entry.sh`
    - `nirnex-guard.sh`
    - `nirnex-trace.sh`
    - `nirnex-validate.sh`
-6. Patches `.claude/settings.json` with hook bindings
-7. Optionally runs the first full index rebuild
 
-**Example**
+   Each script uses the **direct-node-entry** strategy: `exec "<node>" "<cli-entry>" runtime <subcommand>`. This bypasses PATH and shebang resolution, which fails in Claude Code's restricted shell (`PATH=/usr/bin:/bin`).
+6. Writes `.ai/runtime-contract.json` with the resolved node binary and CLI entry paths
+7. Patches `.claude/settings.json` with hook bindings
+8. Optionally runs the first full index rebuild
+
+**Hook resolution**
+
+At setup time, Nirnex resolves the Node binary in this order:
+1. `process.execPath` — the node running `nirnex setup` (most reliable)
+2. Well-known absolute paths: `/usr/local/bin/node`, `/opt/homebrew/bin/node`, `~/.volta/bin/node`
+3. Bare `node` fallback
+
+The resolved paths are frozen into `.ai/runtime-contract.json`. Use `nirnex doctor` to verify them after Node upgrades.
+
+**Examples**
 
 ```sh
 nirnex setup --yes
+nirnex setup --refresh-hooks     # Re-generate hooks only (e.g. after Node upgrade)
 ```
 
 ---
@@ -115,6 +134,7 @@ nirnex remove [options]
 | `.ai/prompts/implementer.md` | Unless `--keep-specs` |
 | `.ai/calibration/README.md` | Unless `--keep-specs` |
 | `.ai/critical-paths.txt` | Unless `--keep-specs` |
+| `.ai/runtime-contract.json` | Unless `--keep-specs` |
 | `.ai/specs/` | Preserved unless `--purge-data` |
 | `.git/hooks/post-commit` | Only if it exactly matches the Nirnex template |
 | `.claude/hooks/nirnex-*.sh` | All 5 scripts, only if exact match; unless `--keep-claude` |
@@ -457,6 +477,109 @@ nirnex hook-log --stage guard            # Only guard-stage events
 
 ---
 
+### `nirnex doctor`
+
+Validate the runtime contract and Claude hook scripts.
+
+```
+nirnex doctor
+```
+
+**No options.**
+
+**Checks performed**
+
+| # | Check | Description |
+|---|-------|-------------|
+| 1 | `.ai/runtime-contract.json` | File exists and is valid JSON |
+| 2 | Node binary | Recorded `nodePath` still exists on disk |
+| 3 | CLI entry | Recorded `nirnexEntry` still exists on disk |
+| 4 | Launch strategy | `strategy` field equals `direct-node-entry` |
+| 5 | Hook presence | All 5 `.claude/hooks/nirnex-*.sh` scripts are present |
+| 6 | Hook executability | All 5 scripts have the executable bit set |
+| 7 | Legacy shebang | No hook script body contains `env node` (fragile in restricted shells) |
+
+**Exit codes**
+
+| Code | Meaning |
+|------|---------|
+| `0` | All checks passed |
+| `1` | One or more checks failed |
+
+**Repair**
+
+```sh
+nirnex setup --refresh-hooks   # Re-resolves node/entry paths and regenerates all hook scripts
+```
+
+Run `nirnex doctor` after:
+- Upgrading Node.js (node binary path may change)
+- Moving the global npm prefix
+- Switching Node version managers (nvm → volta, etc.)
+
+---
+
+### `nirnex update`
+
+Check npm for a newer version of `@nirnex/cli` and install it if one is available.
+
+```
+nirnex update
+```
+
+**No options.**
+
+**Behaviour**
+
+1. Reads the current installed version from `package.json`
+2. Fetches the latest version from the npm registry (`registry.npmjs.org`)
+3. If the registry version is newer, runs `npm install -g @nirnex/cli@<latest>`
+4. If already up to date, exits with a confirmation message
+
+**Exit codes**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Up to date or successfully updated |
+| `1` | Registry unreachable or `npm install` failed |
+
+**Example output**
+
+```
+  Current version : 6.7.0
+  Checking npm for latest @nirnex/cli...
+  Latest version  : 6.8.0
+
+  ↑ New version available: 6.7.0 → 6.8.0
+  Running: npm install -g @nirnex/cli@6.8.0
+```
+
+---
+
+### `nirnex runtime`
+
+Machine-facing runtime pipeline dispatcher. Called internally by Claude hook scripts.
+
+```
+nirnex runtime <subcommand>
+```
+
+> **Not intended for direct user invocation.** These subcommands are called by the `.claude/hooks/nirnex-*.sh` scripts during a Claude Code session. Each subcommand reads JSON from stdin and writes JSON to stdout.
+
+**Subcommands**
+
+| Subcommand | Hook trigger | Description |
+|------------|-------------|-------------|
+| `bootstrap` | `SessionStart` | Hydrates session state, checks index freshness, writes `CLAUDE_ENV_FILE` |
+| `entry` | `UserPromptSubmit` | Builds ECO from the user prompt, creates task envelope, injects context |
+| `guard` | `PreToolUse` | Evaluates the pending tool call against the lane policy; returns `allow`/`deny`/`ask` |
+| `trace` | `PostToolUse` | Appends a trace event, records command attestation, detects scope deviations |
+| `validate` | `Stop` | Validates acceptance criteria and Zero-Trust rules; blocks or allows completion |
+
+Use `nirnex hook-log` to inspect the events produced by this pipeline.
+
+---
+
 ## Configuration
 
 **File:** `nirnex.config.json` in the repository root.
@@ -510,7 +633,8 @@ nirnex hook-log --stage guard            # Only guard-stage events
 │   ├── specs/                  # Spec files for `nirnex plan`
 │   ├── calibration/
 │   │   └── README.md           # Project-specific guidance
-│   └── critical-paths.txt      # Architecturally critical file list
+│   ├── critical-paths.txt      # Architecturally critical file list
+│   └── runtime-contract.json   # Resolved node/entry paths for hook scripts
 │
 ├── .ai-index/                  # Runtime data
 │   ├── runtime/
@@ -540,23 +664,59 @@ nirnex hook-log --stage guard            # Only guard-stage events
 |----------|-------------|
 | `NIRNEX_REPO_ROOT` | Override the repository root (defaults to `cwd`) |
 | `NIRNEX_SESSION_ID` | Override the session ID used for hook event logging |
-| `CLAUDE_ENV_FILE` | Path to Claude environment data used by the bootstrap hook |
+| `CLAUDE_ENV_FILE` | Path to Claude environment data written by the bootstrap hook |
 
 ---
 
 ## Claude Hook Lifecycle
 
-Hooks are registered in `.claude/settings.json` and fire automatically during a Claude Code session.
+Hooks are registered in `.claude/settings.json` and fire automatically during a Claude Code session. Each script invokes `nirnex runtime <subcommand>` using the **direct-node-entry** strategy — bypassing PATH resolution entirely.
 
-| Trigger | Script | Timeout | Purpose |
-|---------|--------|---------|---------|
-| `SessionStart` | `nirnex-bootstrap.sh` | 30s | Load session context, capture environment |
-| `UserPromptSubmit` | `nirnex-entry.sh` | 30s | Parse intent, create task envelope |
-| `PreToolUse` (Bash, Edit, Write, MultiEdit) | `nirnex-guard.sh` | 10s | Enforce contract, block disallowed tool use |
-| `PostToolUse` | `nirnex-trace.sh` | 10s | Record tool execution trace |
-| `Stop` | `nirnex-validate.sh` | 10s | Validate outcome, write final ledger entry |
+| Trigger | Script | Timeout | Subcommand | Purpose |
+|---------|--------|---------|------------|---------|
+| `SessionStart` | `nirnex-bootstrap.sh` | 30s | `runtime bootstrap` | Load session context, check index freshness, capture environment |
+| `UserPromptSubmit` | `nirnex-entry.sh` | 30s | `runtime entry` | Parse intent, build ECO, create task envelope, inject context |
+| `PreToolUse` (Bash, Edit, Write, MultiEdit) | `nirnex-guard.sh` | 10s | `runtime guard` | Enforce lane policy, block disallowed tool use |
+| `PostToolUse` | `nirnex-trace.sh` | 10s | `runtime trace` | Record tool execution trace, attest exit code, detect deviations |
+| `Stop` | `nirnex-validate.sh` | 10s | `runtime validate` | Validate outcome, enforce Zero-Trust rules, write final ledger entry |
 
 Use `nirnex hook-log` to inspect the events produced by this lifecycle.
+
+**Hook script format**
+
+Every generated hook script uses the direct-node-entry strategy:
+
+```sh
+#!/bin/sh
+exec "/absolute/path/to/node" "/absolute/path/to/nirnex/dist/index.js" runtime <subcommand>
+```
+
+This avoids `#!/usr/bin/env node` shebang resolution, which fails in Claude Code's restricted shell (`PATH=/usr/bin:/bin`). The absolute paths are frozen at `nirnex setup` time and stored in `.ai/runtime-contract.json`. Run `nirnex doctor` to verify they are still valid.
+
+---
+
+## Zero-Trust Execution Rules
+
+The validate stage enforces three Zero-Trust rules on every task that required verification.
+
+| Rule | Name | Description | Violation code |
+|------|------|-------------|----------------|
+| Rule 2 | No inferred success | Exit code must be deterministically extracted. `null` exit → blocked. Only `exit_code === 0` is a pass. | `COMMAND_EXIT_UNKNOWN` / `COMMAND_EXIT_NONZERO` |
+| Rule 3 | No post-verification edits | Any `Edit`, `Write`, or `MultiEdit` occurring **after** the first verification Bash event is a blocking violation. | `POST_VERIFICATION_EDIT` |
+| Rule 4 | First execution only | Only the **first** matching verification Bash event determines the outcome. Retries and re-runs cannot upgrade a failed verification. | (enforced structurally — no separate code) |
+
+**Attestation**
+
+Exit codes are captured at trace time (PostToolUse) via a `CommandAttestation` record frozen into each `TraceEvent`. The validate stage reads the frozen attestation — it never re-extracts exit codes from stale tool results. This is the machine-verifiable chain of custody for each command.
+
+**Governance fixes**
+
+| Fix | Description |
+|-----|-------------|
+| G1 | Audit write failures: sidecar `hook-write-failures.jsonl` captures any event that failed to persist |
+| G2 | Cross-store reconciliation: validate checks that Envelope, JSONL, and Ledger are consistent before deciding |
+| G3 | Stop-hook idempotency: re-invoked Stop hooks are detected via `finalized_at` timestamp and skipped |
+| G4 | Evidence integrity: audit trail completeness is verified before the final decision is recorded |
 
 ---
 

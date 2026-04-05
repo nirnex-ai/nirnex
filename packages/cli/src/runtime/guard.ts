@@ -4,9 +4,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadActiveEnvelope, appendHookEvent, generateEventId, generateRunId } from './session.js';
+import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, appendHookEvent, generateEventId, generateRunId } from './session.js';
 import { HookPreToolUse, GuardDecision, TaskEnvelope, HookInvocationStartedEvent } from './types.js';
 import { buildGuardStageCompleted } from './stage-completion.js';
+import { isBashVerificationCommand } from './attestation.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -140,6 +141,42 @@ export async function runGuard(): Promise<void> {
     appendHookEvent(repoRoot, sessionId, sc);
     process.stdout.write(JSON.stringify({ decision: 'allow' }));
     process.exit(0);
+  }
+
+  // Pre-execution Zero-Trust Rule 3: deny Edit/Write/MultiEdit if verification
+  // has already been run for this task. This moves enforcement from post-facto
+  // detection (validate stage) to pre-execution blocking (guard stage).
+  const isEditTool = hookData.tool_name === 'Edit' || hookData.tool_name === 'Write' || hookData.tool_name === 'MultiEdit';
+  if (isEditTool) {
+    const hookEvents = loadHookEvents(repoRoot, sessionId);
+    const obligationEvent = hookEvents
+      .filter(e => e.event_type === 'InputEnvelopeCaptured' && e.task_id === envelope.task_id)
+      .at(-1);
+    const mandatoryVerificationRequired: boolean = (obligationEvent as any)?.payload?.mandatory_verification_required ?? false;
+
+    if (mandatoryVerificationRequired) {
+      const storedVerificationCommands: string[] = (obligationEvent as any)?.payload?.verification_commands ?? [];
+      const traceEvents = loadTraceEvents(repoRoot, sessionId);
+      const taskTraceEvents = traceEvents.filter(e => e.task_id === envelope.task_id);
+
+      const verificationAlreadyRun = taskTraceEvents
+        .filter(e => e.tool === 'Bash')
+        .some(e => {
+          const cmd = String((e.tool_input as Record<string, unknown>)?.command ?? '');
+          return isBashVerificationCommand(cmd, storedVerificationCommands);
+        });
+
+      if (verificationAlreadyRun) {
+        const preRule3Decision: GuardDecision = {
+          decision: 'deny',
+          reason: `[Nirnex Guard] Zero-Trust Rule 3: file modification blocked — verification has already been run for this task (task_id=${envelope.task_id}). Verification must be the final step.`,
+        };
+        const sc = buildGuardStageCompleted({ sessionId, taskId: envelope.task_id, runId, decision: 'deny' });
+        appendHookEvent(repoRoot, sessionId, sc);
+        process.stdout.write(JSON.stringify(preRule3Decision));
+        process.exit(0);
+      }
+    }
   }
 
   const decision = evaluateGuard(envelope, hookData.tool_name, hookData.tool_input);
