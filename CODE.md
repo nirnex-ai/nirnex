@@ -13,12 +13,11 @@ Complete command reference for the `nirnex` CLI.
   - [index](#nirnex-index)
   - [plan](#nirnex-plan)
   - [query](#nirnex-query)
-  - [status](#nirnex-status)
+  - [doctor](#nirnex-doctor)
   - [trace](#nirnex-trace)
   - [report](#nirnex-report)
   - [replay](#nirnex-replay)
   - [hook-log](#nirnex-hook-log)
-  - [doctor](#nirnex-doctor)
   - [update](#nirnex-update)
   - [runtime](#nirnex-runtime)
 - [Configuration](#configuration)
@@ -281,41 +280,60 @@ nirnex query --impact src/auth/middleware.ts
 
 ---
 
-### `nirnex status`
+### `nirnex doctor`
 
-Show the current health of the index and project configuration.
+Unified project health, index freshness, and hook runtime contract check.
 
 ```
-nirnex status
+nirnex doctor
 ```
+
+> `nirnex status` is a backward-compatible alias for this command.
 
 **No options.**
 
 **Checks performed**
 
-| Check | Description |
-|-------|-------------|
-| `nirnex.config.json` | Config file exists and is valid |
-| `.ai/` workspace | Directory structure is present |
-| `.ai/prompts/` | `analyst.md` and `implementer.md` exist |
-| `.aidos.db` | SQLite database exists and is readable |
-| Module count | Number of indexed modules |
-| Edge count | Number of dependency graph edges |
-| Schema version | DB schema version |
-| Index freshness | Compares stored git commit hash to current `HEAD` |
-| Post-commit hook | `.git/hooks/post-commit` is installed |
-| Claude settings | `.claude/settings.json` contains hook bindings |
-| Claude hook scripts | All 5 `.claude/hooks/nirnex-*.sh` scripts present |
-| Runtime sessions | Count of stored sessions |
-| Task envelopes | Total and currently active task envelopes |
+| Section | Check | Description |
+|---------|-------|-------------|
+| **Project** | `nirnex.config.json` | Exists and is valid JSON |
+| **Project** | `.ai/` workspace | Directory present |
+| **Project** | `.ai/prompts/` | `analyst.md` and `implementer.md` both present |
+| **Index** | `.aidos.db` | Database exists and is readable |
+| **Index** | Module / edge counts | Number of indexed modules and edges; schema version |
+| **Index** | Freshness | Stored commit hash matches current `HEAD` |
+| **Index** | Post-commit hook | `.git/hooks/post-commit` is installed |
+| **Claude Hooks** | `.claude/settings.json` | Hook bindings section present |
+| **Claude Hooks** | Hook presence | All 5 `.claude/hooks/nirnex-*.sh` scripts exist |
+| **Claude Hooks** | Executability | All 5 scripts have the executable bit set |
+| **Claude Hooks** | Launch strategy | No script body uses `env node` (fragile in restricted shell) |
+| **Runtime Contract** | `.ai/runtime-contract.json` | Exists and is valid JSON |
+| **Runtime Contract** | Node binary | Recorded `nodePath` still exists on disk |
+| **Runtime Contract** | CLI entry | Recorded `nirnexEntry` still exists on disk |
+| **Runtime Contract** | Strategy | `strategy` field equals `direct-node-entry` |
+| **Sessions** | Session count | Number of recorded sessions |
+| **Sessions** | Task envelopes | Total and currently active envelopes |
 
-**Output**
-
-Status table with symbols:
+**Output symbols**
 
 - `✔` — healthy
 - `✘` — missing or broken
-- `!` — warning (e.g., stale index)
+- `!` — warning (e.g., stale index, legacy shebang)
+
+**Exit codes**
+
+| Code | Meaning |
+|------|---------|
+| `0` | All checks passed |
+| `1` | One or more checks failed |
+
+**Repair**
+
+```sh
+nirnex setup --refresh-hooks   # Re-resolves node/entry paths and regenerates all hook scripts
+```
+
+Run `nirnex doctor` after upgrading Node.js, switching version managers, or moving the global npm prefix.
 
 ---
 
@@ -474,48 +492,6 @@ nirnex hook-log --violations             # All contract violations
 nirnex hook-log --session abc123         # Specific session
 nirnex hook-log --stage guard            # Only guard-stage events
 ```
-
----
-
-### `nirnex doctor`
-
-Validate the runtime contract and Claude hook scripts.
-
-```
-nirnex doctor
-```
-
-**No options.**
-
-**Checks performed**
-
-| # | Check | Description |
-|---|-------|-------------|
-| 1 | `.ai/runtime-contract.json` | File exists and is valid JSON |
-| 2 | Node binary | Recorded `nodePath` still exists on disk |
-| 3 | CLI entry | Recorded `nirnexEntry` still exists on disk |
-| 4 | Launch strategy | `strategy` field equals `direct-node-entry` |
-| 5 | Hook presence | All 5 `.claude/hooks/nirnex-*.sh` scripts are present |
-| 6 | Hook executability | All 5 scripts have the executable bit set |
-| 7 | Legacy shebang | No hook script body contains `env node` (fragile in restricted shells) |
-
-**Exit codes**
-
-| Code | Meaning |
-|------|---------|
-| `0` | All checks passed |
-| `1` | One or more checks failed |
-
-**Repair**
-
-```sh
-nirnex setup --refresh-hooks   # Re-resolves node/entry paths and regenerates all hook scripts
-```
-
-Run `nirnex doctor` after:
-- Upgrading Node.js (node binary path may change)
-- Moving the global npm prefix
-- Switching Node version managers (nvm → volta, etc.)
 
 ---
 

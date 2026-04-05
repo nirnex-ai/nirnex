@@ -5,7 +5,6 @@
 import { createRequire } from 'node:module';
 import { planCommand }    from './commands/plan.js';
 import { queryCommand }   from './commands/query.js';
-import { statusCommand }  from './commands/status.js';
 import { replayCommand }  from './commands/replay.js';
 import { indexCommand }   from './commands/index.js';
 import { traceCommand }   from './commands/trace.js';
@@ -28,8 +27,7 @@ Usage:
   nirnex index    [options]   Index the codebase into the knowledge graph
   nirnex plan     [options]   Generate a delivery plan from a spec or query
   nirnex query    [options]   Query the knowledge graph
-  nirnex status   [options]   Show index and project health
-  nirnex doctor   [options]   Validate hook runtime contract and Claude hook scripts
+  nirnex doctor   [options]   Project health, index freshness, and hook runtime check
   nirnex trace    [options]   View execution traces
   nirnex report   [options]   Generate a static HTML report from a run
   nirnex replay   [options]   Replay a past analysis run
@@ -68,9 +66,7 @@ switch (command) {
   case 'query':
     queryCommand(rest).catch(console.error);
     break;
-  case 'status':
-    statusCommand(rest);
-    break;
+  case 'status': // backward-compat alias
   case 'doctor':
     doctorCommand(rest);
     break;
