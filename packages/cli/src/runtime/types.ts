@@ -201,6 +201,17 @@ export const ReasonCode = {
    * "nothing executed" from "trace events silently dropped".
    */
   EVIDENCE_EXECUTION_EVIDENCE_LOST: 'EVIDENCE_EXECUTION_EVIDENCE_LOST',
+
+  // ── Confidence gate ──────────────────────────────────────────────────────────
+  /**
+   * envelope.confidence.score is 0 — governance decision reliability cannot be
+   * established. The planning stage produced no confidence signal, so the
+   * validate stage cannot verify that the outcome is trustworthy.
+   *
+   * Emitted as an advisory (not blocking) so execution is not prevented, but
+   * the gap is visible in the audit trail and the ledger.
+   */
+  CONFIDENCE_GATE_UNKNOWN: 'CONFIDENCE_GATE_UNKNOWN',
 } as const;
 
 export type ReasonCodeValue = typeof ReasonCode[keyof typeof ReasonCode];

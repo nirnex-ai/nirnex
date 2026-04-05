@@ -19,6 +19,7 @@ import {
 } from './types.js';
 import { extractExitCode } from './exit-code.js';
 import { evaluateZeroTrustRules } from './attestation.js';
+import { isConfidenceGateUnknown } from './confidence-gate.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -340,6 +341,20 @@ export async function runValidate(): Promise<void> {
     );
   }
 
+  // ── Confidence gate ────────────────────────────────────────────────────────
+  // When envelope.confidence.score === 0 the planning stage produced no
+  // confidence signal — the governance decision reliability cannot be verified.
+  // Record as advisory so the gap is visible in the audit trail without blocking.
+  if (isConfidenceGateUnknown(envelope.confidence.score)) {
+    recordViolation(
+      ReasonCode.CONFIDENCE_GATE_UNKNOWN,
+      'Confidence score is 0 — governance decision reliability cannot be established',
+      'confidence.score > 0',
+      `confidence.score = 0, label = "${envelope.confidence.label}"`,
+      'advisory',
+    );
+  }
+
   // ── G2: Cross-store reconciliation ────────────────────────────────────────
   // Validate that Envelope, JSONL, and Ledger are mutually consistent BEFORE
   // the governance decision is computed. Violations here feed into the decision
@@ -603,7 +618,7 @@ export async function runValidate(): Promise<void> {
           summarized_trace_id: envelope.task_id,
           completion_state: completionState,
           final_lane: envelope.lane as 'A' | 'B' | 'C',
-          final_confidence: null,
+          final_confidence: envelope.confidence.score,
           had_refusal: decision === 'block',
           had_override: false,
           forced_unknown_applied: envelope.eco_summary.forced_unknown,

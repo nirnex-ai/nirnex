@@ -79,7 +79,7 @@ export function generateOptimisationHints(bundle: RunEvidenceBundle): Optimisati
     }
   }
 
-  // ── OPT-004: Low confidence success ───────────────────────────────────────
+  // ── OPT-004: Low or unknown confidence success ────────────────────────────
   {
     const confidence = bundle.confidence.overall_confidence;
     const band = bundle.confidence.band;
@@ -87,10 +87,18 @@ export function generateOptimisationHints(bundle: RunEvidenceBundle): Optimisati
       const checkpointEventIds = bundle.raw_events
         .filter(e => e.kind === 'confidence_checkpoint')
         .map(e => e.event_id);
+
+      // Distinguish two semantically different cases:
+      //   band === 'unknown' — no confidence data at all (no snapshots recorded)
+      //   otherwise          — confidence was computed but scored below threshold
+      const observation = band === 'unknown'
+        ? 'Run completed with no confidence data — governance reliability cannot be verified.'
+        : `Run succeeded at low confidence (${confidence}). Results may not be reliable.`;
+
       hints.push({
         hint_id: `hint_OPT-004_${run_id_prefix}`,
         rule_id: 'OPT-004',
-        observation: `Run succeeded at low confidence (${confidence}). Results may not be reliable.`,
+        observation,
         evidence_basis: `Overall confidence: ${confidence}, band: ${band}`,
         hint_confidence: 'high',
         subsystem: 'confidence-model / evidence-quality',
