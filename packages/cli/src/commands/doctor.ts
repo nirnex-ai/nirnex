@@ -69,9 +69,8 @@ export function doctorCommand(_args: string[]): void {
     process.exit(1);
   }
 
-  let config: Record<string, unknown> = {};
   try {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
     tick(`Project: \x1b[1m${config.projectName ?? path.basename(cwd)}\x1b[0m`);
   } catch {
     warn('nirnex.config.json is malformed (invalid JSON)');
@@ -104,8 +103,7 @@ export function doctorCommand(_args: string[]): void {
   const dbExists = fs.existsSync(dbPath);
 
   if (!dbExists) {
-    cross('Index not found (.aidos.db) — run \x1b[1mnirnex index --rebuild\x1b[0m');
-    allOk = false;
+    warn('Index not found (.aidos.db) — run \x1b[1mnirnex index --rebuild\x1b[0m');
   } else {
     try {
       const db = openDb(dbPath);

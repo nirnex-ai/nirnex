@@ -4,7 +4,7 @@
 # Nirnex (Pre-Alpha)
 #### Decision Intelligence for Software Delivery
 
-> Note: This project is in an experimental stage.
+> Note: This project is in an experimental stage. Dependency on Claude hooks is heavy. Mac/Linux only for now.
 
 [![CI](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/ci.yml)
 [![Release](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml/badge.svg)](https://github.com/nirnex-ai/nirnex/actions/workflows/release.yml)
