@@ -157,9 +157,31 @@ describe('1. extractExitCode', () => {
     expect(extractExitCode(result, 'npm run lint; echo done')).toBeNull();
   });
 
-  it('1.8 suppresses zero-exit probe for && composition', () => {
+  it('1.8 suppresses zero-exit probe for || composition (last cmd can mask failure)', () => {
+    // `npm run build || echo "ok"` — the echo always exits 0 even if build failed.
+    // Probe 6 must not infer 0 here because the evidence is unreliable.
     const result = { stdout: 'output', interrupted: false };
-    expect(extractExitCode(result, 'npm run build && npm run test')).toBeNull();
+    expect(extractExitCode(result, 'npm run build || echo "build failed"')).toBeNull();
+  });
+
+  it('1.8b suppresses zero-exit probe for mixed && + || composition', () => {
+    const result = { stdout: 'output', interrupted: false };
+    expect(extractExitCode(result, 'npm run build && npm run test || echo "failed"')).toBeNull();
+  });
+
+  it('1.8c allows zero-exit probe for &&-only composition (PATH-setup + run pattern)', () => {
+    // &&-only chains exit with the first failing command's code.
+    // interrupted===false + stdout present reliably means the chain passed.
+    // This is the production pattern: export PATH=... && cd /path && npm run lint
+    // FAILS before fix: current code treats && as unsafe and returns null.
+    const result = { stdout: 'output', interrupted: false };
+    expect(extractExitCode(result, 'export PATH="/usr/local/bin:$PATH" && cd /proj && npm run lint')).toBe(0);
+  });
+
+  it('1.8d allows zero-exit probe for simple && chain without PATH setup', () => {
+    // FAILS before fix.
+    const result = { stdout: 'Lint passed', interrupted: false };
+    expect(extractExitCode(result, 'npm run build && npm run lint')).toBe(0);
   });
 
   it('1.9 allows zero-exit probe for direct commands (stdout + interrupted=false)', () => {

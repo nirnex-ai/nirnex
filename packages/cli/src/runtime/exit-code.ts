@@ -12,7 +12,7 @@
  *   4. Parse output / content / text / stdout for "EXIT_CODE:N" patterns
  *   5. tool_result.is_error / isError  (boolean error flag → treat as exit 1)
  *   6. Claude Code zero-exit signature — stdout present + interrupted===false
- *      (suppressed for shell-composition commands)
+ *      (suppressed for || and ; compositions; &&-only chains are allowed)
  *
  * Returns the exit code as a number, or null if it cannot be determined.
  * null MUST be treated as blocking under Zero-Trust Rule 2.
@@ -49,15 +49,19 @@ export function extractExitCode(
 
   // 6: Claude Code zero-exit signature — stdout present + interrupted===false.
   //
-  // IMPORTANT: suppressed for shell-composition commands (; && ||).
-  // When a command wraps another in shell composition the outer shell
-  // exits 0 (e.g. `echo EXIT_CODE:$?` always exits 0). If the inner
-  // command's output is truncated, probe 4 finds nothing and probe 6
-  // would wrongly infer exit 0. For composition commands, null is the
-  // safe answer — Zero-Trust Rule 2 will block on null rather than
-  // allow a false pass.
-  const usesShellComposition = command.length > 0 && /;|&&|\|\|/.test(command);
-  if (!usesShellComposition && typeof toolResult.stdout === 'string' && toolResult.interrupted === false) return 0;
+  // Suppressed for compositions where the LAST command can exit 0 even when a
+  // prior command failed, making zero-exit inference unreliable:
+  //
+  //   ;   — always runs the next command; `cmd1; echo done` exits 0 regardless
+  //   ||  — right-hand side runs only on failure; may always exit 0
+  //
+  // &&-only chains are NOT suppressed: `a && b && c` exits with the first
+  // failing command's code. If interrupted===false + stdout is present, the
+  // entire chain — including the final verification step — passed with exit 0.
+  // This is the standard PATH-setup pattern:
+  //   export PATH="..." && cd /path && npm run lint
+  const usesUnsafeComposition = command.length > 0 && /;|\|\|/.test(command);
+  if (!usesUnsafeComposition && typeof toolResult.stdout === 'string' && toolResult.interrupted === false) return 0;
 
   return null;
 }
