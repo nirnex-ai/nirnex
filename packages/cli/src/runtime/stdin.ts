@@ -15,7 +15,14 @@
 // Both null paths produce an explicit STDIN_READ_TIMEOUT block decision in
 // validate.ts — distinguishable from a real governance block by reason code.
 
-/** Default stdin read timeout — matches the Stop hook's configured timeout (30s). */
+/**
+ * Default stdin read timeout.
+ *
+ * Must be strictly less than the Stop hook's configured timeout in
+ * .claude/settings.json (60 s), so the process can emit a clean
+ * STDIN_READ_TIMEOUT block decision before Claude Code kills it.
+ * Currently 30 s — leaves 30 s of headroom for governance logic execution.
+ */
 export const STDIN_READ_TIMEOUT_MS = 30_000;
 
 /**

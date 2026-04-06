@@ -225,7 +225,11 @@ const CLAUDE_SETTINGS_HOOKS = {
     ],
     Stop: [
       {
-        hooks: [{ type: 'command', command: '.claude/hooks/nirnex-validate.sh', timeout: 10 }],
+        // 60 s: must exceed STDIN_READ_TIMEOUT_MS (30 s) plus governance execution time.
+        // The validate hook reads stdin for up to 30 s before emitting a block decision.
+        // A timeout ≤ 30 s causes Claude Code to kill the process before it can write
+        // any output, producing an ambiguous kill with no structured governance response.
+        hooks: [{ type: 'command', command: '.claude/hooks/nirnex-validate.sh', timeout: 60 }],
       },
     ],
   },

@@ -848,3 +848,70 @@ describe('Claude hook script content', () => {
     }
   });
 });
+
+// ─── 20. Stop hook timeout contract ──────────────────────────────────────────
+//
+// The Stop hook (nirnex-validate.sh) runs governance logic that includes a
+// stdin read timeout of STDIN_READ_TIMEOUT_MS (30 000 ms = 30 s).
+// If the settings.json Stop hook timeout is ≤ 30 s, Claude Code kills the
+// validate process before it can emit a clean STDIN_READ_TIMEOUT block
+// decision — producing an ambiguous kill with no structured output.
+//
+// Contract: Stop hook timeout must be > 30 s (STDIN_READ_TIMEOUT_MS / 1000)
+// to guarantee the process can emit a governance decision even in the
+// worst-case never-EOF path.
+
+describe('Stop hook timeout contract', () => {
+  it('settings.json Stop hook timeout is greater than the stdin read timeout (30 s)', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const settings = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'));
+    const stopHook = settings.hooks?.Stop?.[0]?.hooks?.[0];
+    expect(stopHook).toBeDefined();
+    // Timeout is in seconds. Must exceed STDIN_READ_TIMEOUT_MS / 1000 (30 s).
+    expect(stopHook.timeout).toBeGreaterThan(30);
+  });
+
+  it('settings.json Stop hook timeout is at least 60 s (provides headroom for governance logic)', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const settings = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'));
+    const stopHook = settings.hooks?.Stop?.[0]?.hooks?.[0];
+    expect(stopHook?.timeout).toBeGreaterThanOrEqual(60);
+  });
+
+  it('Stop hook timeout is strictly greater than PreToolUse and PostToolUse timeouts', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const settings = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'));
+    const stopTimeout    = settings.hooks?.Stop?.[0]?.hooks?.[0]?.timeout ?? 0;
+    const preToolTimeout = settings.hooks?.PreToolUse?.[0]?.hooks?.[0]?.timeout ?? 0;
+    const postToolTimeout = settings.hooks?.PostToolUse?.[0]?.hooks?.[0]?.timeout ?? 0;
+    expect(stopTimeout).toBeGreaterThan(preToolTimeout);
+    expect(stopTimeout).toBeGreaterThan(postToolTimeout);
+  });
+
+  it('settings.json Stop hook command is nirnex-validate.sh', async () => {
+    const dir = makeProject();
+    initGit(dir);
+    writePkg(dir, { name: 'my-app' });
+
+    await runSetup(dir, { yes: true });
+
+    const settings = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'));
+    const stopHook = settings.hooks?.Stop?.[0]?.hooks?.[0];
+    expect(stopHook?.command).toBe('.claude/hooks/nirnex-validate.sh');
+  });
+});
