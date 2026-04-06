@@ -83,14 +83,19 @@ describe('L1 — isEnvelopeFinalized() pure function', () => {
     expect(isEnvelopeFinalized(env)).toBe(false);
   });
 
-  it('returns true when finalized_at is a non-empty ISO string', () => {
-    const env = baseEnvelope({ finalized_at: new Date().toISOString() });
+  it('returns true when finalized_at is a non-empty ISO string AND status is "completed"', () => {
+    const env = baseEnvelope({ status: 'completed', finalized_at: new Date().toISOString() });
     expect(isEnvelopeFinalized(env)).toBe(true);
   });
 
-  it('returns true regardless of the timestamp value as long as it is non-empty', () => {
+  it('returns true regardless of the timestamp value as long as it is non-empty and status is "completed"', () => {
     const ts = '2026-04-03T00:00:00.000Z';
-    expect(isEnvelopeFinalized(baseEnvelope({ finalized_at: ts }))).toBe(true);
+    expect(isEnvelopeFinalized(baseEnvelope({ status: 'completed', finalized_at: ts }))).toBe(true);
+  });
+
+  it('returns false when status is "failed" even with finalized_at set (block-outcome guard)', () => {
+    const ts = new Date().toISOString();
+    expect(isEnvelopeFinalized(baseEnvelope({ status: 'failed', finalized_at: ts }))).toBe(false);
   });
 
   it('is backward-compatible: envelopes without the field are treated as not finalized', () => {

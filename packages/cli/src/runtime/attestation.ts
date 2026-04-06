@@ -75,7 +75,17 @@ export function attestBashExecution(
 
 // ─── Enforcement engine ───────────────────────────────────────────────────────
 
-const VERIFICATION_PATTERN = /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i;
+// Core verification tools: test runners + linters + type-checkers recognised as
+// mandatory verification commands.
+//
+// `eslint` and `tsc` are included so that direct invocations via
+//   node node_modules/.bin/eslint .
+//   ./node_modules/.bin/eslint src/
+//   npx eslint .
+// are caught by the fallback heuristic even when no storedVerificationCommands
+// were recorded at entry time.
+const VERIFICATION_PATTERN =
+  /\b(test|jest|pytest|vitest|mocha|eslint|tsc|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i;
 
 function isVerificationCommand(event: TraceEvent, storedCmds: string[]): boolean {
   const cmd = String((event.tool_input as Record<string, unknown>)?.command ?? '');

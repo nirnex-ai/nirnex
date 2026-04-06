@@ -375,8 +375,19 @@ export function assembleReport(
     }
   }
 
+  // Fallback: when no confidence_snapshot ledger entries exist (e.g. a new project
+  // with no knowledge graph), read final_confidence from the run_outcome_summary
+  // entry written by the Stop hook. This prevents the report showing 0 when the
+  // ECO planning phase did produce a confidence signal (stored in the envelope and
+  // echoed into the Ledger run_outcome_summary.final_confidence field).
+  const outcomeSummaryEvent = rawEvents.find((e) => e.kind === 'run_outcome_summary');
+  const outcomeFinalConfidence =
+    typeof (outcomeSummaryEvent?.payload as any)?.final_confidence === 'number'
+      ? ((outcomeSummaryEvent!.payload as any).final_confidence as number)
+      : undefined;
+
   const confidence: ConfidenceReportSnapshot = {
-    overall_confidence:   latestSnapshot?.computed_confidence  ?? 0,
+    overall_confidence:   latestSnapshot?.computed_confidence  ?? outcomeFinalConfidence ?? 0,
     effective_confidence: latestSnapshot?.effective_confidence ?? 0,
     band:                 latestSnapshot?.confidence_band      ?? 'unknown',
     lane:                 latestSnapshot?.effective_lane,

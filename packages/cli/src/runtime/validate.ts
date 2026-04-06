@@ -18,7 +18,7 @@ import {
   VerificationStatus,
 } from './types.js';
 import { extractExitCode } from './exit-code.js';
-import { evaluateZeroTrustRules } from './attestation.js';
+import { evaluateZeroTrustRules, isBashVerificationCommand } from './attestation.js';
 import { isConfidenceGateUnknown } from './confidence-gate.js';
 import { readStdinWithTimeout } from './stdin.js';
 
@@ -402,10 +402,9 @@ export async function runValidate(args: string[] = []): Promise<void> {
     const bashEvents = events.filter(e => e.tool === 'Bash');
     const verificationAttempted = bashEvents.some(e => {
       const cmd = String((e.tool_input as any)?.command ?? '');
-      // First: match against the explicit commands captured at entry time (highest fidelity)
-      if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
-      // Fallback: broad heuristic covering test and script runner invocations
-      return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
+      // Delegates to the shared helper: stored commands first, then VERIFICATION_PATTERN.
+      // Keeping verification matching in one place (attestation.ts) prevents pattern drift.
+      return isBashVerificationCommand(cmd, storedVerificationCommands);
     });
 
     if (!verificationAttempted) {
@@ -537,8 +536,7 @@ export async function runValidate(args: string[] = []): Promise<void> {
     const bashEvents = events.filter(e => e.tool === 'Bash');
     const verificationBash = bashEvents.find(e => {
       const cmd = String((e.tool_input as any)?.command ?? '');
-      if (storedVerificationCommands.length > 0 && storedVerificationCommands.some(vc => cmd.includes(vc))) return true;
-      return /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i.test(cmd);
+      return isBashVerificationCommand(cmd, storedVerificationCommands);
     });
     if (verificationBash) {
       // Prefer attested exit code (frozen at capture time) over live re-extraction.

@@ -190,8 +190,8 @@ describe('3. isEnvelopeFinalized', () => {
     expect(isEnvelopeFinalized(env)).toBe(false);
   });
 
-  it('3.2 returns true when finalized_at is a non-empty ISO string', () => {
-    const env = baseEnvelope({ finalized_at: new Date().toISOString() });
+  it('3.2 returns true when finalized_at is set AND status is "completed"', () => {
+    const env = baseEnvelope({ status: 'completed', finalized_at: new Date().toISOString() });
     expect(isEnvelopeFinalized(env)).toBe(true);
   });
 });

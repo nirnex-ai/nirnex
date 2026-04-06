@@ -371,23 +371,25 @@ The fix applies three independent guards so no single point of failure can produ
 | **L2 — Idempotency guard** | validate.ts (pre-validation) | If `finalized_at` is already set, emit a single `TASK_ALREADY_FINALIZED` advisory event and exit 0 immediately — no validation runs, no ledger write. |
 | **L3 — Ledger backstop** | validate.ts (pre-ledger-write) | Before writing to the ledger, `LedgerReader.fetchOutcomeSummaries(trace_id)` is called. If an entry already exists, the write is skipped — protecting against the case where the envelope save failed but execution reached the ledger step. |
 
-### Envelope finalization for both outcomes
+### Envelope finalization — allow path only
 
-Previously, `envelope.status` was only updated (`'completed'`) on allow decisions. Blocked tasks left the envelope in `'active'` state, making them permanently re-invocable.
+`isEnvelopeFinalized()` returns `true` only when the envelope has **both**
+`finalized_at` set **and** `status === 'completed'`. This means:
 
-The G3 fix finalizes the envelope for **both** outcomes:
+| Decision | `envelope.status` | `envelope.finalized_at` | `isEnvelopeFinalized()` |
+|----------|--------------------|--------------------------|-------------------------|
+| `allow`  | `'completed'`      | set to current ISO timestamp | **true** — G3 fires |
+| `block`  | `'failed'`         | not set                  | **false** — re-validation runs |
 
-| Decision | `envelope.status` | `envelope.finalized_at` |
-|----------|--------------------|--------------------------|
-| `allow`  | `'completed'`      | set to current ISO timestamp |
-| `block`  | `'failed'`         | set to current ISO timestamp |
+**Why block outcomes are not finalized by L1:**
+A re-invoked Stop hook for a previously blocked task should re-block, not silently return `allow`. Setting `finalized_at` on the `'failed'` envelope and having `isEnvelopeFinalized()` treat it as finalized would cause G3 to return `allow` — the wrong outcome. Instead, the L3 ledger backstop prevents duplicate ledger writes even when re-validation runs.
 
-### Sequence on re-invocation
+### Sequence on re-invocation (allow outcome)
 
 ```
-Stop hook (2nd call)
+Stop hook (2nd call, previously allowed)
   ↓
-load envelope
+load envelope  →  status='completed', finalized_at set
   ↓
 isEnvelopeFinalized() → true          ← L1 catches it here
   ↓
@@ -412,6 +414,25 @@ LedgerReader.fetchOutcomeSummaries(trace_id).length > 0  ← L3 catches it here
   ↓
 ledger write skipped — original outcome preserved
 ```
+
+---
+
+## Report Confidence Scoring
+
+The `overall_confidence` field in `nirnex report` reflects the latest `confidence_snapshot` ledger entry written by the pipeline's classification stage.
+
+**New projects** and projects with no knowledge graph produce no `confidence_snapshot` entries. In earlier releases this caused `overall_confidence: 0` in the report even when the ECO planning phase assigned a meaningful score (recorded in `run_outcome_summary.final_confidence`). The assembler now falls back to `run_outcome_summary.final_confidence` when no snapshot is present:
+
+```
+if confidence_snapshot events exist:
+  overall_confidence = latestSnapshot.computed_confidence   ← precise, real-time
+else if run_outcome_summary.final_confidence is a number:
+  overall_confidence = run_outcome_summary.final_confidence ← fallback from envelope
+else:
+  overall_confidence = 0                                    ← no signal available
+```
+
+The `confidence_snapshot` value always takes precedence when available.
 
 ---
 
@@ -876,7 +897,7 @@ Events are written to `.ai-index/runtime/events/{sessionId}/hook-events.jsonl` a
 
 | Code | Severity | Stage | Meaning |
 |---|---|---|---|
-| `VERIFICATION_REQUIRED_NOT_RUN` | blocking | validate | Verification was mandatory (explicit instruction, acceptance criteria, or lane policy) but no matching command appeared in the trace |
+| `VERIFICATION_REQUIRED_NOT_RUN` | blocking | validate | Verification was mandatory (explicit instruction, acceptance criteria, or lane policy) but no matching command appeared in the trace. Recognised commands include `npm run`, `yarn run`, `jest`, `vitest`, `mocha`, `pytest`, `eslint`, `tsc`, and direct invocations via `node node_modules/.bin/<tool>`, `./node_modules/.bin/<tool>`, or `npx <tool>` |
 | `COMMAND_EXIT_NONZERO` | blocking | validate | Verification command ran but exited non-zero, **or** exit code could not be determined under mandatory verification (unknown outcome = cannot confirm pass = block) |
 | `BLOCKED_PATH_DEVIATION` | blocking | validate | A file in a blocked path was modified |
 | `FORCED_UNKNOWN_NO_VERIFICATION` | blocking | validate | Lane B/C task had `forced_unknown=true` but no human verification |

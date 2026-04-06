@@ -87,15 +87,24 @@ export function loadEnvelope(repoRoot: string, taskId: string): TaskEnvelope | n
 }
 
 /**
- * Returns true when the envelope has already been finalized by a prior Stop hook
- * invocation (G3 fix). An envelope is finalized when `finalized_at` is a non-empty
- * ISO 8601 string — set by validate.ts for both allow and block outcomes.
+ * Returns true when the envelope has been successfully completed by a prior Stop
+ * hook invocation (G3 fix). An envelope is considered finalized only when BOTH:
+ *   1. `finalized_at` is a non-empty ISO 8601 string, AND
+ *   2. `status === 'completed'` (the allow path).
+ *
+ * A `status === 'failed'` envelope (block outcome) is intentionally NOT treated
+ * as finalized. This prevents the G3 guard from returning `allow` after a prior
+ * BLOCK decision — the duplicate invocation should re-block, not silently allow.
  *
  * `undefined` (pre-G3 envelopes) and empty string are treated as NOT finalized
  * so the guard is backward-compatible with existing runtime state.
  */
 export function isEnvelopeFinalized(envelope: TaskEnvelope): boolean {
-  return typeof envelope.finalized_at === 'string' && envelope.finalized_at.length > 0;
+  return (
+    typeof envelope.finalized_at === 'string' &&
+    envelope.finalized_at.length > 0 &&
+    envelope.status === 'completed'
+  );
 }
 
 export function loadActiveEnvelope(repoRoot: string, sessionId: string): TaskEnvelope | null {
