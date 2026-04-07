@@ -280,6 +280,22 @@ describe('Bug 3 — isBashVerificationCommand: direct node tool invocations must
     expect(isBashVerificationCommand('npx create-react-app my-app', [])).toBe(false);
   });
 
+  it('B3.13 does NOT treat path-listing commands that mention eslint as verification', () => {
+    // REGRESSION GUARD: adding `eslint` as a bare word to VERIFICATION_PATTERN caused
+    // `ls /usr/local/bin/eslint*` to match. Discovery commands must never be treated
+    // as verification commands — only actual execution of the binary qualifies.
+    // FAILS before fix (bare `eslint` word in pattern matches these).
+    expect(isBashVerificationCommand('ls /usr/local/bin/eslint*', [])).toBe(false);
+    expect(isBashVerificationCommand('ls node_modules/.bin/eslint', [])).toBe(false);
+    expect(isBashVerificationCommand('which eslint', [])).toBe(false);
+    expect(isBashVerificationCommand('head -1 /usr/local/bin/eslint', [])).toBe(false);
+  });
+
+  it('B3.14 does NOT treat path-listing commands that mention tsc as verification', () => {
+    expect(isBashVerificationCommand('ls /usr/local/bin/tsc*', [])).toBe(false);
+    expect(isBashVerificationCommand('which tsc', [])).toBe(false);
+  });
+
   it('B3.11 existing patterns still work after the fix (regression guard)', () => {
     // Ensure the new arm does not break the existing pattern matches.
     expect(isBashVerificationCommand('npm run lint', [])).toBe(true);

@@ -75,23 +75,37 @@ export function attestBashExecution(
 
 // ─── Enforcement engine ───────────────────────────────────────────────────────
 
-// Core verification tools: test runners + linters + type-checkers recognised as
-// mandatory verification commands.
+// Core verification tools: test runners recognised as mandatory verification commands.
+// Only the canonical test-runner invocation forms are listed here.
 //
-// `eslint` and `tsc` are included so that direct invocations via
-//   node node_modules/.bin/eslint .
-//   ./node_modules/.bin/eslint src/
-//   npx eslint .
-// are caught by the fallback heuristic even when no storedVerificationCommands
-// were recorded at entry time.
+// NOTE: do NOT add bare tool names (e.g. `eslint`, `tsc`) to this pattern.
+// A bare word match would also catch path-listing commands like
+// `ls /usr/local/bin/eslint*` or `which tsc` — causing those discovery commands
+// to be misidentified as verification runs and triggering COMMAND_EXIT_UNKNOWN.
+//
+// Tools only invocable via a specific binary prefix are handled separately in
+// DIRECT_INVOCATION_PATTERN below, which requires an explicit execution prefix.
 const VERIFICATION_PATTERN =
-  /\b(test|jest|pytest|vitest|mocha|eslint|tsc|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i;
+  /\b(test|jest|pytest|vitest|mocha|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|pnpm\s+test|make\s+test|npm\s+run|yarn\s+run|pnpm\s+run)\b/i;
+
+// Matches direct execution of linter/type-checker binaries that are NOT already
+// in VERIFICATION_PATTERN. Requires an unambiguous invocation prefix:
+//   node path/to/eslint ...   →  `node` then a path ending with the binary name
+//   npx eslint ...            →  `npx` then the binary name directly
+//   ./node_modules/.bin/eslint →  literal local-bin path
+//
+// This does NOT match:
+//   ls /usr/local/bin/eslint*      — path listing, not execution
+//   which eslint                   — lookup, not execution
+//   head -1 /usr/local/bin/eslint  — file inspection, not execution
+const DIRECT_INVOCATION_PATTERN =
+  /(?:node\s+\S+\/|npx\s+|\.\/node_modules\/\.bin\/)(eslint|tsc)\b/i;
 
 function isVerificationCommand(event: TraceEvent, storedCmds: string[]): boolean {
   const cmd = String((event.tool_input as Record<string, unknown>)?.command ?? '');
   if (!cmd) return false;
   if (storedCmds.length > 0 && storedCmds.some(vc => cmd.includes(vc))) return true;
-  return VERIFICATION_PATTERN.test(cmd);
+  return VERIFICATION_PATTERN.test(cmd) || DIRECT_INVOCATION_PATTERN.test(cmd);
 }
 
 /**
@@ -103,7 +117,7 @@ function isVerificationCommand(event: TraceEvent, storedCmds: string[]): boolean
 export function isBashVerificationCommand(command: string, storedCmds: string[]): boolean {
   if (!command) return false;
   if (storedCmds.length > 0 && storedCmds.some(vc => command.includes(vc))) return true;
-  return VERIFICATION_PATTERN.test(command);
+  return VERIFICATION_PATTERN.test(command) || DIRECT_INVOCATION_PATTERN.test(command);
 }
 
 /**
