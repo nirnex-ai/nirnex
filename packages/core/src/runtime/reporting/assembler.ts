@@ -388,7 +388,7 @@ export function assembleReport(
 
   const confidence: ConfidenceReportSnapshot = {
     overall_confidence:   latestSnapshot?.computed_confidence  ?? outcomeFinalConfidence ?? 0,
-    effective_confidence: latestSnapshot?.effective_confidence ?? 0,
+    effective_confidence: latestSnapshot?.effective_confidence ?? outcomeFinalConfidence ?? 0,
     band:                 latestSnapshot?.confidence_band      ?? 'unknown',
     lane:                 latestSnapshot?.effective_lane,
     dimensions:           latestSnapshot?.dimensions           ?? {},
