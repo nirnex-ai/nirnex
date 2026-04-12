@@ -93,8 +93,8 @@ export function loadEnvelope(repoRoot: string, taskId: string): TaskEnvelope | n
  *   2. `status === 'completed'` (the allow path).
  *
  * A `status === 'failed'` envelope (block outcome) is intentionally NOT treated
- * as finalized. This prevents the G3 guard from returning `allow` after a prior
- * BLOCK decision — the duplicate invocation should re-block, not silently allow.
+ * as finalized here — use `isBlockFinalized()` for that case. This guard returns
+ * `allow` on re-invocation, so it must only fire for previously-allowed tasks.
  *
  * `undefined` (pre-G3 envelopes) and empty string are treated as NOT finalized
  * so the guard is backward-compatible with existing runtime state.
@@ -104,6 +104,28 @@ export function isEnvelopeFinalized(envelope: TaskEnvelope): boolean {
     typeof envelope.finalized_at === 'string' &&
     envelope.finalized_at.length > 0 &&
     envelope.status === 'completed'
+  );
+}
+
+/**
+ * Returns true when the envelope was previously finalized as a blocked task
+ * (G3 block-path fix). A block-finalized envelope has BOTH:
+ *   1. `finalized_at` is a non-empty ISO 8601 string, AND
+ *   2. `status === 'failed'` (block outcome set by validate.ts).
+ *
+ * Used by validate.ts as the parallel idempotency guard for the block path.
+ * When this returns true, the validate hook short-circuits with a `block` decision
+ * WITHOUT re-running full validation — preventing the infinite re-validation loop
+ * that occurs when a previously-blocked task is re-invoked.
+ *
+ * `isBlockFinalized` and `isEnvelopeFinalized` are mutually exclusive: no envelope
+ * can satisfy both simultaneously, so the two guards cover disjoint finalized states.
+ */
+export function isBlockFinalized(envelope: TaskEnvelope): boolean {
+  return (
+    typeof envelope.finalized_at === 'string' &&
+    envelope.finalized_at.length > 0 &&
+    envelope.status === 'failed'
   );
 }
 

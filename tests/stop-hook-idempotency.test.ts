@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   isEnvelopeFinalized,
+  isBlockFinalized,
   saveEnvelope,
   loadEnvelope,
   createSession,
@@ -103,6 +104,82 @@ describe('L1 — isEnvelopeFinalized() pure function', () => {
     const raw = { ...baseEnvelope() };
     delete (raw as any).finalized_at;
     expect(isEnvelopeFinalized(raw)).toBe(false);
+  });
+});
+
+// ─── L1b: isBlockFinalized() pure helper ─────────────────────────────────────
+//
+// Mirrors L1 but for the block-path idempotency guard.
+// isBlockFinalized() must return true only when BOTH:
+//   1. finalized_at is a non-empty ISO 8601 string, AND
+//   2. status === 'failed' (block outcome)
+//
+// This ensures the validate.ts block-path guard fires on re-invocations of a
+// previously-blocked task, preventing the infinite re-validation loop described
+// in the production feedback incident.
+
+describe('L1b — isBlockFinalized() pure function', () => {
+  it('returns true when status="failed" and finalized_at is a non-empty string', () => {
+    const ts = new Date().toISOString();
+    const env = baseEnvelope({ status: 'failed', finalized_at: ts });
+    expect(isBlockFinalized(env)).toBe(true);
+  });
+
+  it('returns false when status="completed" (allow path — covered by isEnvelopeFinalized)', () => {
+    const ts = new Date().toISOString();
+    const env = baseEnvelope({ status: 'completed', finalized_at: ts });
+    expect(isBlockFinalized(env)).toBe(false);
+  });
+
+  it('returns false when status="active" (task not yet finalized)', () => {
+    const ts = new Date().toISOString();
+    const env = baseEnvelope({ status: 'active', finalized_at: ts });
+    expect(isBlockFinalized(env)).toBe(false);
+  });
+
+  it('returns false when finalized_at is absent (block never persisted)', () => {
+    const env = baseEnvelope({ status: 'failed' });
+    expect(isBlockFinalized(env)).toBe(false);
+  });
+
+  it('returns false when finalized_at is an empty string', () => {
+    const env = baseEnvelope({ status: 'failed', finalized_at: '' });
+    expect(isBlockFinalized(env)).toBe(false);
+  });
+
+  it('returns false when finalized_at is explicitly undefined', () => {
+    const env = baseEnvelope({ status: 'failed', finalized_at: undefined });
+    expect(isBlockFinalized(env)).toBe(false);
+  });
+
+  it('is backward-compatible: pre-G3 envelope without finalized_at field returns false', () => {
+    const raw = { ...baseEnvelope({ status: 'failed' }) };
+    delete (raw as any).finalized_at;
+    expect(isBlockFinalized(raw)).toBe(false);
+  });
+
+  it('isBlockFinalized and isEnvelopeFinalized are mutually exclusive for any single envelope', () => {
+    const ts = new Date().toISOString();
+    // No envelope can simultaneously satisfy both guards
+    const completed = baseEnvelope({ status: 'completed', finalized_at: ts });
+    expect(isEnvelopeFinalized(completed) && isBlockFinalized(completed)).toBe(false);
+
+    const failed = baseEnvelope({ status: 'failed', finalized_at: ts });
+    expect(isEnvelopeFinalized(failed) && isBlockFinalized(failed)).toBe(false);
+
+    const active = baseEnvelope({ status: 'active', finalized_at: ts });
+    expect(isEnvelopeFinalized(active) && isBlockFinalized(active)).toBe(false);
+  });
+
+  it('the two guards together cover all finalized outcomes: completed→allow, failed→block', () => {
+    const ts = new Date().toISOString();
+    const completedEnv = baseEnvelope({ status: 'completed', finalized_at: ts });
+    expect(isEnvelopeFinalized(completedEnv)).toBe(true);
+    expect(isBlockFinalized(completedEnv)).toBe(false);
+
+    const failedEnv = baseEnvelope({ status: 'failed', finalized_at: ts });
+    expect(isEnvelopeFinalized(failedEnv)).toBe(false);
+    expect(isBlockFinalized(failedEnv)).toBe(true);
   });
 });
 

@@ -34,7 +34,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 
-import { isEnvelopeFinalized } from '../packages/cli/src/runtime/session.js';
+import { isEnvelopeFinalized, isBlockFinalized } from '../packages/cli/src/runtime/session.js';
 import { isBashVerificationCommand } from '../packages/cli/src/runtime/attestation.js';
 import { assembleReport } from '../packages/core/src/runtime/reporting/assembler.js';
 import type { TaskEnvelope } from '../packages/cli/src/runtime/types.js';
@@ -308,5 +308,65 @@ describe('Bug 3 — isBashVerificationCommand: direct node tool invocations must
   it('B3.12 stored commands still take priority over the pattern (regression guard)', () => {
     // 'make check' does not match any pattern, but is stored — must still detect.
     expect(isBashVerificationCommand('make check', ['make check'])).toBe(true);
+  });
+});
+
+// ─── Bug 4: G3 block-path idempotency — isBlockFinalized covers the missing arm ──
+//
+// Root cause of the production feedback loop:
+//   validate.ts sets finalized_at on the block path (status='failed').
+//   isEnvelopeFinalized() returns false for status='failed', so the G3 guard
+//   never fires on re-invocations of a previously-blocked task.
+//   Full validation re-runs every time, producing duplicate violations and
+//   sustaining the loop indefinitely.
+//
+// Fix: introduce isBlockFinalized() — the parallel guard for the block path.
+//   validate.ts checks isBlockFinalized() AFTER isEnvelopeFinalized() and
+//   short-circuits with a block decision (not allow) without re-running validation.
+
+describe('Bug 4 — G3 block-path idempotency: isBlockFinalized detects previously-blocked envelopes', () => {
+  it('B4.1 returns true for a block-finalized envelope (status=failed, finalized_at set)', () => {
+    const ts = new Date().toISOString();
+    const env = baseEnvelope({ status: 'failed', finalized_at: ts });
+    expect(isBlockFinalized(env)).toBe(true);
+  });
+
+  it('B4.2 returns false for an allow-finalized envelope (status=completed) — not a block guard', () => {
+    const ts = new Date().toISOString();
+    const env = baseEnvelope({ status: 'completed', finalized_at: ts });
+    expect(isBlockFinalized(env)).toBe(false);
+  });
+
+  it('B4.3 returns false when finalized_at is absent — block was not persisted yet', () => {
+    const env = baseEnvelope({ status: 'failed' });
+    expect(isBlockFinalized(env)).toBe(false);
+  });
+
+  it('B4.4 returns false for an active envelope — task not finalized', () => {
+    const env = baseEnvelope({ status: 'active' });
+    expect(isBlockFinalized(env)).toBe(false);
+  });
+
+  it('B4.5 isBlockFinalized and isEnvelopeFinalized never both return true for the same envelope', () => {
+    // Mutual exclusion is required so the two guards do not conflict
+    const ts = new Date().toISOString();
+    for (const status of ['active', 'completed', 'failed'] as const) {
+      const env = baseEnvelope({ status, finalized_at: ts });
+      const bothTrue = isEnvelopeFinalized(env) && isBlockFinalized(env);
+      expect(bothTrue).toBe(false);
+    }
+  });
+
+  it('B4.6 together the two guards cover both finalized outcomes without overlap', () => {
+    const ts = new Date().toISOString();
+    // allow path: only isEnvelopeFinalized fires
+    const allowEnv = baseEnvelope({ status: 'completed', finalized_at: ts });
+    expect(isEnvelopeFinalized(allowEnv)).toBe(true);
+    expect(isBlockFinalized(allowEnv)).toBe(false);
+
+    // block path: only isBlockFinalized fires
+    const blockEnv = baseEnvelope({ status: 'failed', finalized_at: ts });
+    expect(isEnvelopeFinalized(blockEnv)).toBe(false);
+    expect(isBlockFinalized(blockEnv)).toBe(true);
   });
 });
