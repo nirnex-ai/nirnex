@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 
 import {
   isEnvelopeFinalized,
@@ -484,5 +485,118 @@ describe('L4 — block-path advisory emitted at most once per task', () => {
         (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
     );
     expect(alreadyEmitted).toBe(false);
+  });
+});
+
+// ─── L5: Guard hard-blocks all tools after terminal block ─────────────────────
+//
+// Verifies that once a task envelope is block-finalized (status='failed',
+// finalized_at set), the guard subprocess returns decision='deny' for all
+// tool calls — not just Edit/Write/MultiEdit (which Rule 3 already blocks),
+// but also Bash and any other tool. Without this guard, the agent can re-run
+// verification commands after a block, trigger another stop hook, and sustain
+// the re-invocation loop that was observed in production (session 9a8a8092).
+//
+// These tests use spawnSync against the compiled CLI dist/index.js.
+
+const CLI_PATH = path.resolve(import.meta.dirname, '../packages/cli/dist/index.js');
+
+function makeProjectWithConfig(dir: string): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'nirnex.config.json'), JSON.stringify({ project: 'test' }), 'utf8');
+}
+
+function writeSession(dir: string, sessionId: string, taskId: string): void {
+  const sessDir = path.join(dir, '.ai-index', 'runtime', 'sessions');
+  fs.mkdirSync(sessDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(sessDir, `${sessionId}.json`),
+    JSON.stringify({ session_id: sessionId, active_task_id: taskId, tasks: [taskId], created_at: new Date().toISOString() }),
+    'utf8',
+  );
+}
+
+function writeEnvelopeFile(dir: string, taskId: string, overrides: Record<string, unknown> = {}): void {
+  const envDir = path.join(dir, '.ai-index', 'runtime', 'envelopes');
+  fs.mkdirSync(envDir, { recursive: true });
+  const envelope = {
+    task_id: taskId,
+    session_id: 'sess_l5',
+    created_at: new Date().toISOString(),
+    prompt: 'test',
+    lane: 'B',
+    scope: { allowed_paths: [], blocked_paths: [], modules_expected: [] },
+    constraints: [],
+    acceptance_criteria: [],
+    tool_policy: { allowed_tools: [], requires_guard: ['Edit', 'Write', 'Bash'], denied_patterns: [] },
+    stop_conditions: { required_validations: [], forbidden_files: [] },
+    confidence: { score: 80, label: 'medium', penalties: [] },
+    eco_summary: { intent: 'test', recommended_lane: 'B', forced_unknown: false, blocked: false, escalation_reasons: [], boundary_warnings: [] },
+    status: 'active',
+    ...overrides,
+  };
+  fs.writeFileSync(path.join(envDir, `${taskId}.json`), JSON.stringify(envelope), 'utf8');
+}
+
+function invokeGuard(dir: string, sessionId: string, toolName: string, toolInput: Record<string, unknown>): { decision: string; reason?: string } {
+  const payload = JSON.stringify({
+    session_id: sessionId,
+    hook_event_name: 'PreToolUse',
+    tool_name: toolName,
+    tool_input: toolInput,
+  });
+  const result = spawnSync('node', [CLI_PATH, 'runtime', 'guard'], {
+    input: payload,
+    encoding: 'utf8',
+    env: { ...process.env, NIRNEX_REPO_ROOT: dir, NIRNEX_SESSION_ID: sessionId },
+    timeout: 5000,
+  });
+  return JSON.parse(result.stdout || '{"decision":"allow"}');
+}
+
+describe('L5 — guard hard-blocks all tool calls when task is block-finalized', () => {
+  let tmpDir:    string;
+  let sessionId: string;
+  let taskId:    string;
+
+  beforeEach(() => {
+    tmpDir    = fs.mkdtempSync(path.join(os.tmpdir(), 'nirnex-guard-l5-'));
+    sessionId = `sess_l5_${randomUUID().slice(0, 8)}`;
+    taskId    = `task_l5_${randomUUID().slice(0, 8)}`;
+    makeProjectWithConfig(tmpDir);
+    writeSession(tmpDir, sessionId, taskId);
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('allows Edit tool when task is active (baseline — guard not yet blocking)', () => {
+    writeEnvelopeFile(tmpDir, taskId, { status: 'active' });
+    const out = invokeGuard(tmpDir, sessionId, 'Edit', { file_path: 'app/page.tsx', old_string: 'a', new_string: 'b' });
+    expect(out.decision).toBe('allow');
+  });
+
+  it('denies Edit tool when task is block-finalized', () => {
+    writeEnvelopeFile(tmpDir, taskId, { status: 'failed', finalized_at: new Date().toISOString() });
+    const out = invokeGuard(tmpDir, sessionId, 'Edit', { file_path: 'app/page.tsx', old_string: 'a', new_string: 'b' });
+    expect(out.decision).toBe('deny');
+  });
+
+  it('denies Bash tool when task is block-finalized (Rule 3 alone would allow this)', () => {
+    writeEnvelopeFile(tmpDir, taskId, { status: 'failed', finalized_at: new Date().toISOString() });
+    const out = invokeGuard(tmpDir, sessionId, 'Bash', { command: 'npm run lint' });
+    expect(out.decision).toBe('deny');
+  });
+
+  it('denies Write tool when task is block-finalized', () => {
+    writeEnvelopeFile(tmpDir, taskId, { status: 'failed', finalized_at: new Date().toISOString() });
+    const out = invokeGuard(tmpDir, sessionId, 'Write', { file_path: 'app/new.tsx', content: 'x' });
+    expect(out.decision).toBe('deny');
+  });
+
+  it('deny reason references the task_id for traceability', () => {
+    writeEnvelopeFile(tmpDir, taskId, { status: 'failed', finalized_at: new Date().toISOString() });
+    const out = invokeGuard(tmpDir, sessionId, 'Bash', { command: 'npm run lint' });
+    expect(out.decision).toBe('deny');
+    expect(out.reason).toContain(taskId);
   });
 });

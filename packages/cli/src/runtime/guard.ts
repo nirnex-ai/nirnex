@@ -4,7 +4,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, appendHookEvent, generateEventId, generateRunId } from './session.js';
+import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, appendHookEvent, generateEventId, generateRunId, isBlockFinalized } from './session.js';
 import { HookPreToolUse, GuardDecision, TaskEnvelope, HookInvocationStartedEvent } from './types.js';
 import { buildGuardStageCompleted } from './stage-completion.js';
 import { isBashVerificationCommand } from './attestation.js';
@@ -140,6 +140,27 @@ export async function runGuard(): Promise<void> {
     const sc = buildGuardStageCompleted({ sessionId, taskId: 'none', runId, decision: 'allow' });
     appendHookEvent(repoRoot, sessionId, sc);
     process.stdout.write(JSON.stringify({ decision: 'allow' }));
+    process.exit(0);
+  }
+
+  // ── Terminal-block guard ──────────────────────────────────────────────────
+  // If the task was previously blocked (status='failed', finalized_at set), deny
+  // ALL tool calls immediately. The task is over; no further tool use is permitted.
+  //
+  // Without this check:
+  //   - Rule 3 blocks Edit/Write/MultiEdit, but Bash slips through
+  //   - The agent can re-run verification commands after a block
+  //   - Each successful Bash run triggers another Stop hook, sustaining the loop
+  //
+  // This is the hard-stop: once FinalOutcomeDeclared with decision=block, the
+  // guard becomes a total firewall for the remainder of the session's task lifetime.
+  if (isBlockFinalized(envelope)) {
+    const sc = buildGuardStageCompleted({ sessionId, taskId: envelope.task_id, runId, decision: 'deny' });
+    appendHookEvent(repoRoot, sessionId, sc);
+    process.stdout.write(JSON.stringify({
+      decision: 'deny',
+      reason: `[Nirnex Guard] Task already blocked — all tool use denied (task_id=${envelope.task_id}).`,
+    } as GuardDecision));
     process.exit(0);
   }
 
