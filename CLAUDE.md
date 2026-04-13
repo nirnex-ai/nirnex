@@ -160,3 +160,4 @@ Do:
 - keep evidence machine-verifiable
 - add or update tests with every behavioral fix
 - document user-visible CLI/setup/runtime changes immediately
+- TDD development
