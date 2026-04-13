@@ -600,3 +600,104 @@ describe('L5 — guard hard-blocks all tool calls when task is block-finalized',
     expect(out.reason).toContain(taskId);
   });
 });
+
+// ─── L6: Validate lifecycle completeness after terminal block ─────────────────
+//
+// Verifies that every validate invocation — including silent re-invocations after
+// the first TASK_ALREADY_FINALIZED advisory — emits a matched StageCompleted event.
+//
+// Without this, each silent re-invocation leaves an orphaned HookInvocationStarted
+// in the audit trail, visible in production as:
+//   12:26:43 validate HookInvocationStarted (pid=37791)  ← no StageCompleted follows
+// The hook framework may retry or mis-handle invocations with incomplete lifecycles.
+//
+// Rule: for every HookInvocationStarted in hook-events.jsonl there must be a
+// matching StageCompleted with the same run_id.
+
+function invokeValidate(dir: string, sessionId: string): { decision: string } {
+  const payload = JSON.stringify({ session_id: sessionId });
+  const result = spawnSync('node', [CLI_PATH, 'runtime', 'validate'], {
+    input: payload,
+    encoding: 'utf8',
+    env: { ...process.env, NIRNEX_REPO_ROOT: dir, NIRNEX_SESSION_ID: sessionId },
+    timeout: 10000,
+  });
+  return JSON.parse(result.stdout || '{"decision":"allow"}');
+}
+
+function countEventsOfType(dir: string, sessionId: string, eventType: string): number {
+  return loadHookEvents(dir, sessionId).filter(e => e.event_type === eventType).length;
+}
+
+describe('L6 — validate lifecycle completeness: StageCompleted on every invocation', () => {
+  let tmpDir:    string;
+  let sessionId: string;
+  let taskId:    string;
+
+  beforeEach(() => {
+    tmpDir    = fs.mkdtempSync(path.join(os.tmpdir(), 'nirnex-validate-l6-'));
+    sessionId = `sess_l6_${randomUUID().slice(0, 8)}`;
+    taskId    = `task_l6_${randomUUID().slice(0, 8)}`;
+    makeProjectWithConfig(tmpDir);
+    writeSession(tmpDir, sessionId, taskId);
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('first re-invocation: emits advisory + StageCompleted, returns block', () => {
+    writeEnvelopeFile(tmpDir, taskId, { status: 'failed', finalized_at: new Date().toISOString() });
+
+    const out = invokeValidate(tmpDir, sessionId);
+
+    expect(out.decision).toBe('block');
+    // One advisory emitted (first re-invocation)
+    const advisories = loadHookEvents(tmpDir, sessionId).filter(
+      e => e.event_type === 'ContractViolationDetected' &&
+           (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
+    );
+    expect(advisories).toHaveLength(1);
+    // StageCompleted present (lifecycle closed)
+    expect(countEventsOfType(tmpDir, sessionId, 'StageCompleted')).toBeGreaterThanOrEqual(1);
+  });
+
+  it('second re-invocation: emits StageCompleted but NOT a second advisory', () => {
+    writeEnvelopeFile(tmpDir, taskId, { status: 'failed', finalized_at: new Date().toISOString() });
+
+    // First re-invocation — emits advisory
+    invokeValidate(tmpDir, sessionId);
+    const advisoriesAfterFirst = loadHookEvents(tmpDir, sessionId).filter(
+      e => e.event_type === 'ContractViolationDetected' &&
+           (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
+    );
+    expect(advisoriesAfterFirst).toHaveLength(1);
+
+    const scCountAfterFirst = countEventsOfType(tmpDir, sessionId, 'StageCompleted');
+
+    // Second re-invocation — must emit StageCompleted but NOT a second advisory
+    const out = invokeValidate(tmpDir, sessionId);
+    expect(out.decision).toBe('block');
+
+    const advisoriesAfterSecond = loadHookEvents(tmpDir, sessionId).filter(
+      e => e.event_type === 'ContractViolationDetected' &&
+           (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
+    );
+    // Advisory count must NOT increase
+    expect(advisoriesAfterSecond).toHaveLength(1);
+    // StageCompleted count MUST increase — lifecycle was closed on second invocation
+    expect(countEventsOfType(tmpDir, sessionId, 'StageCompleted')).toBeGreaterThan(scCountAfterFirst);
+  });
+
+  it('every HookInvocationStarted for validate has a matching StageCompleted after two re-invocations', () => {
+    writeEnvelopeFile(tmpDir, taskId, { status: 'failed', finalized_at: new Date().toISOString() });
+
+    invokeValidate(tmpDir, sessionId);
+    invokeValidate(tmpDir, sessionId);
+
+    const events = loadHookEvents(tmpDir, sessionId);
+    const starts = events.filter(e => e.event_type === 'HookInvocationStarted' && e.hook_stage === 'validate');
+    const completions = events.filter(e => e.event_type === 'StageCompleted' && e.hook_stage === 'validate');
+
+    // Every validate invocation must produce exactly one StageCompleted
+    expect(completions.length).toBe(starts.length);
+  });
+});

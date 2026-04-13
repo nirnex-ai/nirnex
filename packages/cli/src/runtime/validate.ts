@@ -301,21 +301,27 @@ export async function runValidate(args: string[] = []): Promise<void> {
         },
       };
       appendHookEvent(repoRoot, sessionId, blockDupEvent);
-      // Use 'pass' (consistent with the allow-path idempotency guard) — the guard
-      // succeeded; 'fail' here is misleading and may cause the hook framework to retry.
-      const blockDupScEvent: StageCompletedEvent = {
-        event_id:   generateEventId(),
-        timestamp:  new Date().toISOString(),
-        session_id: sessionId,
-        task_id:    envelope.task_id,
-        run_id:     runId,
-        hook_stage: 'validate',
-        event_type: 'StageCompleted',
-        status:     'pass',
-        payload:    { stage: 'validate', blocker_count: 0, violation_count: 1 },
-      };
-      appendHookEvent(repoRoot, sessionId, blockDupScEvent);
     }
+
+    // Always emit StageCompleted — even on the silent path (2nd+ re-invocations).
+    // Without this, every silent re-invocation leaves an orphaned HookInvocationStarted
+    // with no matching StageCompleted, breaking audit-trail lifecycle completeness.
+    // violation_count: first re-invocation records 1 (advisory above); subsequent are 0.
+    const blockDupScEvent: StageCompletedEvent = {
+      event_id:   generateEventId(),
+      timestamp:  new Date().toISOString(),
+      session_id: sessionId,
+      task_id:    envelope.task_id,
+      run_id:     runId,
+      hook_stage: 'validate',
+      event_type: 'StageCompleted',
+      // Use 'pass': the idempotency guard succeeded. 'fail' was inconsistent with the
+      // allow-path guard (line 250) and caused the hook framework to treat these
+      // re-invocations as errors rather than clean no-ops.
+      status:     'pass',
+      payload:    { stage: 'validate', blocker_count: 0, violation_count: alreadyEmittedAdvisory ? 0 : 1 },
+    };
+    appendHookEvent(repoRoot, sessionId, blockDupScEvent);
 
     // Return block without a reason string — the original block reason is in the
     // audit trail; repeating it gives the agent text to acknowledge, which triggers
