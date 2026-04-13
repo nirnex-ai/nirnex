@@ -25,9 +25,12 @@ import {
   saveEnvelope,
   loadEnvelope,
   createSession,
+  appendHookEvent,
+  loadHookEvents,
+  generateEventId,
 } from '../packages/cli/src/runtime/session.js';
 
-import type { TaskEnvelope } from '../packages/cli/src/runtime/types.js';
+import type { TaskEnvelope, ContractViolationDetectedEvent } from '../packages/cli/src/runtime/types.js';
 import { ReasonCode } from '../packages/cli/src/runtime/types.js';
 
 import {
@@ -385,5 +388,101 @@ describe('TaskEnvelope — finalized_at field contract', () => {
     const env = baseEnvelope({ status: 'failed', finalized_at: ts });
     expect(env.status).toBe('failed');
     expect(env.finalized_at).toBe(ts);
+  });
+});
+
+// ─── L4: Block-path advisory emitted at most once ────────────────────────────
+//
+// Verifies the predicate used by validate.ts G3 block-path to decide whether to
+// emit the TASK_ALREADY_FINALIZED advisory. The advisory must be written at most
+// once — subsequent re-invocations should detect the existing entry and skip
+// emitting, breaking the feedback loop that caused "It keeps running" in production.
+
+describe('L4 — block-path advisory emitted at most once per task', () => {
+  let tmpDir:    string;
+  let sessionId: string;
+  let taskId:    string;
+
+  beforeEach(() => {
+    tmpDir    = makeTmpDir();
+    sessionId = `sess_test_${randomUUID().slice(0, 8)}`;
+    taskId    = `task_test_${randomUUID().slice(0, 8)}`;
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('predicate returns false (no existing advisory) when hook-events file is empty', () => {
+    const events = loadHookEvents(tmpDir, sessionId);
+    const alreadyEmitted = events.some(
+      e =>
+        e.event_type === 'ContractViolationDetected' &&
+        e.task_id    === taskId &&
+        (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
+    );
+    expect(alreadyEmitted).toBe(false);
+  });
+
+  it('predicate returns true after a TASK_ALREADY_FINALIZED advisory is written for the task', () => {
+    const advisory: ContractViolationDetectedEvent = {
+      event_id:   generateEventId(),
+      timestamp:  new Date().toISOString(),
+      session_id: sessionId,
+      task_id:    taskId,
+      run_id:     `run_test_${randomUUID().slice(0, 8)}`,
+      hook_stage: 'validate',
+      event_type: 'ContractViolationDetected',
+      status:     'violated',
+      payload: {
+        reason_code:           ReasonCode.TASK_ALREADY_FINALIZED,
+        violated_contract:     'Stop hook must produce exactly one terminal outcome per task_id',
+        expected:              `single outcome for task_id=${taskId}`,
+        actual:                `task was previously blocked; duplicate invocation suppressed`,
+        severity:              'advisory',
+        blocking_action_taken: false,
+      },
+    };
+    appendHookEvent(tmpDir, sessionId, advisory);
+
+    const events = loadHookEvents(tmpDir, sessionId);
+    const alreadyEmitted = events.some(
+      e =>
+        e.event_type === 'ContractViolationDetected' &&
+        e.task_id    === taskId &&
+        (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
+    );
+    expect(alreadyEmitted).toBe(true);
+  });
+
+  it('predicate is scoped to task_id — advisory for a different task does not satisfy the check', () => {
+    const otherTaskId = `task_other_${randomUUID().slice(0, 8)}`;
+    const advisory: ContractViolationDetectedEvent = {
+      event_id:   generateEventId(),
+      timestamp:  new Date().toISOString(),
+      session_id: sessionId,
+      task_id:    otherTaskId,   // different task
+      run_id:     `run_test_${randomUUID().slice(0, 8)}`,
+      hook_stage: 'validate',
+      event_type: 'ContractViolationDetected',
+      status:     'violated',
+      payload: {
+        reason_code:           ReasonCode.TASK_ALREADY_FINALIZED,
+        violated_contract:     'Stop hook must produce exactly one terminal outcome per task_id',
+        expected:              `single outcome for task_id=${otherTaskId}`,
+        actual:                `other task was previously blocked`,
+        severity:              'advisory',
+        blocking_action_taken: false,
+      },
+    };
+    appendHookEvent(tmpDir, sessionId, advisory);
+
+    const events = loadHookEvents(tmpDir, sessionId);
+    // Checking for taskId (not otherTaskId) — should find nothing
+    const alreadyEmitted = events.some(
+      e =>
+        e.event_type === 'ContractViolationDetected' &&
+        e.task_id    === taskId &&
+        (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
+    );
+    expect(alreadyEmitted).toBe(false);
   });
 });

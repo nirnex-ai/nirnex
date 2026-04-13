@@ -267,46 +267,60 @@ export async function runValidate(args: string[] = []): Promise<void> {
   // in response to the first block, and sustains an infinite re-invocation loop
   // where the agent keeps attempting to "fix" a situation that is already closed.
   //
-  // The short-circuit emits an advisory (not blocking) event so the re-invocation
-  // is auditable, then returns block immediately. The original outcome is the
-  // authoritative one; this invocation is a no-op from a governance perspective.
+  // The advisory is emitted at most once (first re-invocation) so the duplicate is
+  // auditable. Subsequent re-invocations return block silently — repeated events give
+  // the agent new information to acknowledge, generating more text, triggering more
+  // stop hooks, and sustaining the very loop this guard is meant to break.
   if (isBlockFinalized(envelope)) {
-    const blockDupEvent: ContractViolationDetectedEvent = {
-      event_id:   generateEventId(),
-      timestamp:  new Date().toISOString(),
-      session_id: sessionId,
-      task_id:    envelope.task_id,
-      run_id:     runId,
-      hook_stage: 'validate',
-      event_type: 'ContractViolationDetected',
-      status:     'violated',
-      payload: {
-        reason_code:           ReasonCode.TASK_ALREADY_FINALIZED,
-        violated_contract:     'Stop hook must produce exactly one terminal outcome per task_id',
-        expected:              `single outcome for task_id=${envelope.task_id}`,
-        actual:                `task was previously blocked at ${envelope.finalized_at}; duplicate block-path invocation suppressed`,
-        severity:              'advisory',
-        blocking_action_taken: false,
-      },
-    };
-    appendHookEvent(repoRoot, sessionId, blockDupEvent);
-    const blockDupScEvent: StageCompletedEvent = {
-      event_id:   generateEventId(),
-      timestamp:  new Date().toISOString(),
-      session_id: sessionId,
-      task_id:    envelope.task_id,
-      run_id:     runId,
-      hook_stage: 'validate',
-      event_type: 'StageCompleted',
-      status:     'fail',
-      payload:    { stage: 'validate', blocker_count: 0, violation_count: 1 },
-    };
-    appendHookEvent(repoRoot, sessionId, blockDupScEvent);
-    const out: ValidateDecision = {
-      decision: 'block',
-      reason:   `[${ReasonCode.TASK_ALREADY_FINALIZED}] task was previously blocked at ${envelope.finalized_at}; duplicate invocation suppressed`,
-    };
-    process.stdout.write(JSON.stringify(out));
+    const existingEvents = loadHookEvents(repoRoot, sessionId);
+    const alreadyEmittedAdvisory = existingEvents.some(
+      e =>
+        e.event_type === 'ContractViolationDetected' &&
+        e.task_id === envelope.task_id &&
+        (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
+    );
+
+    if (!alreadyEmittedAdvisory) {
+      // First re-invocation: emit one auditable advisory so the duplicate is recorded.
+      const blockDupEvent: ContractViolationDetectedEvent = {
+        event_id:   generateEventId(),
+        timestamp:  new Date().toISOString(),
+        session_id: sessionId,
+        task_id:    envelope.task_id,
+        run_id:     runId,
+        hook_stage: 'validate',
+        event_type: 'ContractViolationDetected',
+        status:     'violated',
+        payload: {
+          reason_code:           ReasonCode.TASK_ALREADY_FINALIZED,
+          violated_contract:     'Stop hook must produce exactly one terminal outcome per task_id',
+          expected:              `single outcome for task_id=${envelope.task_id}`,
+          actual:                `task was previously blocked at ${envelope.finalized_at}; duplicate block-path invocation suppressed`,
+          severity:              'advisory',
+          blocking_action_taken: false,
+        },
+      };
+      appendHookEvent(repoRoot, sessionId, blockDupEvent);
+      // Use 'pass' (consistent with the allow-path idempotency guard) — the guard
+      // succeeded; 'fail' here is misleading and may cause the hook framework to retry.
+      const blockDupScEvent: StageCompletedEvent = {
+        event_id:   generateEventId(),
+        timestamp:  new Date().toISOString(),
+        session_id: sessionId,
+        task_id:    envelope.task_id,
+        run_id:     runId,
+        hook_stage: 'validate',
+        event_type: 'StageCompleted',
+        status:     'pass',
+        payload:    { stage: 'validate', blocker_count: 0, violation_count: 1 },
+      };
+      appendHookEvent(repoRoot, sessionId, blockDupScEvent);
+    }
+
+    // Return block without a reason string — the original block reason is in the
+    // audit trail; repeating it gives the agent text to acknowledge, which triggers
+    // another response and another stop hook cycle.
+    process.stdout.write(JSON.stringify({ decision: 'block' } as ValidateDecision));
     process.exit(0);
   }
 
