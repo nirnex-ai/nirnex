@@ -1,6 +1,6 @@
 {
   "name": "@nirnex/cli",
-  "version": "6.8.8",
+  "version": "6.8.9",
   "description": "Nirnex CLI — Decision Intelligence for software delivery",
   "type": "module",
   "bin": {
