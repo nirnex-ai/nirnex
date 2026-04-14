@@ -428,4 +428,117 @@ describe('EvidenceViolationCode constants', () => {
   it('EVIDENCE_INTEGRITY_VERSION is a semver string', () => {
     expect(EVIDENCE_INTEGRITY_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
+
+  it('TRACE_DEFICIT_UNEXPLAINED has the expected string literal', () => {
+    expect(EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED).toBe('EVIDENCE_TRACE_DEFICIT_UNEXPLAINED');
+  });
+});
+
+// ─── EV4: Unexplained trace deficit (trace file truncation) ──────────────────
+
+/** Helper: build an array of N trace StageCompleted hook events */
+function makeTraceCompletedEvents(n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    event_type: 'StageCompleted',
+    hook_stage: 'trace',
+    task_id:    `task_test_${i}`,
+  }));
+}
+
+describe('EV4 — EVIDENCE_TRACE_DEFICIT_UNEXPLAINED', () => {
+  it('fires when traceEventCount < traceStageCompleted count and deficit exceeds writeFailureCount', () => {
+    // 10 trace hook completions, 2 events on disk, 0 write failures → 8 unexplained
+    const result = checkEvidenceIntegrity(input({
+      hookEvents:        [entryHookStartedEvent, ...makeTraceCompletedEvents(10)],
+      traceEventCount:   2,
+      writeFailureCount: 0,
+    }));
+    const ev4 = result.violations.find(v => v.code === EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED);
+    expect(ev4).toBeDefined();
+    expect(ev4!.severity).toBe('blocking');
+  });
+
+  it('fires when unexplained deficit is exactly 1 (minimum threshold)', () => {
+    // 5 completions, 3 events, 1 write failure → 1 unexplained
+    const result = checkEvidenceIntegrity(input({
+      hookEvents:        [entryHookStartedEvent, ...makeTraceCompletedEvents(5)],
+      traceEventCount:   3,
+      writeFailureCount: 1,
+    }));
+    const ev4 = result.violations.find(v => v.code === EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED);
+    expect(ev4).toBeDefined();
+    expect(ev4!.severity).toBe('blocking');
+  });
+
+  it('does NOT fire when deficit is fully explained by write failures', () => {
+    // 10 completions, 7 events, 3 write failures → deficit=3, writeFailures=3 → unexplained=0
+    const result = checkEvidenceIntegrity(input({
+      hookEvents:        [entryHookStartedEvent, ...makeTraceCompletedEvents(10)],
+      traceEventCount:   7,
+      writeFailureCount: 3,
+    }));
+    expect(result.violations.find(v => v.code === EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED))
+      .toBeUndefined();
+  });
+
+  it('does NOT fire when traceEventCount equals trace hook count', () => {
+    // Perfect match: no deficit
+    const result = checkEvidenceIntegrity(input({
+      hookEvents:        [entryHookStartedEvent, ...makeTraceCompletedEvents(5)],
+      traceEventCount:   5,
+      writeFailureCount: 0,
+    }));
+    expect(result.violations.find(v => v.code === EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED))
+      .toBeUndefined();
+  });
+
+  it('does NOT fire when no trace hook events exist (nothing to compare against)', () => {
+    // No trace completions in hookEvents at all
+    const result = checkEvidenceIntegrity(input({
+      hookEvents:        [entryHookStartedEvent],
+      traceEventCount:   0,
+      writeFailureCount: 0,
+    }));
+    expect(result.violations.find(v => v.code === EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED))
+      .toBeUndefined();
+  });
+
+  it('is always blocking regardless of lane', () => {
+    for (const lane of ['A', 'B', 'C'] as const) {
+      const result = checkEvidenceIntegrity(input({
+        envelope:          { task_id: 't', lane },
+        hookEvents:        [entryHookStartedEvent, ...makeTraceCompletedEvents(8)],
+        traceEventCount:   2,
+        writeFailureCount: 0,
+      }));
+      const ev4 = result.violations.find(v => v.code === EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED);
+      expect(ev4?.severity).toBe('blocking');
+    }
+  });
+
+  it('simulates the real trace-truncation attack (39 completions, 2 events)', () => {
+    // Mirrors the exact numbers from the production attack in Run 2
+    const result = checkEvidenceIntegrity(input({
+      hookEvents:        [entryHookStartedEvent, ...makeTraceCompletedEvents(39)],
+      traceEventCount:   2,
+      writeFailureCount: 0,
+    }));
+    const ev4 = result.violations.find(v => v.code === EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED);
+    expect(ev4).toBeDefined();
+    expect(ev4!.severity).toBe('blocking');
+  });
+});
+
+// ─── EV4 ReasonCode alignment ─────────────────────────────────────────────────
+
+describe('ReasonCode ↔ EvidenceViolationCode alignment (EV4)', () => {
+  it('TRACE_DEFICIT_UNEXPLAINED string values match in both enums', () => {
+    expect(EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED)
+      .toBe(ReasonCode.EVIDENCE_TRACE_DEFICIT_UNEXPLAINED);
+  });
+
+  it('EVIDENCE_TRACE_DEFICIT_UNEXPLAINED is present in ReasonCode', () => {
+    const rcValues = Object.values(ReasonCode) as string[];
+    expect(rcValues).toContain('EVIDENCE_TRACE_DEFICIT_UNEXPLAINED');
+  });
 });

@@ -72,6 +72,14 @@ export const EvidenceViolationCode = {
    * "nothing was executed" from "trace events were silently dropped".
    */
   EXECUTION_EVIDENCE_LOST: 'EVIDENCE_EXECUTION_EVIDENCE_LOST',
+
+  /**
+   * The number of trace events in events.jsonl is significantly lower than the
+   * number of trace-stage StageCompleted events in hook-events.jsonl, and this
+   * deficit is not explained by known write failures. This is the fingerprint of
+   * trace file truncation — an attempt to erase execution evidence before validation.
+   */
+  TRACE_DEFICIT_UNEXPLAINED: 'EVIDENCE_TRACE_DEFICIT_UNEXPLAINED',
 } as const;
 
 export type EvidenceViolationCodeValue = typeof EvidenceViolationCode[keyof typeof EvidenceViolationCode];
@@ -245,6 +253,55 @@ export function checkEvidenceIntegrity(input: EvidenceIntegrityInput): EvidenceI
       actual:
         `traceEventCount=0 with writeFailureCount=${writeFailureCount} — ambiguous state`,
     });
+  }
+
+  // ── EV4: Unexplained trace deficit (trace file truncation fingerprint) ──────
+  //
+  // Predicate: traceEventCount < traceStageCompletedCount − writeFailureCount.
+  //
+  // Each tool call that fires the PostToolUse hook produces one StageCompleted
+  // event in hook-events.jsonl (trace stage) AND one event in events.jsonl.
+  // Known write failures (tracked in hook-write-failures.jsonl) account for
+  // events that failed to reach disk. Any additional deficit — events recorded
+  // by the trace hook but absent from events.jsonl — indicates the trace file
+  // was truncated or overwritten directly. Severity: blocking, because governance
+  // decisions cannot be trusted when the execution record has been tampered.
+  //
+  // EV4 is distinct from EV3:
+  //   EV3 fires when traceEventCount = 0 AND writeFailureCount > 0.
+  //   EV4 fires when traceEventCount < expected AND the deficit is NOT explained
+  //   by write failures — i.e., write failures alone do not account for the gap.
+  {
+    const traceStageCompletedCount = hookEvents.filter(
+      e => e.hook_stage === 'trace' && e.event_type === 'StageCompleted',
+    ).length;
+
+    if (traceStageCompletedCount > 0) {
+      // Unexplained deficit: trace completions minus events on disk, minus known failures.
+      const rawDeficit        = traceStageCompletedCount - traceEventCount;
+      const unexplainedDeficit = rawDeficit - writeFailureCount;
+
+      if (unexplainedDeficit > 0) {
+        violations.push({
+          code: EvidenceViolationCode.TRACE_DEFICIT_UNEXPLAINED,
+          message:
+            `Trace event deficit is not explained by known write failures. ` +
+            `hook-events.jsonl records ${traceStageCompletedCount} trace StageCompleted event(s), ` +
+            `but events.jsonl contains only ${traceEventCount} trace event(s). ` +
+            `Known write failures account for ${writeFailureCount} missing event(s); ` +
+            `${unexplainedDeficit} event(s) are unaccounted for. ` +
+            `This is the fingerprint of trace file truncation — direct modification of ` +
+            `events.jsonl to erase execution evidence before governance validation.`,
+          severity: 'blocking',
+          expected:
+            `traceEventCount (${traceEventCount}) ≥ ` +
+            `traceStageCompletedCount (${traceStageCompletedCount}) − writeFailureCount (${writeFailureCount}) = ` +
+            `${traceStageCompletedCount - writeFailureCount}`,
+          actual:
+            `traceEventCount=${traceEventCount}, unexplainedDeficit=${unexplainedDeficit}`,
+        });
+      }
+    }
   }
 
   const blockingViolations = violations.filter(v => v.severity === 'blocking');

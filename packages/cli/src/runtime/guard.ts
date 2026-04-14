@@ -39,6 +39,34 @@ function matchesDeniedPattern(command: string, patterns: string[]): string | nul
 function evaluateGuard(envelope: TaskEnvelope, toolName: string, toolInput: Record<string, unknown>): GuardDecision {
   const policy = envelope.tool_policy;
 
+  // Unconditionally protect Nirnex internal runtime directories from direct
+  // modification. These paths hold task envelopes, trace events, session state,
+  // and hook scripts — editing them can corrupt or circumvent governance.
+  // This check runs before requires_guard so it cannot be bypassed by lane policy.
+  const filePath = extractAffectedFile(toolName, toolInput);
+  const NIRNEX_INTERNAL_PATHS = ['.ai-index/runtime/', '.claude/hooks/'];
+  if (filePath && NIRNEX_INTERNAL_PATHS.some(p => filePath.includes(p))) {
+    return {
+      decision: 'deny',
+      reason: `[Nirnex Guard] File "${filePath}" is in a protected Nirnex internal directory. Direct modification of runtime state is not permitted.`,
+    };
+  }
+
+  // Extend internal-path protection to Bash commands: deny any shell command that
+  // references a Nirnex internal path. This prevents trace-file truncation and
+  // envelope tampering via Python/shell one-liners (e.g. `open(file,'w').close()`).
+  // Must run before requires_guard for the same reason as the Edit/Write check above.
+  if (toolName === 'Bash') {
+    const command = (toolInput.command ?? '') as string;
+    const hitInternal = NIRNEX_INTERNAL_PATHS.find(p => command.includes(p));
+    if (hitInternal) {
+      return {
+        decision: 'deny',
+        reason: `[Nirnex Guard] Bash command references protected Nirnex internal path "${hitInternal}". Direct shell access to runtime state is not permitted.`,
+      };
+    }
+  }
+
   // If tool doesn't require guarding for this lane, allow immediately
   if (!policy.requires_guard.includes(toolName)) {
     return { decision: 'allow' };
@@ -65,7 +93,7 @@ function evaluateGuard(envelope: TaskEnvelope, toolName: string, toolInput: Reco
   }
 
   // Edit / Write / MultiEdit: check scope
-  const filePath = extractAffectedFile(toolName, toolInput);
+  // (filePath already extracted at top of evaluateGuard for the internal-path guard)
   if (filePath && envelope.scope.blocked_paths.length > 0) {
     for (const blocked of envelope.scope.blocked_paths) {
       if (filePath.includes(blocked)) {

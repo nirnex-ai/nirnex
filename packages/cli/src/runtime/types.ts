@@ -202,6 +202,15 @@ export const ReasonCode = {
    */
   EVIDENCE_EXECUTION_EVIDENCE_LOST: 'EVIDENCE_EXECUTION_EVIDENCE_LOST',
 
+  /**
+   * The count of trace events in events.jsonl is lower than expected given the
+   * number of trace-stage StageCompleted entries in hook-events.jsonl, and the
+   * deficit is not explained by known write failures. This is the fingerprint of
+   * direct trace file truncation — an attempt to erase execution evidence before
+   * governance validation.
+   */
+  EVIDENCE_TRACE_DEFICIT_UNEXPLAINED: 'EVIDENCE_TRACE_DEFICIT_UNEXPLAINED',
+
   // ── Confidence gate ──────────────────────────────────────────────────────────
   /**
    * envelope.confidence.score is 0 — governance decision reliability cannot be
