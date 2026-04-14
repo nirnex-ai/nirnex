@@ -5,7 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, loadHookWriteFailures, appendHookEvent, generateEventId, generateRunId, isEnvelopeFinalized, isBlockFinalized } from './session.js';
+import { loadActiveEnvelope, loadTraceEvents, loadHookEvents, loadHookWriteFailures, appendHookEvent, generateEventId, generateRunId, isEnvelopeFinalized, isBlockFinalized, loadVerificationReceipt } from './session.js';
 import {
   HookStop,
   ValidateDecision,
@@ -217,27 +217,43 @@ export async function runValidate(args: string[] = []): Promise<void> {
   // Emit a single advisory event so the re-invocation is auditable, then exit
   // cleanly with decision='allow'. The original outcome is already recorded.
   if (isEnvelopeFinalized(envelope)) {
-    const dupEvent: ContractViolationDetectedEvent = {
-      event_id: generateEventId(),
-      timestamp: new Date().toISOString(),
-      session_id: sessionId,
-      task_id: envelope.task_id,
-      run_id: runId,
-      hook_stage: 'validate',
-      event_type: 'ContractViolationDetected',
-      status: 'violated',
-      payload: {
-        reason_code: ReasonCode.TASK_ALREADY_FINALIZED,
-        violated_contract: 'Stop hook must produce exactly one terminal outcome per task_id',
-        expected: `single outcome for task_id=${envelope.task_id}`,
-        actual: `task already finalized at ${envelope.finalized_at}; duplicate invocation suppressed`,
-        severity: 'advisory',
-        blocking_action_taken: false,
-      },
-    };
-    appendHookEvent(repoRoot, sessionId, dupEvent);
-    // Emit StageCompleted to close the lifecycle properly — the G3 path has
-    // HookInvocationStarted but previously exited without a terminal lifecycle event.
+    // G3 allow-path: emit the TASK_ALREADY_FINALIZED advisory exactly once
+    // (first re-invocation only) — consistent with the block-path guard below.
+    // Repeated advisories give Claude text to acknowledge on each re-invocation,
+    // accumulate noise in the audit trail, and provide no additional signal.
+    const existingAllowEvents = loadHookEvents(repoRoot, sessionId);
+    const alreadyEmittedAllowAdvisory = existingAllowEvents.some(
+      e =>
+        e.event_type === 'ContractViolationDetected' &&
+        e.task_id === envelope.task_id &&
+        (e as ContractViolationDetectedEvent).payload?.reason_code === ReasonCode.TASK_ALREADY_FINALIZED,
+    );
+
+    if (!alreadyEmittedAllowAdvisory) {
+      const dupEvent: ContractViolationDetectedEvent = {
+        event_id: generateEventId(),
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        task_id: envelope.task_id,
+        run_id: runId,
+        hook_stage: 'validate',
+        event_type: 'ContractViolationDetected',
+        status: 'violated',
+        payload: {
+          reason_code: ReasonCode.TASK_ALREADY_FINALIZED,
+          violated_contract: 'Stop hook must produce exactly one terminal outcome per task_id',
+          expected: `single outcome for task_id=${envelope.task_id}`,
+          actual: `task already finalized at ${envelope.finalized_at}; duplicate invocation suppressed`,
+          severity: 'advisory',
+          blocking_action_taken: false,
+        },
+      };
+      appendHookEvent(repoRoot, sessionId, dupEvent);
+    }
+
+    // Emit StageCompleted on every re-invocation to close the lifecycle — the G3
+    // path emits HookInvocationStarted above and needs a matching StageCompleted.
+    // violation_count reflects whether the advisory was emitted this invocation.
     const dupScEvent: StageCompletedEvent = {
       event_id: generateEventId(),
       timestamp: new Date().toISOString(),
@@ -250,7 +266,7 @@ export async function runValidate(args: string[] = []): Promise<void> {
       payload: {
         stage: 'validate',
         blocker_count: 0,
-        violation_count: 1,
+        violation_count: alreadyEmittedAllowAdvisory ? 0 : 1,
       },
     };
     appendHookEvent(repoRoot, sessionId, dupScEvent);
@@ -467,43 +483,127 @@ export async function runValidate(args: string[] = []): Promise<void> {
     }
   }
 
-  // Check: mandatory verification required but no verification evidence in trace
-  // Fallback: if no obligation event exists, treat source as unknown → advisory, not blocking
+  // Check: mandatory verification required but no verification evidence
+  // Primary path: load the canonical VerificationReceipt written by the trace hook.
+  // Fallback: search trace events (backward compat / pre-receipt deployments).
   if (mandatoryVerificationRequired) {
-    // Look for any Bash tool events that might represent verification commands
-    const bashEvents = events.filter(e => e.tool === 'Bash');
-    const verificationAttempted = bashEvents.some(e => {
-      const cmd = String((e.tool_input as any)?.command ?? '');
-      // Delegates to the shared helper: stored commands first, then VERIFICATION_PATTERN.
-      // Keeping verification matching in one place (attestation.ts) prevents pattern drift.
-      return isBashVerificationCommand(cmd, storedVerificationCommands);
-    });
 
-    if (!verificationAttempted) {
-      const severity = verificationSource === 'unknown' ? 'advisory' : 'blocking';
-      recordViolation(
-        ReasonCode.VERIFICATION_REQUIRED_NOT_RUN,
-        'Verification was declared mandatory but no verification command was executed',
-        `verification command executed (source: ${verificationSource})`,
-        'no verification command found in trace',
-        severity,
-      );
-    } else {
-      // Zero-Trust rules 2, 3, 4 — delegated to the pure enforcement engine.
-      // Rule 4: uses FIRST verification event (not last).
-      // Rule 2: null exit code → COMMAND_EXIT_UNKNOWN (blocking).
-      // Rule 3: edits after verification → POST_VERIFICATION_EDIT (blocking).
-      const ztViolations = evaluateZeroTrustRules(events, true, storedVerificationCommands);
-      for (const ztv of ztViolations) {
+    // ── Primary: canonical VerificationReceipt ────────────────────────────
+    // The receipt is written by the trace hook at PostToolUse capture time,
+    // scoped to the task_id. It is immune to task_id binding failures in
+    // events.jsonl (where task_id='none' causes evidence to be invisible).
+    const receipt = loadVerificationReceipt(repoRoot, envelope.task_id);
+
+    if (receipt) {
+      // Rule 2: exit code from the frozen receipt — never re-extracted from prose.
+      if (receipt.exit_code === null) {
         recordViolation(
-          ReasonCode[ztv.reason_code],
-          ztv.detail,
-          ztv.reason_code === 'COMMAND_EXIT_NONZERO' ? 'exit_code = 0' :
-          ztv.reason_code === 'COMMAND_EXIT_UNKNOWN' ? 'exit_code = 0 (deterministic)' :
-          'no file modifications after verification',
-          ztv.observed,   // machine-observed value, not prose — visible in hook-log actual column
+          ReasonCode.COMMAND_EXIT_UNKNOWN,
+          'Verification command ran but exit code could not be determined — cannot confirm pass (Zero-Trust Rule 2)',
+          'exit_code = 0 (deterministic)',
+          `exit_code = unknown (receipt_id=${receipt.receipt_id})`,
           'blocking',
         );
+      } else if (receipt.exit_code !== 0) {
+        recordViolation(
+          ReasonCode.COMMAND_EXIT_NONZERO,
+          'Verification command exited with a non-zero code (Zero-Trust Rule 2)',
+          'exit_code = 0',
+          `exit_code = ${receipt.exit_code} (receipt_id=${receipt.receipt_id})`,
+          'blocking',
+        );
+      }
+
+      // Rule 3: no edits after the verification boundary (receipt.finished_at).
+      // ISO 8601 strings are lexicographically comparable — no Date() needed.
+      const postVerifEdits = events.filter(e =>
+        (e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'MultiEdit') &&
+        e.timestamp > receipt.finished_at,
+      );
+      for (const edit of postVerifEdits) {
+        const files = edit.affected_files.length > 0
+          ? edit.affected_files.join(', ')
+          : String((edit.tool_input as any)?.file_path ?? 'unknown');
+        recordViolation(
+          ReasonCode.POST_VERIFICATION_EDIT,
+          'File modified after verification was run (Zero-Trust Rule 3)',
+          'no file modifications after verification',
+          `file: ${files}`,
+          'blocking',
+        );
+      }
+    } else {
+      // ── Fallback: trace event search ──────────────────────────────────────
+      // Receipt absent — pre-receipt deployment or task_id binding failure.
+      // Try to find verification evidence in events.jsonl for this task.
+      const bashEvents = events.filter(e => e.tool === 'Bash');
+      const verificationAttempted = bashEvents.some(e => {
+        const cmd = String((e.tool_input as any)?.command ?? '');
+        // Delegates to the shared helper: stored commands first, then VERIFICATION_PATTERN.
+        return isBashVerificationCommand(cmd, storedVerificationCommands);
+      });
+
+      if (!verificationAttempted) {
+        // ── Structured diagnostics ────────────────────────────────────────
+        // Emit machine-readable detail about WHY no verification evidence was
+        // found. This allows root-cause diagnosis without assistant narration.
+        // Key signal: if task_id='none' bash events look like verification,
+        // the envelope was likely unloaded during the trace hook invocation —
+        // a task_id binding failure, not a genuine skip.
+        const allBashEvents = rawEvents.filter(e => e.tool === 'Bash');
+        const orphanBashEvents = rawEvents.filter(
+          e => e.tool === 'Bash' && e.task_id === 'none',
+        );
+        const orphanLookingLikeVerification = orphanBashEvents.filter(e => {
+          const cmd = String((e.tool_input as any)?.command ?? '');
+          return isBashVerificationCommand(cmd, storedVerificationCommands);
+        });
+
+        const diagParts: string[] = [
+          'no_receipt',
+          `bash_events_for_task=${bashEvents.length}`,
+          `bash_events_total=${allBashEvents.length}`,
+        ];
+        if (orphanBashEvents.length > 0) {
+          diagParts.push(`bash_events_task_id_none=${orphanBashEvents.length}`);
+        }
+        if (orphanLookingLikeVerification.length > 0) {
+          // This fingerprint: the verification command RAN (visible in events.jsonl)
+          // but the trace hook failed to load the active envelope, so the event
+          // was written with task_id='none' instead of the actual task_id.
+          diagParts.push(
+            `task_id_binding_failure_suspected:${orphanLookingLikeVerification.length}_verification_candidate(s)_have_task_id=none`,
+          );
+        }
+        if (storedVerificationCommands.length > 0) {
+          diagParts.push(`stored_commands=[${storedVerificationCommands.join(',')}]`);
+        }
+
+        const severity = verificationSource === 'unknown' ? 'advisory' : 'blocking';
+        recordViolation(
+          ReasonCode.VERIFICATION_REQUIRED_NOT_RUN,
+          'Verification was declared mandatory but no verification command was executed',
+          `verification command executed (source: ${verificationSource})`,
+          diagParts.join('; '),
+          severity,
+        );
+      } else {
+        // Found in trace — apply Zero-Trust rules 2, 3, 4 via pure engine.
+        // Rule 4: uses FIRST verification event (not last).
+        // Rule 2: null exit code → COMMAND_EXIT_UNKNOWN (blocking).
+        // Rule 3: edits after verification → POST_VERIFICATION_EDIT (blocking).
+        const ztViolations = evaluateZeroTrustRules(events, true, storedVerificationCommands);
+        for (const ztv of ztViolations) {
+          recordViolation(
+            ReasonCode[ztv.reason_code],
+            ztv.detail,
+            ztv.reason_code === 'COMMAND_EXIT_NONZERO' ? 'exit_code = 0' :
+            ztv.reason_code === 'COMMAND_EXIT_UNKNOWN' ? 'exit_code = 0 (deterministic)' :
+            'no file modifications after verification',
+            ztv.observed,
+            'blocking',
+          );
+        }
       }
     }
   }
@@ -603,24 +703,32 @@ export async function runValidate(args: string[] = []): Promise<void> {
   } else if (violations.some(v => v.event.payload.reason_code === ReasonCode.VERIFICATION_REQUIRED_NOT_RUN)) {
     verificationStatus = 'skipped';
   } else if (mandatoryVerificationRequired) {
-    // Verification was attempted — classify by exit code if available, else unknown.
-    // Rule 4: use the FIRST verification event, never the last.
-    const bashEvents = events.filter(e => e.tool === 'Bash');
-    const verificationBash = bashEvents.find(e => {
-      const cmd = String((e.tool_input as any)?.command ?? '');
-      return isBashVerificationCommand(cmd, storedVerificationCommands);
-    });
-    if (verificationBash) {
-      // Prefer attested exit code (frozen at capture time) over live re-extraction.
-      const vcmd = String((verificationBash.tool_input as any)?.command ?? '');
-      const exitCode = verificationBash.attestation?.exit_code !== undefined
-        ? verificationBash.attestation.exit_code
-        : extractExitCode(verificationBash.tool_result, vcmd);
-      if (exitCode === 0) verificationStatus = 'pass';
-      else if (exitCode !== null) verificationStatus = 'fail';
+    // Primary: derive status from the canonical receipt (same source used in the check above).
+    const receiptForStatus = loadVerificationReceipt(repoRoot, envelope.task_id);
+    if (receiptForStatus) {
+      if (receiptForStatus.exit_code === 0) verificationStatus = 'pass';
+      else if (receiptForStatus.exit_code !== null) verificationStatus = 'fail';
       else verificationStatus = 'unknown';
     } else {
-      verificationStatus = 'unknown';
+      // Fallback: derive from trace event (backward compat).
+      // Rule 4: use the FIRST verification event, never the last.
+      const bashEvents = events.filter(e => e.tool === 'Bash');
+      const verificationBash = bashEvents.find(e => {
+        const cmd = String((e.tool_input as any)?.command ?? '');
+        return isBashVerificationCommand(cmd, storedVerificationCommands);
+      });
+      if (verificationBash) {
+        // Prefer attested exit code (frozen at capture time) over live re-extraction.
+        const vcmd = String((verificationBash.tool_input as any)?.command ?? '');
+        const exitCode = verificationBash.attestation?.exit_code !== undefined
+          ? verificationBash.attestation.exit_code
+          : extractExitCode(verificationBash.tool_result, vcmd);
+        if (exitCode === 0) verificationStatus = 'pass';
+        else if (exitCode !== null) verificationStatus = 'fail';
+        else verificationStatus = 'unknown';
+      } else {
+        verificationStatus = 'unknown';
+      }
     }
   } else {
     verificationStatus = 'not_requested';

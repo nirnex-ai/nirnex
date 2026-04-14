@@ -4,10 +4,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadActiveEnvelope, appendTraceEvent, appendHookEvent, generateEventId, generateRunId } from './session.js';
-import { HookPostToolUse, TraceEvent, ContextOutput, HookInvocationStartedEvent } from './types.js';
+import { loadActiveEnvelope, appendTraceEvent, appendHookEvent, generateEventId, generateRunId, saveVerificationReceipt } from './session.js';
+import { HookPostToolUse, TraceEvent, ContextOutput, HookInvocationStartedEvent, VerificationReceipt } from './types.js';
 import { buildTraceStageCompleted } from './stage-completion.js';
-import { attestBashExecution } from './attestation.js';
+import { attestBashExecution, isBashVerificationCommand } from './attestation.js';
 
 function readStdin(): Promise<string> {
   return new Promise(resolve => {
@@ -140,6 +140,54 @@ export async function runTraceHook(): Promise<void> {
     appendTraceEvent(repoRoot, sessionId, event);
   } catch {
     // Non-fatal
+  }
+
+  // ── Canonical VerificationReceipt ─────────────────────────────────────────
+  // Write a task-scoped receipt whenever a Bash command matches the verification
+  // pattern. This is the primary source of truth for validate.ts — it survives
+  // task_id binding failures in events.jsonl (which occur when loadActiveEnvelope()
+  // returns null, causing all trace events to carry task_id='none').
+  //
+  // Guard: only written when task_id is known (envelope was loaded). Without a
+  // task_id we cannot scope the receipt, so we omit it and rely on the trace event.
+  //
+  // Rule 4: saveVerificationReceipt() is a no-op when a receipt already exists —
+  // only the FIRST verification command for a task is captured.
+  if (
+    hookData.tool_name === 'Bash' &&
+    attestation !== undefined &&
+    event.task_id !== 'none'
+  ) {
+    const cmd = String((hookData.tool_input as Record<string, unknown>)?.command ?? '');
+    // Use pattern-only matching in the trace hook — storedVerificationCommands
+    // live in hook-events.jsonl which the trace hook does not read to avoid I/O
+    // overhead on every PostToolUse. validate.ts applies the stored-command check
+    // on top of the receipt to confirm alignment with the obligation event.
+    if (isBashVerificationCommand(cmd, [])) {
+      const exitCode = attestation.exit_code;
+      const receiptStatus: 'pass' | 'fail' | 'unknown' =
+        exitCode === 0 ? 'pass' : exitCode !== null ? 'fail' : 'unknown';
+      const receipt: VerificationReceipt = {
+        receipt_id:         generateEventId(),
+        session_id:         sessionId,
+        task_id:            event.task_id,
+        run_id:             runId,
+        command:            cmd,
+        normalized_command: cmd.trim(),
+        command_hash:       attestation.command_hash,
+        started_at:         null,
+        finished_at:        attestation.capture_timestamp,
+        exit_code:          exitCode,
+        status:             receiptStatus,
+        source_stage:       'trace-hook',
+        captured_at:        new Date().toISOString(),
+      };
+      try {
+        saveVerificationReceipt(repoRoot, receipt);
+      } catch {
+        // Non-fatal: trace event in events.jsonl remains as the fallback path
+      }
+    }
   }
 
   const sc = buildTraceStageCompleted({

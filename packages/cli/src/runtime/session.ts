@@ -3,7 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { NirnexSession, TaskEnvelope, TraceEvent, HookEvent, HookEventType, HookStage, HookWriteFailedEvent } from './types.js';
+import { NirnexSession, TaskEnvelope, TraceEvent, HookEvent, HookEventType, HookStage, HookWriteFailedEvent, VerificationReceipt } from './types.js';
 
 export const RUNTIME_DIR = '.ai-index/runtime';
 
@@ -317,4 +317,47 @@ export function loadHookWriteFailures(repoRoot: string, sessionId: string): Hook
       try { return JSON.parse(line) as HookWriteFailedEvent; } catch { return null; }
     })
     .filter((e): e is HookWriteFailedEvent => e !== null);
+}
+
+// ─── Verification Receipt ──────────────────────────────────────────────────────
+
+function receiptsDir(repoRoot: string): string {
+  return path.join(runtimeDir(repoRoot), 'receipts');
+}
+
+/**
+ * Persist a VerificationReceipt for the given task.
+ *
+ * Zero-Trust Rule 4 (first execution only): if a receipt already exists for
+ * this task_id, this call is a no-op — the first receipt is preserved.
+ * This matches evaluateZeroTrustRules() which uses `.find()` (first match wins).
+ *
+ * The receipt is stored separately from events.jsonl so that task_id binding
+ * failures in the trace event stream do not destroy verification evidence.
+ *
+ * Safe to call from the trace hook — never throws (caller catches exceptions).
+ */
+export function saveVerificationReceipt(repoRoot: string, receipt: VerificationReceipt): void {
+  const taskDir = path.join(receiptsDir(repoRoot), receipt.task_id);
+  ensureDir(taskDir);
+  const p = path.join(taskDir, 'verification.json');
+  // Rule 4: do not overwrite — preserve the first receipt
+  if (fs.existsSync(p)) return;
+  fs.writeFileSync(p, JSON.stringify(receipt, null, 2), 'utf8');
+}
+
+/**
+ * Load the canonical VerificationReceipt for a task, or null if none exists.
+ *
+ * Called by validate.ts as the primary verification evidence check before
+ * falling back to trace event search.
+ */
+export function loadVerificationReceipt(repoRoot: string, taskId: string): VerificationReceipt | null {
+  const p = path.join(receiptsDir(repoRoot), taskId, 'verification.json');
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf8')) as VerificationReceipt;
+  } catch {
+    return null;
+  }
 }

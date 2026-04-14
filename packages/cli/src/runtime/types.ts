@@ -423,3 +423,58 @@ export interface ContextOutput {
   additionalContext?: string;
   blockMessage?: string;
 }
+
+// ─── Verification Receipt ──────────────────────────────────────────────────────
+
+/**
+ * Canonical verification receipt — written by the trace hook at PostToolUse
+ * capture time when a Bash command matches the verification pattern.
+ *
+ * This is the PRIMARY source of truth for validate.ts verification evidence.
+ * It is stored in its own file scoped to the task_id and therefore survives
+ * task_id binding failures in events.jsonl (which occur when loadActiveEnvelope()
+ * returns null in the trace hook, causing all trace events to have task_id='none').
+ *
+ * Design:
+ *   - Written once per task, for the FIRST verification command (Rule 4).
+ *   - Stored at .ai-index/runtime/receipts/<task_id>/verification.json
+ *   - validate.ts reads this before falling back to trace event search.
+ *   - saveVerificationReceipt() is a no-op if a receipt already exists (Rule 4).
+ *
+ * String values for session_id, task_id, run_id must match the corresponding
+ * fields in the trace event emitted by the same trace hook invocation.
+ */
+export interface VerificationReceipt {
+  /** Unique ID for this receipt (same generator as event_id). */
+  receipt_id: string;
+  /** Claude Code session this verification belonged to. */
+  session_id: string;
+  /** Task envelope ID this verification was performed under. */
+  task_id: string;
+  /** Trace hook run_id that captured this verification. */
+  run_id: string;
+  /** The exact bash command string as received in the PostToolUse payload. */
+  command: string;
+  /** Trimmed form of the command — used for pattern comparisons. */
+  normalized_command: string;
+  /** SHA-256 hex of the command string — durable evidence identity. */
+  command_hash: string;
+  /**
+   * ISO 8601 timestamp when the command started.
+   * Not available from PostToolUse — always null when written by the trace hook.
+   */
+  started_at: string | null;
+  /**
+   * ISO 8601 timestamp when the command finished (attestation.capture_timestamp).
+   * Used as the boundary for Zero-Trust Rule 3 (post-verification edit detection).
+   */
+  finished_at: string;
+  /** Exit code extracted at capture time. null = indeterminate → Rule 2 blocks. */
+  exit_code: number | null;
+  /** Derived from exit_code: pass=0, fail=non-zero, unknown=null. */
+  status: 'pass' | 'fail' | 'unknown';
+  /** Always 'trace-hook' — the only trusted capture source. */
+  source_stage: 'trace-hook';
+  /** ISO 8601 timestamp when this receipt was written to disk. */
+  captured_at: string;
+}
