@@ -698,14 +698,27 @@ Exit codes are captured at trace time (PostToolUse) via a `CommandAttestation` r
 
 ## Database Schema
 
-**File:** `.aidos.db` (SQLite)
+### `.aidos.db` (SQLite — knowledge graph)
+
+Current schema version: **2**. The schema is defined in `packages/core/src/schema.sql` and copied into `packages/core/dist/` at build time.
 
 | Table | Description |
 |-------|-------------|
-| `modules` | Parsed TypeScript modules with LOC, content hash, and summary |
-| `edges` | Directed dependency graph edges with weights |
-| `patterns` | Detected code smells and structural patterns |
-| `summaries` | LLM-generated module summaries (≤120 tokens) |
-| `gate_results` | Quality gate check results per module |
 | `_meta` | Metadata: schema version, last indexed git commit hash |
-| `ledger_entries` | Hook event ledger entries used by `nirnex report` |
+| `modules` | Parsed TypeScript modules with path, LOC, content hash, tier (`FULL`/`EXCLUDED`), scope decision source, and matched rule |
+| `dependencies` | Import/require relationships per module (specifier, resolved path, kind) |
+| `edges` | Directed dependency graph edges with weights and kind (`static`/`dynamic`/`re-export`) |
+| `patterns` | Detected code smells and structural patterns with severity |
+| `gate_results` | Quality gate check results per run |
+| `summaries` | LLM-generated module summaries (≤120 tokens) |
+| `hub_summaries` | LLM-generated summaries for high-centrality hub directories |
+
+### `.aidos-ledger.db` (SQLite — governance ledger)
+
+Separate from the knowledge graph. Written by the `validate` hook at the end of every task. Queried by `nirnex report`.
+
+| Table | Description |
+|-------|-------------|
+| `ledger_entries` | Append-only hook governance records — hash-chained, tamper-evident. Queried by `nirnex report`. |
+
+The ledger schema is defined in `packages/core/src/runtime/ledger/schema.ts`. Immutability is enforced via `BEFORE UPDATE` / `BEFORE DELETE` triggers that abort any mutation attempt.

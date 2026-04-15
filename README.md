@@ -438,22 +438,15 @@ The `confidence_snapshot` value always takes precedence when available.
 
 ## Requirements
 
-- Node.js >= 20
+- Node.js >= 24
 - git
-- tree-sitter CLI
-- ast-grep CLI (recommended)
-
-For planning, set your API key:
-
-```sh
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
+- ast-grep CLI (recommended — used by `nirnex query` for structural pattern matching via `npx sg scan`)
 
 ---
 
 ## Current Version
 
-**v6.6.7** — See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
+See [releases](https://github.com/nirnex-ai/nirnex/releases) for the full changelog.
 
 Check your installed version at any time:
 
@@ -813,28 +806,6 @@ Runs from `nirnex plan` are also recorded. If neither has run yet, `nirnex repor
 
 
 
-### `nirnex override`
-
-Bypass restrictions with audit logging.
-
-```sh
-nirnex override --reason "Hotfix" plan .ai/specs/file.md
-```
-
-
-
-### `nirnex report`
-
-Generate a static HTML report from a run. See the [Report System](#report-system-sprint-25) section for full details.
-
-```sh
-nirnex report --last
-nirnex report --id tr_xxx
-nirnex report --compare tr_old tr_new
-nirnex report --list
-```
-
----
 
 ### `nirnex hook-log`
 
@@ -930,12 +901,7 @@ If you see `STDIN_READ_TIMEOUT` in `nirnex hook-log --last` under normal (non-ma
 
 ### `nirnex replay`
 
-Re-evaluate past decisions.
-
-```sh
-nirnex replay --trace tr_xxx
-nirnex replay --all --since 7d
-```
+> **Status: not yet implemented.** This command is a placeholder. Running it prints a development notice and exits.
 
 
 
